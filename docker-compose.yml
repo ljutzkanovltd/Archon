@@ -44,9 +44,9 @@ services:
       - ./python/tests:/app/tests # Mount tests for UI test execution
       - ./migration:/app/migration # Mount migration files for version tracking
       # Read-only access to all projects for code analysis
-      # TEMPORARILY DISABLED: Exhausts inotify watch limit (65536 -> need 524288)
-      # Uncomment after running: sudo sysctl fs.inotify.max_user_watches=524288
-      # - /home/ljutzkanov/Documents/Projects:/app/projects:ro
+      # REQUIRES: inotify watch limit of 524288 (see TROUBLESHOOTING_STARTUP_FIXES.md)
+      # Run: sudo sysctl -w fs.inotify.max_user_watches=524288
+      - /home/ljutzkanov/Documents/Projects:/app/projects:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command:

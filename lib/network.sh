@@ -149,23 +149,35 @@ get_vpn_status() {
     echo ""
     log_info "VPN Status:"
 
-    # Check for tunnel interface
-    if ip addr show 2>/dev/null | grep -q "tun[0-9]"; then
-        local tun_interface
-        tun_interface=$(ip addr show 2>/dev/null | grep -oP 'tun[0-9]+' | head -1 || echo "")
+    # Check for tunnel interface with more flexible pattern matching
+    local tun_interface
+    tun_interface=$(ip addr show 2>/dev/null | grep -oE "^[0-9]+: tun[0-9]+" | awk '{print $2}' | tr -d ':' | head -1 || echo "")
+
+    if [ -n "$tun_interface" ]; then
         local tun_ip
         tun_ip=$(ip addr show "$tun_interface" 2>/dev/null | grep -oP 'inet \K[\d.]+' || echo "unknown")
 
         log_success "  Interface: $tun_interface"
         log_success "  IP Address: $tun_ip"
+        log_info "  Status: Connected"
 
         # Show OpenVPN3 session if available
         if command -v openvpn3 &>/dev/null; then
             log_info "  Active sessions:"
-            openvpn3 sessions-list 2>/dev/null | grep -E "(Path|Status|Server)" || log_warn "    No active sessions found"
+            openvpn3 sessions-list 2>/dev/null | grep -E "(Path|Status|Server)" || log_info "    OpenVPN3 sessions: none (may be using different VPN client)"
         fi
     else
-        log_warn "  No VPN tunnel interface found"
+        # Check if any tunnel-like interface exists
+        local all_tunnels
+        all_tunnels=$(ip addr show 2>/dev/null | grep -E "^[0-9]+: (tun|tap|wg)[0-9]+" | awk '{print $2}' | tr -d ':' || echo "")
+
+        if [ -n "$all_tunnels" ]; then
+            log_info "  Found tunnel interfaces: $all_tunnels"
+            log_info "  VPN may be connected using non-standard interface"
+        else
+            log_warn "  No VPN tunnel interface detected (tun*, tap*, wg*)"
+            log_info "  This is informational only - VPN check passed at connection level"
+        fi
     fi
     echo ""
 }

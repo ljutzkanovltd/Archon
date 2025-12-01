@@ -82,15 +82,19 @@ source "$LIB_DIR/network.sh"
 log_success "Shared libraries loaded"
 
 # Load environment variables
-if [ -f "$SCRIPT_DIR/.env" ]; then
-    log_info "Loading environment from .env"
+# Note: Use PROJECT_ROOT instead of SCRIPT_DIR because library files may overwrite SCRIPT_DIR
+ENV_FILE="$PROJECT_ROOT/.env"
+if [ -f "$ENV_FILE" ]; then
+    log_info "Loading environment from .env (path: $ENV_FILE)"
     set -a
     # shellcheck source=.env
-    source "$SCRIPT_DIR/.env"
+    source "$ENV_FILE"
     set +a
+    log_info "Environment loaded: MODE=$MODE"
 else
-    log_warn ".env file not found - using defaults"
+    log_warn ".env file not found at: $ENV_FILE"
     log_warn "Copy .env.example to .env and configure before production use"
+    log_info "Using default configuration values"
 fi
 
 # ==============================================================================
@@ -631,12 +635,26 @@ else
         exit 1
     fi
 
-    # MCP health endpoint
+    # MCP health endpoint (with retry logic)
     log_info "Testing archon-mcp health..."
-    if port_is_available_check "$ARCHON_MCP_PORT"; then
-        log_success "MCP port $ARCHON_MCP_PORT is accessible"
-    else
-        log_warn "MCP port $ARCHON_MCP_PORT check inconclusive"
+    mcp_retries=3
+    mcp_delay=2
+    mcp_success=false
+
+    for ((i=1; i<=mcp_retries; i++)); do
+        if port_is_available_check "$ARCHON_MCP_PORT"; then
+            log_success "MCP port $ARCHON_MCP_PORT is accessible"
+            mcp_success=true
+            break
+        fi
+        if [ $i -lt $mcp_retries ]; then
+            sleep $mcp_delay
+        fi
+    done
+
+    if [ "$mcp_success" = false ]; then
+        log_warn "MCP port $ARCHON_MCP_PORT check inconclusive after $mcp_retries attempts"
+        log_info "Container may still be initializing - Docker healthcheck will continue monitoring"
     fi
 
     # Frontend accessibility
@@ -649,13 +667,28 @@ else
 
     echo ""
 
-    # Database connectivity test
+    # Database connectivity test (with retry logic)
     log_info "Testing database connectivity from archon-server..."
-    if docker exec archon-server sh -c 'psql "$DATABASE_URI" -c "SELECT 1;"' >/dev/null 2>&1; then
-        log_success "Database connection successful"
-    else
-        log_warn "Database connection check inconclusive"
-        log_warn "Container may still be initializing"
+    db_retries=3
+    db_delay=3
+    db_success=false
+
+    for ((i=1; i<=db_retries; i++)); do
+        if docker exec archon-server sh -c 'psql "$DATABASE_URI" -c "SELECT 1;"' >/dev/null 2>&1; then
+            log_success "Database connection successful"
+            db_success=true
+            break
+        fi
+        if [ $i -lt $db_retries ]; then
+            log_info "Database not ready, waiting ${db_delay}s before retry $((i+1))/$db_retries..."
+            sleep $db_delay
+        fi
+    done
+
+    if [ "$db_success" = false ]; then
+        log_warn "Database connection check inconclusive after $db_retries attempts"
+        log_info "Container may still be initializing - check 'docker logs archon-server' for details"
+        log_info "Service will continue attempting to connect in the background"
     fi
 
     # File system mount test

@@ -169,6 +169,167 @@ GITHUB_PAT_TOKEN=
 
 ---
 
+### 5. File System Mount Failure - inotify Watch Limit
+
+**Problem**:
+- File system mount validation was failing with error: "Expected mount: /home/ljutzkanov/Documents/Projects -> /app/projects"
+- archon-server container couldn't access `/app/projects` directory
+- Startup script exiting with critical error
+
+**Root Cause**:
+- Volume mount in docker-compose.yml was **intentionally commented out** to prevent exhausting the system's inotify watch limit
+- Default Linux inotify limit: 65,536 watches
+- Required for large project directory: 524,288 watches
+- The validation logic expected the mount to be present, causing startup failure
+
+**System Background**:
+inotify is the Linux kernel subsystem that monitors file system events. Docker containers with large directory mounts can quickly exhaust the default watch limit, causing:
+- "no space left on device" errors (despite having free disk space)
+- Container startup failures
+- File watching breakdowns in development tools
+
+**Fix Applied**:
+
+**Step 1: Increase inotify watch limit (requires manual execution)**:
+```bash
+# Set runtime value (temporary, until reboot)
+sudo sysctl -w fs.inotify.max_user_watches=524288
+
+# Make persistent across reboots
+echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Verify
+sysctl fs.inotify.max_user_watches
+# Should output: fs.inotify.max_user_watches = 524288
+```
+
+**Step 2: File**: `docker-compose.yml` (line 49)
+```yaml
+# BEFORE (disabled):
+# TEMPORARILY DISABLED: Exhausts inotify watch limit (65536 -> need 524288)
+# Uncomment after running: sudo sysctl fs.inotify.max_user_watches=524288
+# - /home/ljutzkanov/Documents/Projects:/app/projects:ro
+
+# AFTER (enabled with better documentation):
+# Read-only access to all projects for code analysis
+# REQUIRES: inotify watch limit of 524288 (see TROUBLESHOOTING_STARTUP_FIXES.md)
+# Run: sudo sysctl -w fs.inotify.max_user_watches=524288
+- /home/ljutzkanov/Documents/Projects:/app/projects:ro
+```
+
+**Step 3: Improved logging in start-archon.sh** (line 87-92)
+```bash
+# OLD (misleading warning):
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    log_info "Loading environment from .env"
+    # ...
+else
+    log_warn ".env file not found - using defaults"
+fi
+
+# NEW (better debugging):
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    log_info "Loading environment from .env (path: $ENV_FILE)"
+    set -a
+    source "$ENV_FILE"
+    set +a
+    log_info "Environment loaded: MODE=$MODE"
+else
+    log_warn ".env file not found at: $ENV_FILE"
+    log_info "Using default configuration values"
+fi
+```
+
+**Verification**:
+```bash
+# Check inotify limit
+sysctl fs.inotify.max_user_watches
+
+# Start Archon (mount should now work)
+./start-archon.sh
+
+# Verify mount inside container
+docker exec archon-server ls /app/projects
+# Should list: archon, badmintoo, local-ai-packaged, sporterp-apps, etc.
+```
+
+**Related Improvements**:
+- **VPN Status Detection** (`lib/network.sh` lines 146-183): Improved pattern matching to correctly identify tun0 interface and provide clearer status messages
+- **Healthcheck Retry Logic** (`start-archon.sh`):
+  - MCP port check: 3 retries with 2-second delays
+  - Database connection: 3 retries with 3-second delays
+  - Better messaging for timing-dependent checks
+
+---
+
+### 6. Bash Script Variable Scope Errors
+
+**Problem**:
+- Script crashes with: `local: can only be used in a function` at line 639
+- .env file lookup fails, searches in wrong directory: `/home/ljutzkanov/Documents/Projects/archon/lib/.env`
+
+**Root Causes**:
+
+**Issue A - Local Variables Outside Function**:
+The retry logic for MCP and database healthchecks used `local` keyword in the main script body. In bash, `local` can only be used inside function declarations.
+
+**Issue B - SCRIPT_DIR Variable Overwritten**:
+Sourced library files (`logging.sh`, `health-checks.sh`, `network.sh`) were overwriting the `SCRIPT_DIR` variable with their own location (`lib/`), breaking the .env file lookup.
+
+**Variable Collision Timeline**:
+1. Line 49: `SCRIPT_DIR` set to project root
+2. Line 50: `PROJECT_ROOT` captures correct value
+3. Lines 74-80: Library files sourced → one resets `SCRIPT_DIR` to `lib/`
+4. Line 85: `.env` lookup fails (wrong directory)
+
+**Fixes Applied**:
+
+**Fix A**: `start-archon.sh` lines 639-641, 671-673
+```bash
+# BEFORE (incorrect):
+local mcp_retries=3
+local mcp_delay=2
+local mcp_success=false
+
+# AFTER (correct):
+mcp_retries=3  # No 'local' keyword in main script body
+mcp_delay=2
+mcp_success=false
+```
+
+**Fix B**: `start-archon.sh` line 86
+```bash
+# BEFORE (broken by library sourcing):
+ENV_FILE="$SCRIPT_DIR/.env"
+
+# AFTER (immune to library modifications):
+ENV_FILE="$PROJECT_ROOT/.env"
+```
+
+**Why PROJECT_ROOT Works**:
+`PROJECT_ROOT` is captured at line 50, before any libraries are sourced, ensuring it always points to the project root regardless of what library files do to `SCRIPT_DIR`.
+
+**Verification**:
+```bash
+# Check script syntax
+bash -n start-archon.sh
+# Should report no errors
+
+# Run script - .env should load correctly
+./start-archon.sh
+# Should show: "Loading environment from .env (path: /home/ljutzkanov/Documents/Projects/archon/.env)"
+```
+
+**Lessons Learned**:
+- Never use `local` keyword outside function bodies
+- Capture critical path variables before sourcing external scripts
+- Use distinct variable names (`PROJECT_ROOT` vs `SCRIPT_DIR`) to preserve important values
+- Test bash syntax with `bash -n` before running
+
+---
+
 ## Complete Verification
 
 All services are now healthy and operational:
@@ -240,6 +401,20 @@ CREATE EVENT TRIGGER pgrst_watch ON ddl_command_end EXECUTE PROCEDURE pgrst_watc
 
 ## Quick Reference
 
+### System Requirements (One-Time Setup)
+
+**Increase inotify watch limit** (required for file system mount):
+```bash
+# Set limit
+sudo sysctl -w fs.inotify.max_user_watches=524288
+
+# Make persistent
+echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf
+
+# Verify
+sysctl fs.inotify.max_user_watches
+```
+
 ### Start Archon Platform
 ```bash
 cd /home/ljutzkanov/Documents/Projects/archon
@@ -264,6 +439,12 @@ docker compose logs -f archon-ui
 
 ### Common Issues
 
+**Issue**: File system mount failed - "Expected mount: /home/ljutzkanov/Documents/Projects -> /app/projects"
+**Solution**:
+1. Increase inotify limit: `sudo sysctl -w fs.inotify.max_user_watches=524288`
+2. Make persistent: `echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.conf`
+3. Restart Archon: `./stop-archon.sh && ./start-archon.sh`
+
 **Issue**: PGRST205 error about missing tables
 **Solution**: Verify migration ran in correct database (postgres, not archon_db)
 
@@ -272,6 +453,15 @@ docker compose logs -f archon-ui
 
 **Issue**: "invalid container name: value is empty"
 **Solution**: Ensure container detection filters empty strings
+
+**Issue**: MCP port check inconclusive / Database connection check inconclusive
+**Solution**: These are timing issues during startup. Checks now retry automatically. If issues persist, check `docker logs archon-server` or `docker logs archon-mcp`
+
+**Issue**: `local: can only be used in a function` error
+**Solution**: Fixed in Section 6. Script was using `local` keyword outside function bodies. Upgrade to latest version.
+
+**Issue**: .env file not found at `/archon/lib/.env` (wrong path)
+**Solution**: Fixed in Section 6. Library files were overwriting `SCRIPT_DIR`. Now uses `PROJECT_ROOT` instead. Upgrade to latest version.
 
 ## Related Documentation
 
