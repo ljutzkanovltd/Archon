@@ -71,8 +71,8 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 90s
 
   # Lightweight MCP Server Service (HTTP-based)
   archon-mcp:
@@ -118,8 +118,8 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s # Give dependencies time to start
+      retries: 5
+      start_period: 90s # Give dependencies time to start
 
   # AI Agents Service (ML/Reranking)
   archon-agents:
@@ -156,8 +156,8 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 90s
 
   # Agent Work Orders Service (Independent microservice for workflow execution)
   archon-agent-work-orders:
@@ -209,8 +209,8 @@ services:
         ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 90s
 
   # Frontend
   archon-frontend:

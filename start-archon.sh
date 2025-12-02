@@ -358,49 +358,44 @@ check_ai_dependencies() {
     fi
     log_success "Supabase AI container is healthy"
 
-    # Check 4: PostgreSQL readiness
+    # Stabilization wait - give PostgreSQL time to fully initialize
+    log_info "Waiting for PostgreSQL to fully initialize (15 seconds)..."
+    sleep 15
+
+    # Check 4: PostgreSQL readiness (with retry logic)
     log_info "Validating PostgreSQL readiness..."
-    if ! docker exec "$SUPABASE_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
-        log_error "PostgreSQL is not ready"
+    local pg_retries=5
+    local pg_delay=3
+    local pg_success=false
+
+    for ((i=1; i<=pg_retries; i++)); do
+        if docker exec "$SUPABASE_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+            log_success "PostgreSQL is ready"
+            pg_success=true
+            break
+        fi
+        if [ $i -lt $pg_retries ]; then
+            log_info "PostgreSQL not ready, waiting ${pg_delay}s (attempt $i/$pg_retries)..."
+            sleep $pg_delay
+        fi
+    done
+
+    if [ "$pg_success" = false ]; then
+        log_error "PostgreSQL failed to become ready after $pg_retries attempts"
         return 1
     fi
-    log_success "PostgreSQL is ready"
 
-    # Check 5: archon_db database existence
-    log_info "Validating archon_db database..."
-    if ! docker exec "$SUPABASE_CONTAINER" psql -U postgres -lqt 2>/dev/null | \
-         cut -d \| -f 1 | grep -qw "archon_db"; then
-
-        log_warn "archon_db database not found"
-        log_info "Creating archon_db database..."
-
-        # Create database
-        if docker exec "$SUPABASE_CONTAINER" psql -U postgres \
-            -c "CREATE DATABASE archon_db WITH ENCODING='UTF8';" 2>/dev/null; then
-            log_success "Database created: archon_db"
-        else
-            log_error "Failed to create archon_db database"
-            return 1
-        fi
-
-        # Run initialization script
-        if [ -f "$SCRIPT_DIR/migration/complete_setup.sql" ]; then
-            log_info "Running database initialization script..."
-            if docker exec -i "$SUPABASE_CONTAINER" psql -U postgres archon_db < \
-                "$SCRIPT_DIR/migration/complete_setup.sql" >/dev/null 2>&1; then
-                log_success "Database initialized successfully"
-            else
-                log_error "Database initialization failed"
-                log_error "Check migration/complete_setup.sql for errors"
-                return 1
-            fi
-        else
-            log_warn "No initialization script found at migration/complete_setup.sql"
-            log_warn "Database created but not initialized"
-        fi
-    else
-        log_success "archon_db database exists"
+    # Check 5: Port binding verification
+    log_info "Verifying port 5432 is accepting connections..."
+    if ! wait_for_port_occupied 5432 60; then
+        log_error "Port 5432 not bound after 60s timeout"
+        log_error "PostgreSQL may not be fully initialized"
+        return 1
     fi
+    log_success "Port 5432 is bound and accepting connections"
+
+    # Note: Database initialization moved to separate function (initialize_archon_database)
+    # This function only validates that prerequisites are available
 
     # Check 6: LLM API (optional)
     log_info "Checking LLM API availability (optional)..."
@@ -426,6 +421,58 @@ check_ai_dependencies() {
     return 0
 }
 
+# Initialize Archon database (separate from dependency validation)
+initialize_archon_database() {
+    log_info "Initializing Archon database..."
+
+    # Check if archon_db database exists
+    log_info "Checking for archon_db database..."
+    if ! docker exec "$SUPABASE_CONTAINER" psql -U postgres -lqt 2>/dev/null | \
+         cut -d \| -f 1 | grep -qw "archon_db"; then
+
+        log_warn "archon_db database not found"
+        log_info "Creating archon_db database..."
+
+        # Create database
+        if docker exec "$SUPABASE_CONTAINER" psql -U postgres \
+            -c "CREATE DATABASE archon_db WITH ENCODING='UTF8';" 2>/dev/null; then
+            log_success "Database created: archon_db"
+        else
+            log_error "Failed to create archon_db database"
+            return 1
+        fi
+
+        # Stabilization wait after database creation
+        log_info "Waiting for database to stabilize (5 seconds)..."
+        sleep 5
+
+        # Run initialization script
+        if [ -f "$SCRIPT_DIR/migration/complete_setup.sql" ]; then
+            log_info "Running database initialization script..."
+            if docker exec -i "$SUPABASE_CONTAINER" psql -U postgres archon_db < \
+                "$SCRIPT_DIR/migration/complete_setup.sql" >/dev/null 2>&1; then
+                log_success "Database initialized successfully"
+            else
+                log_error "Database initialization failed"
+                log_error "Check migration/complete_setup.sql for errors"
+                return 1
+            fi
+        else
+            log_warn "No initialization script found at migration/complete_setup.sql"
+            log_warn "Database created but not initialized"
+        fi
+
+        # Final stabilization wait after migrations
+        log_info "Waiting for migrations to complete (5 seconds)..."
+        sleep 5
+    else
+        log_success "archon_db database already exists"
+    fi
+
+    log_success "Database initialization complete"
+    return 0
+}
+
 # Execute dependency check
 log_info "Step 2: Dependency Validation"
 if [ "$SKIP_DEPENDENCY_CHECK" = false ]; then
@@ -439,7 +486,23 @@ else
 fi
 
 # ==============================================================================
-# Section 7: Backup on Start (Lines 291-320)
+# Section 6.5: Database Initialization (Lines 476-495)
+# ==============================================================================
+
+log_info "Step 2.5: Database Initialization"
+
+if [ "$SKIP_DEPENDENCY_CHECK" = false ]; then
+    if ! initialize_archon_database; then
+        log_error "Database initialization failed"
+        log_error "Please check Supabase connection and retry"
+        exit 1
+    fi
+else
+    log_warn "Database initialization skipped (--skip-dependency-check flag)"
+fi
+
+# ==============================================================================
+# Section 7: Backup on Start (Lines 496-525)
 # ==============================================================================
 
 log_info "Step 3: Backup Before Start"
