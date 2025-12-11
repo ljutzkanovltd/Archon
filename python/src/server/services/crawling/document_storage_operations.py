@@ -104,7 +104,7 @@ class DocumentStorageOperations:
             url_to_full_document[doc_url] = markdown_content
 
             # CHUNK THE CONTENT
-            chunks = await storage_service.smart_chunk_text_async(markdown_content, chunk_size=5000)
+            chunks = await storage_service.smart_chunk_text_async(markdown_content, chunk_size=1200)
 
             # Use the original source_id for all documents
             source_id = original_source_id
@@ -204,7 +204,7 @@ class DocumentStorageOperations:
                 # Update url_to_full_document with section content
                 url_to_full_document[section.url] = section.content
                 section_chunks = await storage_service.smart_chunk_text_async(
-                    section.content, chunk_size=5000
+                    section.content, chunk_size=1200
                 )
 
                 for i, chunk in enumerate(section_chunks):
