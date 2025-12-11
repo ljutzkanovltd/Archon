@@ -80,6 +80,11 @@ async def _validate_provider_api_key(provider: str = None) -> None:
                     }
                 )
 
+        # Skip API key validation for Ollama - it doesn't require authentication
+        if provider == "ollama":
+            logger.info("✅ Skipping API key validation for Ollama (no authentication required for local instances)")
+            return
+
         # Basic sanitization for logging
         safe_provider = provider[:20]  # Limit length
         logger.info(f"🔑 Testing {safe_provider.title()} API key with minimal embedding request...")
