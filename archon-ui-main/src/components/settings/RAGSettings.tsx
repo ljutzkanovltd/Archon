@@ -12,10 +12,10 @@ import { credentialsService } from '../../services/credentialsService';
 import OllamaModelDiscoveryModal from './OllamaModelDiscoveryModal';
 import OllamaModelSelectionModal from './OllamaModelSelectionModal';
 
-type ProviderKey = 'openai' | 'google' | 'ollama' | 'anthropic' | 'grok' | 'openrouter';
+type ProviderKey = 'openai' | 'azure-openai' | 'google' | 'ollama' | 'anthropic' | 'grok' | 'openrouter';
 
 // Providers that support embedding models
-const EMBEDDING_CAPABLE_PROVIDERS: ProviderKey[] = ['openai', 'google', 'openrouter', 'ollama'];
+const EMBEDDING_CAPABLE_PROVIDERS: ProviderKey[] = ['openai', 'azure-openai', 'google', 'openrouter', 'ollama'];
 
 interface ProviderModels {
   chatModel: string;
@@ -30,6 +30,7 @@ const PROVIDER_MODELS_KEY = 'archon_provider_models';
 const getDefaultModels = (provider: ProviderKey): ProviderModels => {
   const chatDefaults: Record<ProviderKey, string> = {
     openai: 'gpt-4o-mini',
+    'azure-openai': '<chat-deployment>',
     anthropic: 'claude-3-5-sonnet-20241022',
     google: 'gemini-1.5-flash',
     grok: 'grok-3-mini', // Updated to use grok-3-mini as default
@@ -39,6 +40,7 @@ const getDefaultModels = (provider: ProviderKey): ProviderModels => {
 
   const embeddingDefaults: Record<ProviderKey, string> = {
     openai: 'text-embedding-3-small',
+    'azure-openai': '<embedding-deployment>',
     anthropic: 'text-embedding-3-small', // Fallback to OpenAI
     google: 'text-embedding-004',
     grok: 'text-embedding-3-small', // Fallback to OpenAI
@@ -71,7 +73,7 @@ const loadProviderModels = (): ProviderModelMap => {
   }
 
   // Return defaults for all providers if nothing saved
-  const providers: ProviderKey[] = ['openai', 'google', 'openrouter', 'ollama', 'anthropic', 'grok'];
+  const providers: ProviderKey[] = ['openai', 'azure-openai', 'google', 'openrouter', 'ollama', 'anthropic', 'grok'];
   const defaultModels: ProviderModelMap = {} as ProviderModelMap;
 
   providers.forEach(provider => {
@@ -84,6 +86,7 @@ const loadProviderModels = (): ProviderModelMap => {
 // Static color styles mapping (prevents Tailwind JIT purging)
 const colorStyles: Record<ProviderKey, string> = {
   openai: 'border-green-500 bg-green-500/10',
+  'azure-openai': 'border-teal-500 bg-teal-500/10',
   google: 'border-blue-500 bg-blue-500/10',
   openrouter: 'border-cyan-500 bg-cyan-500/10',
   ollama: 'border-purple-500 bg-purple-500/10',
@@ -97,6 +100,7 @@ const providerMissingAlertStyle = providerErrorAlertStyle;
 
 const providerDisplayNames: Record<ProviderKey, string> = {
   openai: 'OpenAI',
+  'azure-openai': 'Azure OpenAI',
   google: 'Google',
   openrouter: 'OpenRouter',
   ollama: 'Ollama',
@@ -105,13 +109,14 @@ const providerDisplayNames: Record<ProviderKey, string> = {
 };
 
 const isProviderKey = (value: unknown): value is ProviderKey =>
-  typeof value === 'string' && ['openai', 'google', 'openrouter', 'ollama', 'anthropic', 'grok'].includes(value);
+  typeof value === 'string' && ['openai', 'azure-openai', 'google', 'openrouter', 'ollama', 'anthropic', 'grok'].includes(value);
 
 // Default base URL for Ollama instances when not explicitly configured
 const DEFAULT_OLLAMA_URL = 'http://host.docker.internal:11434/v1';
 
 const PROVIDER_CREDENTIAL_KEYS = [
   'OPENAI_API_KEY',
+  'AZURE_OPENAI_API_KEY',
   'GOOGLE_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
@@ -122,6 +127,7 @@ type ProviderCredentialKey = typeof PROVIDER_CREDENTIAL_KEYS[number];
 
 const CREDENTIAL_PROVIDER_MAP: Record<ProviderCredentialKey, ProviderKey> = {
   OPENAI_API_KEY: 'openai',
+  AZURE_OPENAI_API_KEY: 'azure-openai',
   GOOGLE_API_KEY: 'google',
   ANTHROPIC_API_KEY: 'anthropic',
   OPENROUTER_API_KEY: 'openrouter',
@@ -153,6 +159,14 @@ interface RAGSettingsProps {
     EMBEDDING_PROVIDER?: string;
     OLLAMA_EMBEDDING_URL?: string;
     OLLAMA_EMBEDDING_INSTANCE_NAME?: string;
+    // Azure OpenAI Chat Configuration (separate from embeddings)
+    AZURE_OPENAI_CHAT_ENDPOINT?: string;
+    AZURE_OPENAI_CHAT_API_VERSION?: string;
+    AZURE_OPENAI_CHAT_DEPLOYMENT?: string;
+    // Azure OpenAI Embedding Configuration (separate from chat)
+    AZURE_OPENAI_EMBEDDING_ENDPOINT?: string;
+    AZURE_OPENAI_EMBEDDING_API_VERSION?: string;
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT?: string;
     // Crawling Performance Settings
     CRAWL_BATCH_SIZE?: number;
     CRAWL_MAX_CONCURRENT?: number;
@@ -182,6 +196,7 @@ export const RAGSettings = ({
   const [showStorageSettings, setShowStorageSettings] = useState(false);
   const [showModelDiscoveryModal, setShowModelDiscoveryModal] = useState(false);
   const [showOllamaConfig, setShowOllamaConfig] = useState(false);
+  const [showAzureConfig, setShowAzureConfig] = useState(false);
   
   // Edit modals state
   const [showEditLLMModal, setShowEditLLMModal] = useState(false);
@@ -942,7 +957,43 @@ const manualTestConnection = async (
         if (!hasOpenAIKey) return 'missing';
         if (isChecking) return 'partial';
         return openAIConnected ? 'configured' : 'missing';
-        
+
+      case 'azure-openai':
+        const hasAzureKey = hasApiCredential('AZURE_OPENAI_API_KEY');
+
+        // Context-aware validation based on activeSelection
+        if (activeSelection === 'chat') {
+          // Validate chat-specific Azure configuration
+          const hasChatEndpoint = Boolean(ragSettings.AZURE_OPENAI_CHAT_ENDPOINT?.trim());
+          const hasChatDeployment = Boolean(ragSettings.AZURE_OPENAI_CHAT_DEPLOYMENT?.trim());
+
+          // Azure chat requires API key, endpoint, and deployment
+          if (!hasAzureKey || !hasChatEndpoint) return 'missing';
+          if (!hasChatDeployment) return 'partial';
+
+          // Check connection status
+          const azureChatConnected = providerConnectionStatus['azure-openai']?.connected || false;
+          const azureChatChecking = providerConnectionStatus['azure-openai']?.checking || false;
+
+          if (azureChatChecking) return 'partial';
+          return azureChatConnected ? 'configured' : 'partial';
+        } else {
+          // Validate embedding-specific Azure configuration
+          const hasEmbeddingEndpoint = Boolean(ragSettings.AZURE_OPENAI_EMBEDDING_ENDPOINT?.trim());
+          const hasEmbeddingDeployment = Boolean(ragSettings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT?.trim());
+
+          // Azure embeddings require API key, endpoint, and deployment
+          if (!hasAzureKey || !hasEmbeddingEndpoint) return 'missing';
+          if (!hasEmbeddingDeployment) return 'partial';
+
+          // Check connection status
+          const azureEmbeddingConnected = providerConnectionStatus['azure-openai']?.connected || false;
+          const azureEmbeddingChecking = providerConnectionStatus['azure-openai']?.checking || false;
+
+          if (azureEmbeddingChecking) return 'partial';
+          return azureEmbeddingConnected ? 'configured' : 'partial';
+        }
+
       case 'google':
         const hasGoogleKey = hasApiCredential('GOOGLE_API_KEY');
         
@@ -1291,10 +1342,11 @@ const manualTestConnection = async (
             Select {activeSelection === 'chat' ? 'Chat' : 'Embedding'} Provider
           </label>
           <div className={`grid gap-3 mb-4 ${
-            activeSelection === 'chat' ? 'grid-cols-6' : 'grid-cols-4'
+            activeSelection === 'chat' ? 'grid-cols-7' : 'grid-cols-4'
           }`}>
             {[
               { key: 'openai', name: 'OpenAI', logo: '/img/OpenAI.png', color: 'green' },
+              { key: 'azure-openai', name: 'Azure OpenAI', logo: '/img/AzureOpenAI.png', color: 'teal' },
               { key: 'google', name: 'Google', logo: '/img/google-logo.svg', color: 'blue' },
               { key: 'openrouter', name: 'OpenRouter', logo: '/img/OpenRouter.png', color: 'cyan' },
               { key: 'ollama', name: 'Ollama', logo: '/img/Ollama.png', color: 'purple' },
@@ -1451,6 +1503,20 @@ const manualTestConnection = async (
                 onClick={() => setShowOllamaConfig(!showOllamaConfig)}
               >
                 {activeSelection === 'chat' ? 'Config' : 'Config'}
+              </Button>
+            )}
+
+            {/* Azure OpenAI Configuration Gear Icon */}
+            {((activeSelection === 'chat' && chatProvider === 'azure-openai') ||
+              (activeSelection === 'embedding' && embeddingProvider === 'azure-openai')) && (
+              <Button
+                variant="outline"
+                accentColor="teal"
+                icon={<Cog className={`w-4 h-4 mr-1 transition-transform ${showAzureConfig ? 'rotate-90' : ''}`} />}
+                className="whitespace-nowrap ml-4 border-teal-500 text-teal-400 hover:bg-teal-500/10"
+                onClick={() => setShowAzureConfig(!showAzureConfig)}
+              >
+                Azure Config
               </Button>
             )}
 
@@ -1791,6 +1857,175 @@ const manualTestConnection = async (
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Expandable Azure OpenAI Configuration Container */}
+          {showAzureConfig && ((activeSelection === 'chat' && chatProvider === 'azure-openai') ||
+                               (activeSelection === 'embedding' && embeddingProvider === 'azure-openai')) && (
+            <div className="mt-4 p-4 bg-gradient-to-r from-teal-500/5 to-teal-600/5 border border-teal-500/20 rounded-lg shadow-[0_2px_8px_rgba(20,184,166,0.1)]">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-white text-lg font-semibold">Azure OpenAI Configuration</h3>
+                  <p className="text-gray-400 text-sm">
+                    Configure your Azure OpenAI resource and deployments
+                  </p>
+                </div>
+              </div>
+
+              {/* Azure Configuration Fields - Context-Aware Based on Selection */}
+              <div className="bg-black/40 rounded-lg p-4 shadow-[0_2px_8px_rgba(20,184,166,0.1)] space-y-4">
+
+                {activeSelection === 'chat' ? (
+                  <>
+                    {/* Chat-Specific Azure Configuration */}
+                    <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded">
+                      <p className="text-blue-300 text-xs font-medium">
+                        Chat Provider Configuration
+                      </p>
+                    </div>
+
+                    {/* Azure Chat Endpoint */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Chat Endpoint URL <span className="text-red-400">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_CHAT_ENDPOINT || ''}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_CHAT_ENDPOINT: e.target.value
+                        })}
+                        placeholder="https://your-chat-resource.openai.azure.com"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Azure OpenAI endpoint for chat/LLM (from Azure Portal → Keys and Endpoint)
+                      </p>
+                    </div>
+
+                    {/* Chat API Version */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Chat API Version
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_CHAT_API_VERSION || '2024-02-01'}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_CHAT_API_VERSION: e.target.value
+                        })}
+                        placeholder="2024-02-01"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Azure API version for chat (default: 2024-02-01)
+                      </p>
+                    </div>
+
+                    {/* Chat Deployment Name */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Chat Deployment Name <span className="text-red-400">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_CHAT_DEPLOYMENT || ''}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_CHAT_DEPLOYMENT: e.target.value
+                        })}
+                        placeholder="gpt-4o-deployment"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Your chat model deployment name (from Azure Portal → Deployments)
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Embedding-Specific Azure Configuration */}
+                    <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/20 rounded">
+                      <p className="text-purple-300 text-xs font-medium">
+                        Embedding Provider Configuration
+                      </p>
+                    </div>
+
+                    {/* Azure Embedding Endpoint */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Embedding Endpoint URL <span className="text-red-400">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_EMBEDDING_ENDPOINT || ''}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_EMBEDDING_ENDPOINT: e.target.value
+                        })}
+                        placeholder="https://your-embedding-resource.openai.azure.com"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Azure OpenAI endpoint for embeddings (from Azure Portal → Keys and Endpoint)
+                      </p>
+                    </div>
+
+                    {/* Embedding API Version */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Embedding API Version
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_EMBEDDING_API_VERSION || '2024-02-01'}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_EMBEDDING_API_VERSION: e.target.value
+                        })}
+                        placeholder="2024-02-01"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Azure API version for embeddings (default: 2024-02-01)
+                      </p>
+                    </div>
+
+                    {/* Embedding Deployment Name */}
+                    <div>
+                      <label className="text-white text-sm font-medium mb-1 block">
+                        Embedding Deployment Name <span className="text-red-400">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={ragSettings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || ''}
+                        onChange={(e) => setRagSettings({
+                          ...ragSettings,
+                          AZURE_OPENAI_EMBEDDING_DEPLOYMENT: e.target.value
+                        })}
+                        placeholder="text-embedding-3-small-deployment"
+                        className="bg-gray-800 border-teal-500/30 text-white"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Your embedding model deployment name (from Azure Portal → Deployments)
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {/* Info box */}
+                <div className="mt-4 p-3 bg-teal-500/10 border border-teal-500/20 rounded-lg">
+                  <p className="text-teal-300 text-sm">
+                    <strong>Note:</strong> Deployment names are custom names YOU create in Azure Portal. They are NOT standard model names.
+                  </p>
+                  <p className="text-teal-300 text-sm mt-2">
+                    <strong>Separated Configuration:</strong> Chat and embedding providers can use different Azure OpenAI resources and endpoints.
+                  </p>
                 </div>
               </div>
             </div>

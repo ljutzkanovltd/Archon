@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import openai
+from openai import AsyncAzureOpenAI
 
 from ..config.logfire_config import get_logger
 from .credential_service import credential_service
@@ -23,7 +24,7 @@ def _is_valid_provider(provider: str) -> bool:
     """Basic provider validation."""
     if not provider or not isinstance(provider, str):
         return False
-    return provider.lower() in {"openai", "ollama", "google", "openrouter", "anthropic", "grok"}
+    return provider.lower() in {"openai", "azure-openai", "ollama", "google", "openrouter", "anthropic", "grok"}
 
 
 def _sanitize_for_log(text: str) -> str:
@@ -427,6 +428,32 @@ async def get_llm_client(
                         "OpenAI API key not found and Ollama fallback failed"
                     ) from fallback_error
 
+        elif provider_name == "azure-openai":
+            if not api_key:
+                raise ValueError("Azure OpenAI API key not found")
+
+            # Get Azure-specific configuration based on whether this is for embeddings or chat
+            if use_embedding_provider:
+                # Use embedding-specific Azure configuration
+                azure_endpoint = await credential_service.get_azure_embedding_endpoint()
+                azure_api_version = await credential_service.get_azure_embedding_api_version()
+                config_type = "embedding"
+            else:
+                # Use chat-specific Azure configuration
+                azure_endpoint = await credential_service.get_azure_chat_endpoint()
+                azure_api_version = await credential_service.get_azure_chat_api_version()
+                config_type = "chat"
+
+            client = AsyncAzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=azure_endpoint,
+                api_version=azure_api_version,
+            )
+            logger.info(
+                f"Azure OpenAI {config_type} client created successfully with endpoint: {azure_endpoint[:50]}... "
+                f"and API version: {azure_api_version}"
+            )
+
         elif provider_name == "ollama":
             # For Ollama, get the optimal instance based on usage
             ollama_base_url = await _get_optimal_ollama_instance(
@@ -647,6 +674,18 @@ async def get_embedding_model(provider: str | None = None) -> str:
         # Return provider-specific defaults
         if provider_name == "openai":
             return "text-embedding-3-small"
+        elif provider_name == "azure-openai":
+            # Azure uses deployment names instead of model names
+            # Get configured embedding deployment from database
+            try:
+                deployment_name = await credential_service.get_azure_embedding_deployment()
+                return deployment_name
+            except ValueError as e:
+                logger.error(f"Azure embedding deployment not configured: {e}")
+                raise ValueError(
+                    "Azure OpenAI embedding deployment not configured. "
+                    "Set AZURE_OPENAI_EMBEDDING_DEPLOYMENT in Settings UI"
+                ) from e
         elif provider_name == "ollama":
             # Ollama default embedding model
             return "nomic-embed-text"
@@ -738,6 +777,9 @@ def is_valid_embedding_model_for_provider(model: str, provider: str) -> bool:
 
     if provider_lower == "openai":
         return is_openai_embedding_model(model)
+    elif provider_lower == "azure-openai":
+        # Azure uses custom deployment names, accept any non-empty string
+        return len(model.strip()) > 0
     elif provider_lower == "google":
         return is_google_embedding_model(model)
     elif provider_lower in ["openrouter", "anthropic", "grok"]:
@@ -784,6 +826,10 @@ def get_supported_embedding_models(provider: str) -> list[str]:
 
     if provider_lower == "openai":
         return openai_models
+    elif provider_lower == "azure-openai":
+        # Azure uses custom deployment names configured in Settings UI
+        # Return note that these are deployment-based, not fixed model names
+        return ["<configured-deployment>"]
     elif provider_lower == "google":
         return google_models
     elif provider_lower in ["openrouter", "anthropic", "grok"]:

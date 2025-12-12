@@ -504,6 +504,7 @@ class CredentialService:
         """Get API key for a specific provider."""
         key_mapping = {
             "openai": "OPENAI_API_KEY",
+            "azure-openai": "AZURE_OPENAI_API_KEY",
             "google": "GOOGLE_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
@@ -520,6 +521,9 @@ class CredentialService:
         """Get base URL for provider."""
         if provider == "ollama":
             return rag_settings.get("LLM_BASE_URL", "http://host.docker.internal:11434/v1")
+        elif provider == "azure-openai":
+            # Azure uses azure_endpoint parameter, not base_url
+            return None
         elif provider == "google":
             return "https://generativelanguage.googleapis.com/v1beta/openai/"
         elif provider == "openrouter":
@@ -543,6 +547,140 @@ class CredentialService:
         except Exception as e:
             logger.error(f"Error setting active provider {provider} for {service_type}: {e}")
             return False
+
+    async def get_azure_deployment_name(self, model_type: str = "chat") -> str:
+        """
+        Get Azure OpenAI deployment name for chat or embedding.
+
+        Args:
+            model_type: "chat" or "embedding"
+
+        Returns:
+            Deployment name from settings
+
+        Raises:
+            ValueError: If deployment not configured
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+
+        key = f"AZURE_OPENAI_{model_type.upper()}_DEPLOYMENT"
+        deployment = rag_settings.get(key)
+
+        if not deployment:
+            raise ValueError(
+                f"{key} not configured. Set this in Settings UI "
+                f"(Settings > RAG Strategy > Azure Deployments)"
+            )
+
+        return deployment
+
+    async def get_azure_chat_endpoint(self) -> str:
+        """
+        Get Azure OpenAI endpoint URL for chat/LLM.
+
+        Returns:
+            Azure OpenAI chat endpoint URL
+
+        Raises:
+            ValueError: If endpoint not configured
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+
+        endpoint = rag_settings.get("AZURE_OPENAI_CHAT_ENDPOINT")
+
+        if not endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_CHAT_ENDPOINT not configured. Set this in Settings UI "
+                "(Settings > RAG Strategy > Azure OpenAI Chat Configuration)"
+            )
+
+        return endpoint.strip()
+
+    async def get_azure_chat_api_version(self) -> str:
+        """
+        Get Azure OpenAI API version for chat/LLM.
+
+        Returns:
+            Azure OpenAI chat API version (defaults to '2024-02-01')
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+        return rag_settings.get("AZURE_OPENAI_CHAT_API_VERSION", "2024-02-01")
+
+    async def get_azure_chat_deployment(self) -> str:
+        """
+        Get Azure OpenAI deployment name for chat/LLM.
+
+        Returns:
+            Azure OpenAI chat deployment name
+
+        Raises:
+            ValueError: If deployment not configured
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+
+        deployment = rag_settings.get("AZURE_OPENAI_CHAT_DEPLOYMENT")
+
+        if not deployment:
+            raise ValueError(
+                "AZURE_OPENAI_CHAT_DEPLOYMENT not configured. Set this in Settings UI "
+                "(Settings > RAG Strategy > Azure OpenAI Chat Configuration)"
+            )
+
+        return deployment.strip()
+
+    async def get_azure_embedding_endpoint(self) -> str:
+        """
+        Get Azure OpenAI endpoint URL for embeddings.
+
+        Returns:
+            Azure OpenAI embedding endpoint URL
+
+        Raises:
+            ValueError: If endpoint not configured
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+
+        endpoint = rag_settings.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
+
+        if not endpoint:
+            raise ValueError(
+                "AZURE_OPENAI_EMBEDDING_ENDPOINT not configured. Set this in Settings UI "
+                "(Settings > RAG Strategy > Azure OpenAI Embedding Configuration)"
+            )
+
+        return endpoint.strip()
+
+    async def get_azure_embedding_api_version(self) -> str:
+        """
+        Get Azure OpenAI API version for embeddings.
+
+        Returns:
+            Azure OpenAI embedding API version (defaults to '2024-02-01')
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+        return rag_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION", "2024-02-01")
+
+    async def get_azure_embedding_deployment(self) -> str:
+        """
+        Get Azure OpenAI deployment name for embeddings.
+
+        Returns:
+            Azure OpenAI embedding deployment name
+
+        Raises:
+            ValueError: If deployment not configured
+        """
+        rag_settings = await self.get_credentials_by_category("rag_strategy")
+
+        deployment = rag_settings.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+
+        if not deployment:
+            raise ValueError(
+                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT not configured. Set this in Settings UI "
+                "(Settings > RAG Strategy > Azure OpenAI Embedding Configuration)"
+            )
+
+        return deployment.strip()
 
 
 # Global instance
