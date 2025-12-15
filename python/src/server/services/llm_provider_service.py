@@ -342,7 +342,7 @@ async def get_llm_client(
         if provider:
             # Explicit provider requested - get minimal config
             provider_name = provider
-            api_key = await credential_service._get_provider_api_key(provider)
+            api_key = await credential_service._get_provider_api_key(provider, use_embedding_provider)
 
             # Check cache for rag_settings
             cache_key = "rag_strategy_settings"
@@ -773,6 +773,8 @@ def is_valid_embedding_model_for_provider(model: str, provider: str) -> bool:
     if not model or not provider:
         return False
 
+    from ..config.providers import get_multi_model_providers
+
     provider_lower = provider.lower()
 
     if provider_lower == "openai":
@@ -782,7 +784,7 @@ def is_valid_embedding_model_for_provider(model: str, provider: str) -> bool:
         return len(model.strip()) > 0
     elif provider_lower == "google":
         return is_google_embedding_model(model)
-    elif provider_lower in ["openrouter", "anthropic", "grok"]:
+    elif provider_lower in get_multi_model_providers():
         # These providers support both OpenAI and Google models
         return is_openai_embedding_model(model) or is_google_embedding_model(model)
     elif provider_lower == "ollama":
@@ -824,6 +826,8 @@ def get_supported_embedding_models(provider: str) -> list[str]:
         "multimodalembedding@001"
     ]
 
+    from ..config.providers import get_multi_model_providers
+
     if provider_lower == "openai":
         return openai_models
     elif provider_lower == "azure-openai":
@@ -832,7 +836,7 @@ def get_supported_embedding_models(provider: str) -> list[str]:
         return ["<configured-deployment>"]
     elif provider_lower == "google":
         return google_models
-    elif provider_lower in ["openrouter", "anthropic", "grok"]:
+    elif provider_lower in get_multi_model_providers():
         # These providers support both OpenAI and Google models
         return openai_models + google_models
     elif provider_lower == "ollama":

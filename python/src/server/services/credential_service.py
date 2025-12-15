@@ -443,7 +443,7 @@ class CredentialService:
                 explicit_embedding_provider = rag_settings.get("EMBEDDING_PROVIDER")
 
                 # Validate that embedding provider actually supports embeddings
-                embedding_capable_providers = {"openai", "google", "openrouter", "ollama"}
+                embedding_capable_providers = {"openai", "google", "openrouter", "ollama", "azure-openai"}
 
                 if (explicit_embedding_provider and
                     explicit_embedding_provider != "" and
@@ -500,39 +500,50 @@ class CredentialService:
                 "embedding_model": "",
             }
 
-    async def _get_provider_api_key(self, provider: str) -> str | None:
-        """Get API key for a specific provider."""
-        key_mapping = {
-            "openai": "OPENAI_API_KEY",
-            "azure-openai": "AZURE_OPENAI_API_KEY",
-            "google": "GOOGLE_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "grok": "GROK_API_KEY",
-            "ollama": None,  # No API key needed
-        }
+    async def _get_provider_api_key(self, provider: str, use_embedding_provider: bool = False) -> str | None:
+        """Get API key for a specific provider.
 
-        key_name = key_mapping.get(provider)
-        if key_name:
-            return await self.get_credential(key_name)
-        return "ollama" if provider == "ollama" else None
+        Args:
+            provider: Provider name (e.g., 'openai', 'azure-openai')
+            use_embedding_provider: If True, use embedding-specific key; otherwise chat key
+
+        Returns:
+            API key string or None
+        """
+        from ..config.providers import requires_api_key, get_provider_key_names
+
+        # Check if provider needs an API key
+        if not requires_api_key(provider):
+            return "ollama"  # Return placeholder for providers without auth
+
+        # Get key names from centralized configuration
+        primary_key, fallback_key = get_provider_key_names(provider, use_embedding=use_embedding_provider)
+
+        # Try the specific key first (chat or embedding)
+        if primary_key:
+            api_key = await self.get_credential(primary_key)
+            if api_key:
+                return api_key
+
+        # Fallback to legacy single key for backward compatibility
+        if fallback_key:
+            return await self.get_credential(fallback_key)
+
+        return None
 
     def _get_provider_base_url(self, provider: str, rag_settings: dict) -> str | None:
         """Get base URL for provider."""
+        from ..config.providers import get_provider_base_url
+
         if provider == "ollama":
+            # Ollama uses custom instance URL from settings
             return rag_settings.get("LLM_BASE_URL", "http://host.docker.internal:11434/v1")
         elif provider == "azure-openai":
             # Azure uses azure_endpoint parameter, not base_url
             return None
-        elif provider == "google":
-            return "https://generativelanguage.googleapis.com/v1beta/openai/"
-        elif provider == "openrouter":
-            return "https://openrouter.ai/api/v1"
-        elif provider == "anthropic":
-            return "https://api.anthropic.com/v1"
-        elif provider == "grok":
-            return "https://api.x.ai/v1"
-        return None  # Use default for OpenAI
+
+        # Get base URL from centralized configuration
+        return get_provider_base_url(provider)
 
     async def set_active_provider(self, provider: str, service_type: str = "llm") -> bool:
         """Set the active provider for a service type."""

@@ -61,21 +61,33 @@ active_crawl_tasks: dict[str, asyncio.Task] = {}
 
 async def _validate_provider_api_key(provider: str = None) -> None:
     """Validate LLM provider API key before starting operations."""
+    from ..config.providers import is_valid_provider, supports_embeddings
+
     logger.info("🔑 Starting API key validation...")
-    
+
     try:
         # Basic provider validation
         if not provider:
             provider = "openai"
         else:
-            # Simple provider validation
-            allowed_providers = {"openai", "ollama", "google", "openrouter", "anthropic", "grok"}
-            if provider not in allowed_providers:
+            # Validate provider using centralized configuration
+            if not is_valid_provider(provider):
                 raise HTTPException(
                     status_code=400,
                     detail={
                         "error": "Invalid provider name",
                         "message": f"Provider '{provider}' not supported",
+                        "error_type": "validation_error"
+                    }
+                )
+
+            # Verify provider supports embeddings
+            if not supports_embeddings(provider):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Provider does not support embeddings",
+                        "message": f"Provider '{provider}' cannot be used for embedding generation",
                         "error_type": "validation_error"
                     }
                 )

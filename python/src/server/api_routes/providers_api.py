@@ -106,13 +106,15 @@ async def get_provider_status(
     )
 ):
     """Test provider connectivity using server-side API key (secure)"""
+    from ..config.providers import is_valid_provider, get_all_providers
+
     try:
-        # Basic provider validation
-        allowed_providers = {"openai", "ollama", "google", "openrouter", "anthropic", "grok"}
-        if provider not in allowed_providers:
+        # Basic provider validation using centralized configuration
+        if not is_valid_provider(provider):
+            allowed = get_all_providers()
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid provider '{provider}'. Allowed providers: {sorted(allowed_providers)}"
+                detail=f"Invalid provider '{provider}'. Allowed providers: {sorted(allowed)}"
             )
 
         # Basic sanitization for logging
@@ -152,3 +154,394 @@ async def get_provider_status(
         safe_error = str(e)[:100]  # Limit length
         logfire.error(f"Error testing {provider[:20]} connectivity: {safe_error}")
         raise HTTPException(status_code=500, detail={"error": "Internal server error during connectivity test"})
+
+
+async def test_azure_openai_credentials(
+    api_key: str,
+    config_type: str,
+    cred_service
+) -> dict:
+    """
+    Test Azure OpenAI credentials for chat or embedding configuration.
+
+    Args:
+        api_key: Azure OpenAI API key
+        config_type: 'chat' or 'embedding'
+        cred_service: Credential service instance
+
+    Returns:
+        dict with ok, reason, message, details
+    """
+    try:
+        # Get Azure-specific configuration based on config type
+        if config_type == "chat":
+            endpoint = await cred_service.get_azure_chat_endpoint()
+            api_version = await cred_service.get_azure_chat_api_version()
+            deployment = await cred_service.get_azure_chat_deployment()
+        else:  # embedding
+            endpoint = await cred_service.get_azure_embedding_endpoint()
+            api_version = await cred_service.get_azure_embedding_api_version()
+            deployment = await cred_service.get_azure_embedding_deployment()
+
+        # Create Azure OpenAI client
+        from openai import AsyncAzureOpenAI
+
+        client = AsyncAzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version=api_version,
+            timeout=10.0
+        )
+
+        # Test with minimal API call
+        if config_type == "chat":
+            await client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=1
+            )
+        else:
+            await client.embeddings.create(
+                model=deployment,
+                input="test"
+            )
+
+        await client.close()
+
+        return {
+            "ok": True,
+            "reason": "connected",
+            "message": f"✓ Successfully connected to Azure OpenAI {config_type} deployment '{deployment}'",
+            "details": {"deployment": deployment, "endpoint": endpoint}
+        }
+
+    except ValueError as e:
+        # Configuration missing or invalid
+        return {
+            "ok": False,
+            "reason": "config_missing",
+            "message": str(e)
+        }
+    except Exception as e:
+        # API connection failed - provide helpful error messages
+        error_msg = str(e)
+
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            message = "Invalid API key. Please check your Azure OpenAI API key."
+        elif "404" in error_msg or "NotFoundError" in error_msg:
+            message = f"Deployment '{deployment}' not found. Verify deployment name in Azure Portal."
+        elif "timeout" in error_msg.lower():
+            message = "Connection timeout. Check endpoint URL and network connectivity."
+        else:
+            message = f"Connection failed: {error_msg}"
+
+        logfire.error(f"Azure OpenAI {config_type} test failed: {e}")
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": message
+        }
+
+
+async def test_openai_detailed(api_key: str) -> dict:
+    """Test OpenAI API key with detailed response"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+
+            if response.status_code == 200:
+                models = response.json().get("data", [])
+                return {
+                    "ok": True,
+                    "reason": "connected",
+                    "message": f"✓ Successfully connected to OpenAI ({len(models)} models available)",
+                    "details": {"model_count": len(models)}
+                }
+            elif response.status_code == 401:
+                return {
+                    "ok": False,
+                    "reason": "invalid_key",
+                    "message": "Invalid API key. Please check your OpenAI API key."
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": "connection_failed",
+                    "message": f"HTTP {response.status_code}: {response.text[:100]}"
+                }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": f"Connection failed: {str(e)}"
+        }
+
+
+async def test_google_detailed(api_key: str) -> dict:
+    """Test Google AI API key with detailed response"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://generativelanguage.googleapis.com/v1/models",
+                headers={"x-goog-api-key": api_key}
+            )
+
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                return {
+                    "ok": True,
+                    "reason": "connected",
+                    "message": f"✓ Successfully connected to Google AI ({len(models)} models available)",
+                    "details": {"model_count": len(models)}
+                }
+            elif response.status_code == 401 or response.status_code == 403:
+                return {
+                    "ok": False,
+                    "reason": "invalid_key",
+                    "message": "Invalid API key. Please check your Google AI API key."
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": "connection_failed",
+                    "message": f"HTTP {response.status_code}"
+                }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": f"Connection failed: {str(e)}"
+        }
+
+
+async def test_anthropic_detailed(api_key: str) -> dict:
+    """Test Anthropic API key with detailed response"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://api.anthropic.com/v1/models",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01"
+                }
+            )
+
+            if response.status_code == 200:
+                return {
+                    "ok": True,
+                    "reason": "connected",
+                    "message": "✓ Successfully connected to Anthropic",
+                    "details": {}
+                }
+            elif response.status_code == 401:
+                return {
+                    "ok": False,
+                    "reason": "invalid_key",
+                    "message": "Invalid API key. Please check your Anthropic API key."
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": "connection_failed",
+                    "message": f"HTTP {response.status_code}"
+                }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": f"Connection failed: {str(e)}"
+        }
+
+
+async def test_grok_detailed(api_key: str) -> dict:
+    """Test Grok API key with detailed response"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://api.x.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+
+            if response.status_code == 200:
+                models = response.json().get("data", [])
+                return {
+                    "ok": True,
+                    "reason": "connected",
+                    "message": f"✓ Successfully connected to Grok ({len(models)} models available)",
+                    "details": {"model_count": len(models)}
+                }
+            elif response.status_code == 401:
+                return {
+                    "ok": False,
+                    "reason": "invalid_key",
+                    "message": "Invalid API key. Please check your Grok API key."
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": "connection_failed",
+                    "message": f"HTTP {response.status_code}"
+                }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": f"Connection failed: {str(e)}"
+        }
+
+
+async def test_openrouter_detailed(api_key: str) -> dict:
+    """Test OpenRouter API key with detailed response"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+
+            if response.status_code == 200:
+                models = response.json().get("data", [])
+                return {
+                    "ok": True,
+                    "reason": "connected",
+                    "message": f"✓ Successfully connected to OpenRouter ({len(models)} models available)",
+                    "details": {"model_count": len(models)}
+                }
+            elif response.status_code == 401:
+                return {
+                    "ok": False,
+                    "reason": "invalid_key",
+                    "message": "Invalid API key. Please check your OpenRouter API key."
+                }
+            else:
+                return {
+                    "ok": False,
+                    "reason": "connection_failed",
+                    "message": f"HTTP {response.status_code}"
+                }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": "connection_failed",
+            "message": f"Connection failed: {str(e)}"
+        }
+
+
+@router.post("/test-credentials")
+async def test_provider_credentials(request: dict):
+    """
+    Test provider credentials (API key + configuration).
+    Supports testing both saved and unsaved API keys.
+
+    Request body:
+        {
+            "provider": "openai" | "azure-openai" | "google" | "anthropic" | "grok" | "openrouter",
+            "config_type": "chat" | "embedding" (for azure-openai only),
+            "api_key": "sk-..." (optional, if not saved yet)
+        }
+
+    Returns:
+        {
+            "ok": bool,
+            "reason": str,
+            "message": str,
+            "details": dict (optional)
+        }
+    """
+    from ..config.providers import is_valid_provider, get_all_providers
+
+    provider = request.get("provider", "").lower()
+    config_type = request.get("config_type", "chat").lower()
+    test_api_key = request.get("api_key", "").strip()
+
+    try:
+        # Validate provider using centralized configuration
+        if not is_valid_provider(provider):
+            allowed = get_all_providers()
+            return {
+                "ok": False,
+                "reason": "invalid_provider",
+                "message": f"Invalid provider '{provider}'. Allowed: {', '.join(sorted(allowed))}"
+            }
+
+        logfire.info(f"Testing {provider} credentials (config_type: {config_type})")
+
+        # Get API key (use test key if provided, else fetch from database)
+        if test_api_key:
+            api_key = test_api_key
+        else:
+            # Fetch saved API key from database
+            # All providers now support separate chat and embedding keys
+            provider_upper = provider.upper().replace('-', '_')
+
+            if config_type == "chat":
+                # Try chat-specific key first
+                key_name = f"{provider_upper}_CHAT_API_KEY"
+                api_key = await credential_service.get_credential(key_name, decrypt=True)
+
+                # Fallback to legacy single key for backward compatibility
+                if not api_key:
+                    key_name = f"{provider_upper}_API_KEY"
+                    api_key = await credential_service.get_credential(key_name, decrypt=True)
+
+            elif config_type == "embedding":
+                # Try embedding-specific key first
+                key_name = f"{provider_upper}_EMBEDDING_API_KEY"
+                api_key = await credential_service.get_credential(key_name, decrypt=True)
+
+                # Fallback to legacy single key for backward compatibility
+                if not api_key:
+                    key_name = f"{provider_upper}_API_KEY"
+                    api_key = await credential_service.get_credential(key_name, decrypt=True)
+            else:
+                # No config_type specified, use legacy single key
+                key_name = f"{provider_upper}_API_KEY"
+                api_key = await credential_service.get_credential(key_name, decrypt=True)
+
+            if not api_key or not isinstance(api_key, str) or not api_key.strip():
+                return {
+                    "ok": False,
+                    "reason": "no_api_key",
+                    "message": f"{provider} API key not configured. Please enter it in the settings."
+                }
+
+        # Test based on provider
+        if provider == "azure-openai":
+            result = await test_azure_openai_credentials(api_key, config_type, credential_service)
+        elif provider == "openai":
+            result = await test_openai_detailed(api_key)
+        elif provider == "google":
+            result = await test_google_detailed(api_key)
+        elif provider == "anthropic":
+            result = await test_anthropic_detailed(api_key)
+        elif provider == "grok":
+            result = await test_grok_detailed(api_key)
+        elif provider == "openrouter":
+            result = await test_openrouter_detailed(api_key)
+        else:
+            result = {
+                "ok": False,
+                "reason": "unsupported_provider",
+                "message": f"Testing not supported for {provider}"
+            }
+
+        logfire.info(f"{provider} credential test result: {result['ok']}")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Error testing {provider} credentials: {e}")
+        return {
+            "ok": False,
+            "reason": "test_failed",
+            "message": f"Test failed: {str(e)[:100]}"
+        }
