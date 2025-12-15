@@ -20,6 +20,7 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - DATABASE_URI=${DATABASE_URI}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SERVICE_DISCOVERY_MODE=docker_compose
@@ -33,6 +34,8 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # SECURITY: Docker socket mounting removed (CVE-2025-9074 - CVSS 9.3)
       # MCP status now monitored via HTTP health checks (secure, portable)
@@ -47,8 +50,6 @@ services:
       # REQUIRES: inotify watch limit of 524288 (see TROUBLESHOOTING_STARTUP_FIXES.md)
       # Run: sudo sysctl -w fs.inotify.max_user_watches=524288
       - /home/ljutzkanov/Documents/Projects:/app/projects:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     command:
       [
         "python",
@@ -88,6 +89,7 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - DATABASE_URI=${DATABASE_URI}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SERVICE_DISCOVERY_MODE=docker_compose
       - TRANSPORT=sse
@@ -196,7 +198,8 @@ services:
       - sporterp-ai-unified
     volumes:
       - ./python/src/agent_work_orders:/app/src/agent_work_orders # Hot reload for agent work orders
-      - /tmp/agent-work-orders:/tmp/agent-work-orders # Temp files
+      - ./data/agent-work-orders/repos:/repos # Persistent git repositories
+      - ./data/agent-work-orders/temp:/tmp/agent-work-orders # Persistent work files
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
