@@ -572,6 +572,19 @@ class CredentialService:
         Raises:
             ValueError: If deployment not configured
         """
+        # Force cache refresh for Azure deployment lookups to ensure latest config
+        self._rag_settings_cache = None
+        self._rag_cache_timestamp = None
+        logger.debug(f"Force-cleared RAG settings cache for Azure {model_type} deployment lookup")
+
+        # Also invalidate LLM provider service cache to ensure fresh deployment name
+        try:
+            from .llm_provider_service import invalidate_azure_deployment_cache
+            invalidate_azure_deployment_cache()
+            logger.debug(f"Also invalidated LLM provider service cache for Azure {model_type}")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate LLM provider service cache: {e}")
+
         rag_settings = await self.get_credentials_by_category("rag_strategy")
 
         key = f"AZURE_OPENAI_{model_type.upper()}_DEPLOYMENT"
@@ -612,10 +625,14 @@ class CredentialService:
         Get Azure OpenAI API version for chat/LLM.
 
         Returns:
-            Azure OpenAI chat API version (defaults to '2024-02-01')
+            Azure OpenAI chat API version (defaults to '2024-10-21' - latest stable)
+
+        Note: Updated default from 2024-02-01 to 2024-10-21 (Dec 2024) to support
+        newer models and deployments. Older API versions may return 404 errors
+        for preview models or recent deployments.
         """
         rag_settings = await self.get_credentials_by_category("rag_strategy")
-        return rag_settings.get("AZURE_OPENAI_CHAT_API_VERSION", "2024-02-01")
+        return rag_settings.get("AZURE_OPENAI_CHAT_API_VERSION", "2024-10-21")
 
     async def get_azure_chat_deployment(self) -> str:
         """
@@ -627,6 +644,19 @@ class CredentialService:
         Raises:
             ValueError: If deployment not configured
         """
+        # Force cache refresh for Azure deployment lookups to ensure latest config
+        self._rag_settings_cache = None
+        self._rag_cache_timestamp = None
+        logger.debug("Force-cleared RAG settings cache for Azure chat deployment lookup")
+
+        # Also invalidate LLM provider service cache to ensure fresh deployment name
+        try:
+            from .llm_provider_service import invalidate_azure_deployment_cache
+            invalidate_azure_deployment_cache()
+            logger.debug("Also invalidated LLM provider service cache for Azure chat")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate LLM provider service cache: {e}")
+
         rag_settings = await self.get_credentials_by_category("rag_strategy")
 
         deployment = rag_settings.get("AZURE_OPENAI_CHAT_DEPLOYMENT")
@@ -666,10 +696,14 @@ class CredentialService:
         Get Azure OpenAI API version for embeddings.
 
         Returns:
-            Azure OpenAI embedding API version (defaults to '2024-02-01')
+            Azure OpenAI embedding API version (defaults to '2024-10-21' - latest stable)
+
+        Note: Updated default from 2024-02-01 to 2024-10-21 (Dec 2024) to support
+        newer models and deployments. Older API versions may return 404 errors
+        for preview models or recent deployments.
         """
         rag_settings = await self.get_credentials_by_category("rag_strategy")
-        return rag_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION", "2024-02-01")
+        return rag_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION", "2024-10-21")
 
     async def get_azure_embedding_deployment(self) -> str:
         """
@@ -681,6 +715,19 @@ class CredentialService:
         Raises:
             ValueError: If deployment not configured
         """
+        # Force cache refresh for Azure deployment lookups to ensure latest config
+        self._rag_settings_cache = None
+        self._rag_cache_timestamp = None
+        logger.debug("Force-cleared RAG settings cache for Azure embedding deployment lookup")
+
+        # Also invalidate LLM provider service cache to ensure fresh deployment name
+        try:
+            from .llm_provider_service import invalidate_azure_deployment_cache
+            invalidate_azure_deployment_cache()
+            logger.debug("Also invalidated LLM provider service cache for Azure embedding")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate LLM provider service cache: {e}")
+
         rag_settings = await self.get_credentials_by_category("rag_strategy")
 
         deployment = rag_settings.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")

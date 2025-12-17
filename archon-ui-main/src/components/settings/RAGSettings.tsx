@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Settings, Check, Save, Loader, ChevronDown, ChevronUp, Zap, Database, Trash2, Cog } from 'lucide-react';
+import { Settings, Check, Save, Loader, ChevronDown, ChevronUp, Zap, Database, Trash2, Cog, Eye, EyeOff, TestTube2, CheckCircle, XCircle } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -116,7 +116,9 @@ const DEFAULT_OLLAMA_URL = 'http://host.docker.internal:11434/v1';
 
 const PROVIDER_CREDENTIAL_KEYS = [
   'OPENAI_API_KEY',
-  'AZURE_OPENAI_API_KEY',
+  'AZURE_OPENAI_API_KEY',  // Legacy key (fallback)
+  'AZURE_OPENAI_CHAT_API_KEY',  // New separate chat key
+  'AZURE_OPENAI_EMBEDDING_API_KEY',  // New separate embedding key
   'GOOGLE_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
@@ -127,7 +129,9 @@ type ProviderCredentialKey = typeof PROVIDER_CREDENTIAL_KEYS[number];
 
 const CREDENTIAL_PROVIDER_MAP: Record<ProviderCredentialKey, ProviderKey> = {
   OPENAI_API_KEY: 'openai',
-  AZURE_OPENAI_API_KEY: 'azure-openai',
+  AZURE_OPENAI_API_KEY: 'azure-openai',  // Legacy key (fallback)
+  AZURE_OPENAI_CHAT_API_KEY: 'azure-openai',  // New separate chat key
+  AZURE_OPENAI_EMBEDDING_API_KEY: 'azure-openai',  // New separate embedding key
   GOOGLE_API_KEY: 'google',
   ANTHROPIC_API_KEY: 'anthropic',
   OPENROUTER_API_KEY: 'openrouter',
@@ -187,6 +191,37 @@ interface RAGSettingsProps {
   setRagSettings: (settings: any) => void;
 }
 
+/**
+ * Normalize Azure OpenAI endpoint URL
+ * Removes deployment paths that users often copy from Azure Portal
+ *
+ * Examples:
+ *   "https://my-resource.openai.azure.com/openai/deployments/gpt-4"
+ *     → "https://my-resource.openai.azure.com"
+ *   "https://my-resource.openai.azure.com/"
+ *     → "https://my-resource.openai.azure.com"
+ */
+const normalizeAzureEndpoint = (endpoint: string): string => {
+  if (!endpoint) return '';
+
+  let normalized = endpoint.trim();
+
+  try {
+    // Use URL parsing to extract base URL (protocol + host only)
+    // Azure OpenAI base URL format: https://{resource}.{region}.cognitiveservices.azure.com
+    // or: https://{resource}.openai.azure.com
+    const url = new URL(normalized);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // Fallback to regex if URL parsing fails
+    // Remove everything after the domain (deployment paths, query params, etc.)
+    normalized = normalized.replace(/\/openai.*$/i, '');
+    normalized = normalized.replace(/\?.*$/, '');
+    normalized = normalized.replace(/\/+$/, '');
+    return normalized;
+  }
+};
+
 export const RAGSettings = ({
   ragSettings,
   setRagSettings
@@ -219,15 +254,64 @@ export const RAGSettings = ({
   );
   const [activeSelection, setActiveSelection] = useState<'chat' | 'embedding'>('chat');
 
+  // API Key state for inline provider credential management
+  // All providers now support separate chat and embedding keys
+  const [providerApiKeys, setProviderApiKeys] = useState<{
+    [key: string]: string;
+  }>({
+    // OpenAI
+    'openai-chat': '',
+    'openai-embedding': '',
+    // Azure OpenAI
+    'azure-openai-chat': '',
+    'azure-openai-embedding': '',
+    // Google
+    'google-chat': '',
+    'google-embedding': '',
+    // Anthropic
+    'anthropic-chat': '',
+    'anthropic-embedding': '',
+    // Grok
+    'grok-chat': '',
+    'grok-embedding': '',
+    // OpenRouter
+    'openrouter-chat': '',
+    'openrouter-embedding': ''
+  });
+
+  // Visibility toggles for API key inputs
+  const [showApiKey, setShowApiKey] = useState<{
+    [key: string]: boolean;
+  }>({});
+
+  // Testing state for credential validation
+  const [testingProvider, setTestingProvider] = useState<{
+    provider: string;
+    configType?: string;
+  } | null>(null);
+
+  const [testResults, setTestResults] = useState<{
+    [key: string]: {
+      ok: boolean;
+      message: string;
+    };
+  }>({});
+
+  // API key change tracking (for save button indication)
+  const [apiKeyChanges, setApiKeyChanges] = useState<Set<string>>(new Set());
+
   // Instance configurations
   const [llmInstanceConfig, setLLMInstanceConfig] = useState({
     name: '',
     url: ragSettings.LLM_BASE_URL || 'http://host.docker.internal:11434/v1'
   });
   const [embeddingInstanceConfig, setEmbeddingInstanceConfig] = useState({
-    name: '', 
+    name: '',
     url: ragSettings.OLLAMA_EMBEDDING_URL || 'http://host.docker.internal:11434/v1'
   });
+
+  // Toast notifications hook (needed early for callbacks that use showToast)
+  const { showToast } = useToast();
 
   // Update instance configs when ragSettings change (after loading from database)
   // Use refs to prevent infinite loops
@@ -335,9 +419,399 @@ export const RAGSettings = ({
     }
   }, []);
 
+  // Load API keys for inline display
+  const loadProviderApiKeys = useCallback(async () => {
+    try {
+      console.log('📥 [loadProviderApiKeys] Starting load...');
+
+      // Load both chat and embedding keys for all providers
+      const keys = [
+        // OpenAI
+        'OPENAI_CHAT_API_KEY',
+        'OPENAI_EMBEDDING_API_KEY',
+        // Azure OpenAI
+        'AZURE_OPENAI_CHAT_API_KEY',
+        'AZURE_OPENAI_EMBEDDING_API_KEY',
+        // Google
+        'GOOGLE_CHAT_API_KEY',
+        'GOOGLE_EMBEDDING_API_KEY',
+        // Anthropic
+        'ANTHROPIC_CHAT_API_KEY',
+        'ANTHROPIC_EMBEDDING_API_KEY',
+        // Grok
+        'GROK_CHAT_API_KEY',
+        'GROK_EMBEDDING_API_KEY',
+        // OpenRouter
+        'OPENROUTER_CHAT_API_KEY',
+        'OPENROUTER_EMBEDDING_API_KEY',
+        // Legacy keys for backward compatibility checking
+        'OPENAI_API_KEY',
+        'GOOGLE_API_KEY',
+        'ANTHROPIC_API_KEY',
+        'GROK_API_KEY',
+        'OPENROUTER_API_KEY'
+      ];
+
+      console.log('📥 [loadProviderApiKeys] Fetching status for keys:', keys);
+      const statusResults = await credentialsService.checkCredentialStatus(keys);
+      console.log('📥 [loadProviderApiKeys] Status results:', statusResults);
+
+      const loadedKeys: { [key: string]: string } = {};
+
+      // Map database keys to frontend provider keys
+      const keyMapping: { [dbKey: string]: string } = {
+        // OpenAI
+        'OPENAI_CHAT_API_KEY': 'openai-chat',
+        'OPENAI_EMBEDDING_API_KEY': 'openai-embedding',
+        // Azure OpenAI
+        'AZURE_OPENAI_CHAT_API_KEY': 'azure-openai-chat',
+        'AZURE_OPENAI_EMBEDDING_API_KEY': 'azure-openai-embedding',
+        // Google
+        'GOOGLE_CHAT_API_KEY': 'google-chat',
+        'GOOGLE_EMBEDDING_API_KEY': 'google-embedding',
+        // Anthropic
+        'ANTHROPIC_CHAT_API_KEY': 'anthropic-chat',
+        'ANTHROPIC_EMBEDDING_API_KEY': 'anthropic-embedding',
+        // Grok
+        'GROK_CHAT_API_KEY': 'grok-chat',
+        'GROK_EMBEDDING_API_KEY': 'grok-embedding',
+        // OpenRouter
+        'OPENROUTER_CHAT_API_KEY': 'openrouter-chat',
+        'OPENROUTER_EMBEDDING_API_KEY': 'openrouter-embedding'
+      };
+
+      // Legacy key fallback mapping (if new keys don't exist, use legacy)
+      const legacyFallback: { [providerKey: string]: string } = {
+        'openai-chat': 'OPENAI_API_KEY',
+        'openai-embedding': 'OPENAI_API_KEY',
+        'google-chat': 'GOOGLE_API_KEY',
+        'google-embedding': 'GOOGLE_API_KEY',
+        'anthropic-chat': 'ANTHROPIC_API_KEY',
+        'anthropic-embedding': 'ANTHROPIC_API_KEY',
+        'grok-chat': 'GROK_API_KEY',
+        'grok-embedding': 'GROK_API_KEY',
+        'openrouter-chat': 'OPENROUTER_API_KEY',
+        'openrouter-embedding': 'OPENROUTER_API_KEY'
+      };
+
+      // Load specific keys first
+      for (const [dbKey, providerKey] of Object.entries(keyMapping)) {
+        const status = statusResults[dbKey];
+        if (status?.has_value) {
+          loadedKeys[providerKey] = '[CONFIGURED]';
+          console.log(`📥 [loadProviderApiKeys] ${dbKey} -> ${providerKey}: [CONFIGURED]`);
+        } else {
+          loadedKeys[providerKey] = '';
+        }
+      }
+
+      // Apply legacy fallback for keys that aren't set
+      for (const [providerKey, legacyKey] of Object.entries(legacyFallback)) {
+        if (!loadedKeys[providerKey] || loadedKeys[providerKey] === '') {
+          const legacyStatus = statusResults[legacyKey];
+          if (legacyStatus?.has_value) {
+            loadedKeys[providerKey] = '[CONFIGURED]';
+            console.log(`📥 [loadProviderApiKeys] ${legacyKey} (fallback) -> ${providerKey}: [CONFIGURED]`);
+          }
+        }
+      }
+
+      console.log('📥 [loadProviderApiKeys] Setting providerApiKeys to:', loadedKeys);
+      setProviderApiKeys(loadedKeys);
+      console.log('📥 [loadProviderApiKeys] Complete!');
+    } catch (error) {
+      console.error('❌ [loadProviderApiKeys] Failed to load provider API keys:', error);
+    }
+  }, []);
+
+  // Handle API key input changes
+  const handleApiKeyChange = useCallback((provider: string, value: string) => {
+    console.log(`✏️ [handleApiKeyChange] ${provider} changed`, {
+      valueLength: value?.length || 0,
+      isEmpty: !value,
+      isConfigured: value === '[CONFIGURED]'
+    });
+
+    setProviderApiKeys(prev => ({ ...prev, [provider]: value }));
+
+    // Track changes for save button indication
+    setApiKeyChanges(prev => {
+      const updated = new Set(prev);
+      if (value && value !== '[CONFIGURED]') {
+        console.log(`✏️ [handleApiKeyChange] Adding ${provider} to changes`);
+        updated.add(provider);
+      } else {
+        console.log(`✏️ [handleApiKeyChange] Removing ${provider} from changes`);
+        updated.delete(provider);
+      }
+      console.log(`✏️ [handleApiKeyChange] apiKeyChanges now:`, Array.from(updated));
+      return updated;
+    });
+
+    // Clear test result when key changes
+    setTestResults(prev => {
+      const updated = { ...prev };
+      delete updated[provider];
+      return updated;
+    });
+  }, []);
+
+  // Test provider credentials
+  const testProviderCredentials = useCallback(async (provider: string, configType?: string) => {
+    try {
+      setTestingProvider({ provider, configType });
+      setTestResults(prev => {
+        const updated = { ...prev };
+        delete updated[provider];
+        return updated;
+      });
+
+      const apiKey = providerApiKeys[provider];
+      const testKey = apiKey === '[CONFIGURED]' ? undefined : apiKey;
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/providers/test-credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          config_type: configType || 'chat',
+          api_key: testKey
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      setTestResults(prev => ({ ...prev, [provider]: result }));
+
+      if (result.ok) {
+        showToast(result.message, 'success', 4000);
+      } else {
+        showToast(`Test failed: ${result.message}`, 'error', 6000);
+      }
+    } catch (error) {
+      const message = `Failed to test ${provider} credentials: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      setTestResults(prev => ({ ...prev, [provider]: { ok: false, message } }));
+      showToast(message, 'error', 6000);
+      console.error(`${provider} credential test error:`, error);
+    } finally {
+      setTestingProvider(null);
+    }
+  }, [providerApiKeys, showToast]);
+
+  // Save API keys to database
+  const saveApiKeys = useCallback(async () => {
+    console.log('🔑 [saveApiKeys] Starting save...', {
+      apiKeyChanges: Array.from(apiKeyChanges),
+      providerApiKeys
+    });
+
+    for (const provider of Array.from(apiKeyChanges)) {
+      const apiKey = providerApiKeys[provider];
+      if (!apiKey || apiKey === '[CONFIGURED]') {
+        console.log(`🔑 [saveApiKeys] Skipping ${provider} (empty or already configured)`);
+        continue;
+      }
+
+      // Convert provider key to database key name
+      // azure-openai-chat -> AZURE_OPENAI_CHAT_API_KEY
+      // azure-openai-embedding -> AZURE_OPENAI_EMBEDDING_API_KEY
+      const keyName = `${provider.toUpperCase().replace(/-/g, '_')}_API_KEY`;
+      console.log(`🔑 [saveApiKeys] Saving ${keyName}...`, {
+        provider,
+        keyLength: apiKey.length,
+        keyName
+      });
+
+      await credentialsService.updateCredential({
+        key: keyName,
+        value: apiKey,
+        is_encrypted: true,
+        category: 'api_keys'
+      });
+
+      console.log(`🔑 [saveApiKeys] Saved ${keyName} successfully`);
+    }
+
+    console.log('🔑 [saveApiKeys] Clearing apiKeyChanges and reloading...');
+    setApiKeyChanges(new Set());
+
+    console.log('🔑 [saveApiKeys] Calling loadProviderApiKeys()...');
+    await loadProviderApiKeys();
+
+    console.log('🔑 [saveApiKeys] Calling reloadApiCredentials()...');
+    await reloadApiCredentials();
+
+    console.log('🔑 [saveApiKeys] Complete!');
+  }, [apiKeyChanges, providerApiKeys, loadProviderApiKeys, reloadApiCredentials]);
+
+  // Reusable API Key Input Component
+  interface ApiKeyInputProps {
+    provider: string;
+    providerName: string;
+    value: string;
+    onChange: (value: string) => void;
+    onTest: () => void;
+    testing: boolean;
+    testResult?: { ok: boolean; message: string };
+    getKeyUrl?: string;
+    showConfigType?: 'chat' | 'embedding';
+  }
+
+  const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
+    provider,
+    providerName,
+    value,
+    onChange,
+    onTest,
+    testing,
+    testResult,
+    getKeyUrl,
+    showConfigType
+  }) => {
+    const [show, setShow] = useState(false);
+    const isConfigured = value === '[CONFIGURED]';
+    const isEmpty = !value || value === '';
+
+    return (
+      <div className="space-y-3">
+        {/* API Key Input */}
+        <div>
+          <label className="text-white text-sm font-medium mb-2 block flex items-center gap-2">
+            {providerName} API Key
+            {isConfigured && <Check className="w-4 h-4 text-green-400" />}
+            {showConfigType && (
+              <span className="text-xs text-gray-400">({showConfigType})</span>
+            )}
+          </label>
+
+          <div className="relative">
+            <Input
+              type={show ? 'text' : 'password'}
+              value={isConfigured ? '••••••••••••••••' : value}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+              placeholder={isConfigured ? 'API key configured' : 'Enter API key...'}
+              disabled={isConfigured}
+              className="bg-gray-800 border-gray-600 text-white pr-10"
+            />
+
+            {!isConfigured && (
+              <button
+                type="button"
+                onClick={() => setShow(!show)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-gray-700"
+              >
+                {show ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+              </button>
+            )}
+          </div>
+
+          {getKeyUrl && (
+            <p className="text-xs text-gray-400 mt-1">
+              Get your API key from{' '}
+              <a
+                href={getKeyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-teal-400 hover:underline"
+              >
+                {providerName} Platform
+              </a>
+            </p>
+          )}
+
+          {isConfigured && (
+            <p className="text-xs text-gray-400 mt-1">
+              API key is configured.{' '}
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                className="text-teal-400 hover:underline"
+              >
+                Change key
+              </button>
+            </p>
+          )}
+        </div>
+
+        {/* Test Button */}
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            accentColor="cyan"
+            size="sm"
+            onClick={onTest}
+            disabled={testing || isEmpty || (!isConfigured && !value)}
+            className="w-fit"
+          >
+            {testing ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin mr-2" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <TestTube2 className="w-4 h-4 mr-2" />
+                Test {showConfigType ? `${showConfigType} ` : ''}Credentials
+              </>
+            )}
+          </Button>
+
+          {/* Test Result */}
+          {testResult && (
+            <div className="space-y-3">
+              <div className={`text-sm font-medium flex items-center gap-2 ${
+                testResult.ok ? 'text-green-400' : 'text-red-400'
+              }`}>
+                {testResult.ok ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {testResult.message}
+              </div>
+
+              {/* Troubleshooting Tips (only for Azure OpenAI failures) */}
+              {!testResult.ok && provider === 'azure-openai' && (
+                <div className="mt-3 p-3 bg-yellow-500/10 border-l-4 border-yellow-400 text-sm text-yellow-100 rounded">
+                  <div className="font-semibold mb-2 flex items-center gap-2">
+                    💡 Troubleshooting Tips
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    <li>
+                      <strong>API Key:</strong> Verify that you've entered your Azure OpenAI API key
+                      in the "{showConfigType ? showConfigType.charAt(0).toUpperCase() + showConfigType.slice(1) : ''} API Key" field
+                      (or "Shared API Key" if using the same key for both). Find it in Azure Portal → Azure OpenAI → Keys and Endpoint.
+                    </li>
+                    <li>
+                      <strong>Deployment Name:</strong> Check that your deployment exists in
+                      Azure Portal → Azure OpenAI → Deployments. Deployment names are case-sensitive.
+                    </li>
+                    <li>
+                      <strong>Endpoint URL:</strong> Should be base URL only
+                      (e.g., https://YOUR_RESOURCE.openai.azure.com), not the full API path.
+                    </li>
+                    <li>
+                      <strong>API Version:</strong> Verify the API version is supported by your deployment.
+                    </li>
+                  </ul>
+                  <div className="mt-2 text-xs text-yellow-200">
+                    <strong>Still having issues?</strong> Check the server logs:
+                    <code className="ml-1 px-2 py-1 bg-black/30 rounded font-mono">
+                      docker logs archon-server --tail 50
+                    </code>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     void reloadApiCredentials();
-  }, [reloadApiCredentials]);
+    void loadProviderApiKeys(); // Load API keys for inline display
+  }, [reloadApiCredentials, loadProviderApiKeys]);
 
   useEffect(() => {
     if (!hasLoadedCredentialsRef.current) {
@@ -582,7 +1056,6 @@ export const RAGSettings = ({
     llmInstanceModels: { chat: 0, embedding: 0, total: 0 },
     embeddingInstanceModels: { chat: 0, embedding: 0, total: 0 }
   });
-  const { showToast } = useToast();
 
   // Function to test connection status using backend proxy
   const testConnection = async (url: string, setStatus: React.Dispatch<React.SetStateAction<{ online: boolean; responseTime: number | null; checking: boolean }>>) => {
@@ -959,16 +1432,20 @@ const manualTestConnection = async (
         return openAIConnected ? 'configured' : 'missing';
 
       case 'azure-openai':
-        const hasAzureKey = hasApiCredential('AZURE_OPENAI_API_KEY');
+        // Check for separate chat/embedding keys OR legacy single key
+        const hasAzureLegacyKey = hasApiCredential('AZURE_OPENAI_API_KEY');
 
         // Context-aware validation based on activeSelection
         if (activeSelection === 'chat') {
+          // Check for chat-specific key OR legacy key
+          const hasAzureChatKey = hasApiCredential('AZURE_OPENAI_CHAT_API_KEY') || hasAzureLegacyKey;
+
           // Validate chat-specific Azure configuration
           const hasChatEndpoint = Boolean(ragSettings.AZURE_OPENAI_CHAT_ENDPOINT?.trim());
           const hasChatDeployment = Boolean(ragSettings.AZURE_OPENAI_CHAT_DEPLOYMENT?.trim());
 
           // Azure chat requires API key, endpoint, and deployment
-          if (!hasAzureKey || !hasChatEndpoint) return 'missing';
+          if (!hasAzureChatKey || !hasChatEndpoint) return 'missing';
           if (!hasChatDeployment) return 'partial';
 
           // Check connection status
@@ -978,12 +1455,15 @@ const manualTestConnection = async (
           if (azureChatChecking) return 'partial';
           return azureChatConnected ? 'configured' : 'partial';
         } else {
+          // Check for embedding-specific key OR legacy key
+          const hasAzureEmbeddingKey = hasApiCredential('AZURE_OPENAI_EMBEDDING_API_KEY') || hasAzureLegacyKey;
+
           // Validate embedding-specific Azure configuration
           const hasEmbeddingEndpoint = Boolean(ragSettings.AZURE_OPENAI_EMBEDDING_ENDPOINT?.trim());
           const hasEmbeddingDeployment = Boolean(ragSettings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT?.trim());
 
           // Azure embeddings require API key, endpoint, and deployment
-          if (!hasAzureKey || !hasEmbeddingEndpoint) return 'missing';
+          if (!hasAzureEmbeddingKey || !hasEmbeddingEndpoint) return 'missing';
           if (!hasEmbeddingDeployment) return 'partial';
 
           // Check connection status
@@ -1435,7 +1915,68 @@ const manualTestConnection = async (
               <p className="text-sm">{providerAlertMessage}</p>
             </div>
           )}
-          
+
+          {/* Inline API Key Inputs for Non-Ollama Providers */}
+          {activeSelection === 'chat' && chatProvider !== 'ollama' && chatProvider !== 'azure-openai' && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-gray-500/5 to-gray-600/5 border border-gray-500/20 rounded-lg">
+              <ApiKeyInput
+                provider={`${chatProvider}-chat`}
+                providerName={
+                  chatProvider === 'openai' ? 'OpenAI (Chat)' :
+                  chatProvider === 'google' ? 'Google AI (Chat)' :
+                  chatProvider === 'anthropic' ? 'Anthropic (Chat)' :
+                  chatProvider === 'grok' ? 'Grok (Chat)' :
+                  chatProvider === 'openrouter' ? 'OpenRouter (Chat)' :
+                  `${chatProvider} (Chat)`
+                }
+                value={providerApiKeys[`${chatProvider}-chat`]}
+                onChange={(val) => handleApiKeyChange(`${chatProvider}-chat`, val)}
+                onTest={() => testProviderCredentials(chatProvider, 'chat')}
+                testing={testingProvider?.provider === chatProvider && testingProvider?.configType === 'chat'}
+                testResult={testResults[chatProvider]}
+                getKeyUrl={
+                  chatProvider === 'openai' ? 'https://platform.openai.com/api-keys' :
+                  chatProvider === 'google' ? 'https://makersuite.google.com/app/apikey' :
+                  chatProvider === 'anthropic' ? 'https://console.anthropic.com/settings/keys' :
+                  chatProvider === 'grok' ? 'https://console.x.ai' :
+                  chatProvider === 'openrouter' ? 'https://openrouter.ai/keys' :
+                  undefined
+                }
+                showConfigType="chat"
+              />
+            </div>
+          )}
+
+          {activeSelection === 'embedding' && embeddingProvider !== 'ollama' && embeddingProvider !== 'azure-openai' && (
+            <div className="mb-6 p-4 bg-gradient-to-r from-gray-500/5 to-gray-600/5 border border-gray-500/20 rounded-lg">
+              <ApiKeyInput
+                provider={`${embeddingProvider}-embedding`}
+                providerName={
+                  embeddingProvider === 'openai' ? 'OpenAI (Embedding)' :
+                  embeddingProvider === 'google' ? 'Google AI (Embedding)' :
+                  embeddingProvider === 'openrouter' ? 'OpenRouter (Embedding)' :
+                  embeddingProvider === 'anthropic' ? 'Anthropic (Embedding)' :
+                  embeddingProvider === 'grok' ? 'Grok (Embedding)' :
+                  `${embeddingProvider} (Embedding)`
+                }
+                value={providerApiKeys[`${embeddingProvider}-embedding`]}
+                onChange={(val) => handleApiKeyChange(`${embeddingProvider}-embedding`, val)}
+                onTest={() => testProviderCredentials(embeddingProvider, 'embedding')}
+                testing={testingProvider?.provider === embeddingProvider && testingProvider?.configType === 'embedding'}
+                testResult={testResults[embeddingProvider]}
+                getKeyUrl={
+                  embeddingProvider === 'openai' ? 'https://platform.openai.com/api-keys' :
+                  embeddingProvider === 'google' ? 'https://makersuite.google.com/app/apikey' :
+                  embeddingProvider === 'openrouter' ? 'https://openrouter.ai/keys' :
+                  embeddingProvider === 'anthropic' ? 'https://console.anthropic.com/settings/keys' :
+                  embeddingProvider === 'grok' ? 'https://console.x.ai' :
+                  undefined
+                }
+                showConfigType="embedding"
+              />
+            </div>
+          )}
+
           <div className="flex justify-between items-end">
             {/* Context-Aware Model Input */}
             <div className="flex-1 max-w-md">
@@ -1511,9 +2052,9 @@ const manualTestConnection = async (
               (activeSelection === 'embedding' && embeddingProvider === 'azure-openai')) && (
               <Button
                 variant="outline"
-                accentColor="teal"
+                accentColor="cyan"
                 icon={<Cog className={`w-4 h-4 mr-1 transition-transform ${showAzureConfig ? 'rotate-90' : ''}`} />}
-                className="whitespace-nowrap ml-4 border-teal-500 text-teal-400 hover:bg-teal-500/10"
+                className="whitespace-nowrap ml-4 border-cyan-500 text-cyan-400 hover:bg-cyan-500/10"
                 onClick={() => setShowAzureConfig(!showAzureConfig)}
               >
                 Azure Config
@@ -1531,6 +2072,11 @@ const manualTestConnection = async (
                 try {
                   setSaving(true);
 
+                  // Save API keys first (if any changes)
+                  if (apiKeyChanges.size > 0) {
+                    await saveApiKeys();
+                  }
+
                   // Ensure instance configurations are synced with ragSettings before saving
                   const updatedSettings = {
                     ...ragSettings,
@@ -1545,9 +2091,12 @@ const manualTestConnection = async (
                   // Update local ragSettings state to match what was saved
                   setRagSettings(updatedSettings);
 
-                  showToast('RAG settings saved successfully!', 'success');
+                  const message = apiKeyChanges.size > 0
+                    ? 'RAG settings and API keys saved successfully!'
+                    : 'RAG settings saved successfully!';
+                  showToast(message, 'success');
                 } catch (err) {
-                  console.error('Failed to save RAG settings:', err);
+                  console.error('Failed to save settings:', err);
                   showToast('Failed to save settings', 'error');
                 } finally {
                   setSaving(false);
@@ -1875,6 +2424,24 @@ const manualTestConnection = async (
                 </div>
               </div>
 
+              {/* Azure OpenAI API Key Input - Context-Aware (Chat vs Embedding) */}
+              <div className="mb-6">
+                <ApiKeyInput
+                  provider={activeSelection === 'chat' ? 'azure-openai-chat' : 'azure-openai-embedding'}
+                  providerName={`Azure OpenAI (${activeSelection === 'chat' ? 'Chat' : 'Embedding'})`}
+                  value={activeSelection === 'chat' ? providerApiKeys['azure-openai-chat'] : providerApiKeys['azure-openai-embedding']}
+                  onChange={(val) => handleApiKeyChange(
+                    activeSelection === 'chat' ? 'azure-openai-chat' : 'azure-openai-embedding',
+                    val
+                  )}
+                  onTest={() => testProviderCredentials('azure-openai', activeSelection)}
+                  testing={testingProvider?.provider === 'azure-openai'}
+                  testResult={testResults['azure-openai']}
+                  getKeyUrl="https://portal.azure.com"
+                  showConfigType={activeSelection}
+                />
+              </div>
+
               {/* Azure Configuration Fields - Context-Aware Based on Selection */}
               <div className="bg-black/40 rounded-lg p-4 shadow-[0_2px_8px_rgba(20,184,166,0.1)] space-y-4">
 
@@ -1889,22 +2456,40 @@ const manualTestConnection = async (
 
                     {/* Azure Chat Endpoint */}
                     <div>
-                      <label className="text-white text-sm font-medium mb-1 block">
+                      <label className="text-white text-sm font-medium mb-1 flex items-center gap-2">
                         Chat Endpoint URL <span className="text-red-400">*</span>
+                        <span className="text-xs text-gray-400 cursor-help" title="Your Azure OpenAI resource base URL (no deployment path)">
+                          ℹ️
+                        </span>
                       </label>
                       <Input
                         type="text"
                         value={ragSettings.AZURE_OPENAI_CHAT_ENDPOINT || ''}
-                        onChange={(e) => setRagSettings({
-                          ...ragSettings,
-                          AZURE_OPENAI_CHAT_ENDPOINT: e.target.value
-                        })}
+                        onChange={(e) => {
+                          const normalized = normalizeAzureEndpoint(e.target.value);
+                          setRagSettings({
+                            ...ragSettings,
+                            AZURE_OPENAI_CHAT_ENDPOINT: normalized
+                          });
+                        }}
+                        onBlur={(e) => {
+                          // Normalize on blur to clean up any partial input
+                          const normalized = normalizeAzureEndpoint(e.target.value);
+                          if (normalized !== e.target.value) {
+                            setRagSettings({
+                              ...ragSettings,
+                              AZURE_OPENAI_CHAT_ENDPOINT: normalized
+                            });
+                          }
+                        }}
                         placeholder="https://your-chat-resource.openai.azure.com"
                         className="bg-gray-800 border-teal-500/30 text-white"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
-                        Azure OpenAI endpoint for chat/LLM (from Azure Portal → Keys and Endpoint)
-                      </p>
+                      <div className="text-xs text-gray-400 mt-1 space-y-1">
+                        <p>Find this in Azure Portal → Azure OpenAI → Keys and Endpoint</p>
+                        <p className="text-green-400">✅ Correct: https://YOUR_RESOURCE.openai.azure.com</p>
+                        <p className="text-red-400">❌ Wrong: https://YOUR_RESOURCE.openai.azure.com/openai/deployments/...</p>
+                      </div>
                     </div>
 
                     {/* Chat API Version */}
@@ -1929,8 +2514,11 @@ const manualTestConnection = async (
 
                     {/* Chat Deployment Name */}
                     <div>
-                      <label className="text-white text-sm font-medium mb-1 block">
+                      <label className="text-white text-sm font-medium mb-1 flex items-center gap-2">
                         Chat Deployment Name <span className="text-red-400">*</span>
+                        <span className="text-xs text-gray-400 cursor-help" title="Your custom deployment name from Azure Portal">
+                          ℹ️
+                        </span>
                       </label>
                       <Input
                         type="text"
@@ -1939,12 +2527,14 @@ const manualTestConnection = async (
                           ...ragSettings,
                           AZURE_OPENAI_CHAT_DEPLOYMENT: e.target.value
                         })}
-                        placeholder="gpt-4o-deployment"
+                        placeholder="gpt-4o-mini"
                         className="bg-gray-800 border-teal-500/30 text-white"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
-                        Your chat model deployment name (from Azure Portal → Deployments)
-                      </p>
+                      <div className="text-xs text-gray-400 mt-1 space-y-1">
+                        <p>Use your deployment name (e.g., "gpt-4o-mini"), NOT the model name</p>
+                        <p>Find this in Azure Portal → Azure OpenAI → Deployments</p>
+                        <p className="text-yellow-400">⚠️ Deployment names are case-sensitive</p>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1958,22 +2548,40 @@ const manualTestConnection = async (
 
                     {/* Azure Embedding Endpoint */}
                     <div>
-                      <label className="text-white text-sm font-medium mb-1 block">
+                      <label className="text-white text-sm font-medium mb-1 flex items-center gap-2">
                         Embedding Endpoint URL <span className="text-red-400">*</span>
+                        <span className="text-xs text-gray-400 cursor-help" title="Your Azure OpenAI resource base URL (no deployment path)">
+                          ℹ️
+                        </span>
                       </label>
                       <Input
                         type="text"
                         value={ragSettings.AZURE_OPENAI_EMBEDDING_ENDPOINT || ''}
-                        onChange={(e) => setRagSettings({
-                          ...ragSettings,
-                          AZURE_OPENAI_EMBEDDING_ENDPOINT: e.target.value
-                        })}
+                        onChange={(e) => {
+                          const normalized = normalizeAzureEndpoint(e.target.value);
+                          setRagSettings({
+                            ...ragSettings,
+                            AZURE_OPENAI_EMBEDDING_ENDPOINT: normalized
+                          });
+                        }}
+                        onBlur={(e) => {
+                          // Normalize on blur to clean up any partial input
+                          const normalized = normalizeAzureEndpoint(e.target.value);
+                          if (normalized !== e.target.value) {
+                            setRagSettings({
+                              ...ragSettings,
+                              AZURE_OPENAI_EMBEDDING_ENDPOINT: normalized
+                            });
+                          }
+                        }}
                         placeholder="https://your-embedding-resource.openai.azure.com"
                         className="bg-gray-800 border-teal-500/30 text-white"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
-                        Azure OpenAI endpoint for embeddings (from Azure Portal → Keys and Endpoint)
-                      </p>
+                      <div className="text-xs text-gray-400 mt-1 space-y-1">
+                        <p>Find this in Azure Portal → Azure OpenAI → Keys and Endpoint</p>
+                        <p className="text-green-400">✅ Correct: https://YOUR_RESOURCE.openai.azure.com</p>
+                        <p className="text-red-400">❌ Wrong: https://YOUR_RESOURCE.openai.azure.com/openai/deployments/...</p>
+                      </div>
                     </div>
 
                     {/* Embedding API Version */}
@@ -1998,8 +2606,11 @@ const manualTestConnection = async (
 
                     {/* Embedding Deployment Name */}
                     <div>
-                      <label className="text-white text-sm font-medium mb-1 block">
+                      <label className="text-white text-sm font-medium mb-1 flex items-center gap-2">
                         Embedding Deployment Name <span className="text-red-400">*</span>
+                        <span className="text-xs text-gray-400 cursor-help" title="Your custom deployment name from Azure Portal">
+                          ℹ️
+                        </span>
                       </label>
                       <Input
                         type="text"
@@ -2008,12 +2619,14 @@ const manualTestConnection = async (
                           ...ragSettings,
                           AZURE_OPENAI_EMBEDDING_DEPLOYMENT: e.target.value
                         })}
-                        placeholder="text-embedding-3-small-deployment"
+                        placeholder="text-embedding-3-large"
                         className="bg-gray-800 border-teal-500/30 text-white"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
-                        Your embedding model deployment name (from Azure Portal → Deployments)
-                      </p>
+                      <div className="text-xs text-gray-400 mt-1 space-y-1">
+                        <p>Use your deployment name (e.g., "text-embedding-3-large"), NOT the model name</p>
+                        <p>Find this in Azure Portal → Azure OpenAI → Deployments</p>
+                        <p className="text-yellow-400">⚠️ Deployment names are case-sensitive</p>
+                      </div>
                     </div>
                   </>
                 )}

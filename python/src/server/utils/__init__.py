@@ -47,6 +47,21 @@ from ..services.threading_service import (
     get_threading_service,
 )
 
+# Migration utilities for database schema initialization
+from .migrations import (
+    MigrationError,
+    check_table_exists,
+    ensure_schema_exists,
+    initialize_database_schema,
+    run_migrations,
+)
+
+# Startup validation utilities
+from .startup_checks import (
+    run_all_startup_checks,
+    validate_azure_openai_config,
+)
+
 # Global threading service instance for optimization
 _threading_service = None
 
@@ -102,4 +117,13 @@ __all__ = [
     "extract_source_summary",
     "generate_source_title_and_metadata",
     "update_source_info",
+    # Migration functions
+    "check_table_exists",
+    "ensure_schema_exists",
+    "run_migrations",
+    "initialize_database_schema",
+    "MigrationError",
+    # Startup validation functions
+    "run_all_startup_checks",
+    "validate_azure_openai_config",
 ]

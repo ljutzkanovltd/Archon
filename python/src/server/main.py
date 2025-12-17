@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api_routes.agent_chat_api import router as agent_chat_router
 from .api_routes.agent_work_orders_proxy import router as agent_work_orders_router
+from .api_routes.backup_api import router as backup_router
 from .api_routes.bug_report_api import router as bug_report_router
 from .api_routes.internal_api import router as internal_router
 from .api_routes.knowledge_api import router as knowledge_router
@@ -42,6 +43,8 @@ from .services.crawler_manager import cleanup_crawler, initialize_crawler
 
 # Import utilities and core classes
 from .services.credential_service import initialize_credentials
+from .utils.migrations import initialize_database_schema
+from .utils.startup_checks import run_all_startup_checks
 
 # Import missing dependencies that the modular APIs need
 try:
@@ -81,7 +84,11 @@ async def lifespan(app: FastAPI):
 
         get_config()  # This will raise ConfigurationError if anon key detected
 
-        # Initialize credentials from database FIRST - this is the foundation for everything else
+        # Ensure database schema exists BEFORE loading credentials
+        # This checks for and initializes missing schema to prevent startup failures
+        await initialize_database_schema()
+
+        # Initialize credentials from database - requires schema to exist
         await initialize_credentials()
 
         # Now that credentials are loaded, we can properly initialize logging
@@ -112,6 +119,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"Could not initialize prompt service: {e}")
 
+        # Run configuration validation checks (non-blocking)
+        try:
+            api_logger.info("Running configuration validation checks...")
+            await run_all_startup_checks()
+        except Exception as e:
+            api_logger.error(f"Startup validation failed (non-fatal): {e}")
+            # Don't raise - allow startup to continue
 
         # MCP Client functionality removed from architecture
         # Agents now use MCP tools directly
@@ -194,6 +208,7 @@ app.include_router(progress_router)
 app.include_router(agent_chat_router)
 app.include_router(agent_work_orders_router)  # Proxy to independent agent work orders service
 app.include_router(internal_router)
+app.include_router(backup_router)  # Backup status for monitoring dashboards
 app.include_router(bug_report_router)
 app.include_router(providers_router)
 app.include_router(version_router)

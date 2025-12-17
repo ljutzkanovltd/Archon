@@ -183,6 +183,14 @@ async def test_azure_openai_credentials(
             api_version = await cred_service.get_azure_embedding_api_version()
             deployment = await cred_service.get_azure_embedding_deployment()
 
+        # Log configuration (without API key) for debugging
+        logfire.info(
+            f"Testing Azure OpenAI {config_type} connection | "
+            f"endpoint: {endpoint[:60]}... | "
+            f"deployment: {deployment} | "
+            f"api_version: {api_version}"
+        )
+
         # Create Azure OpenAI client
         from openai import AsyncAzureOpenAI
 
@@ -225,21 +233,70 @@ async def test_azure_openai_credentials(
     except Exception as e:
         # API connection failed - provide helpful error messages
         error_msg = str(e)
+        error_lower = error_msg.lower()
 
-        if "401" in error_msg or "Unauthorized" in error_msg:
-            message = "Invalid API key. Please check your Azure OpenAI API key."
-        elif "404" in error_msg or "NotFoundError" in error_msg:
-            message = f"Deployment '{deployment}' not found. Verify deployment name in Azure Portal."
-        elif "timeout" in error_msg.lower():
-            message = "Connection timeout. Check endpoint URL and network connectivity."
+        # Authentication errors
+        if "401" in error_msg or "unauthorized" in error_lower or "authentication" in error_lower:
+            message = (
+                f"❌ Authentication failed. "
+                f"Please check that your API key is configured correctly. "
+                f"Go to Settings → Providers → Azure OpenAI and verify: "
+                f"1) '{config_type.capitalize()} API Key' or 'Shared API Key' is set, "
+                f"2) Key is valid and not expired."
+            )
+
+        # CRITICAL: Azure returns 404 for BOTH auth failures AND missing deployments
+        elif "404" in error_msg or "notfounderror" in error_lower:
+            message = (
+                f"⚠️  Deployment '{deployment}' not found OR authentication failed. "
+                f"Azure returns this error for both scenarios. Please verify:\n\n"
+                f"1. API Key Configuration:\n"
+                f"   - Go to Settings → Providers → Azure OpenAI\n"
+                f"   - Ensure '{config_type.capitalize()} API Key' or 'Shared API Key' is set\n"
+                f"   - Verify key is valid in Azure Portal\n\n"
+                f"2. Deployment Configuration:\n"
+                f"   - Check deployment name '{deployment}' exists in Azure Portal\n"
+                f"   - Deployment name is case-sensitive\n"
+                f"   - Use deployment name, NOT model name\n\n"
+                f"3. Endpoint Configuration:\n"
+                f"   - Verify endpoint URL is correct\n"
+                f"   - Should be base URL only (no /openai/deployments/ path)"
+            )
+
+        # Timeout errors
+        elif "timeout" in error_lower or "timed out" in error_lower:
+            message = (
+                f"⏱️  Connection timeout. Please check:\n"
+                f"1) Endpoint URL is correct and reachable\n"
+                f"2) Network connectivity (firewall, proxy)\n"
+                f"3) Azure service is operational"
+            )
+
+        # Rate limiting
+        elif "429" in error_msg or "rate limit" in error_lower:
+            message = (
+                f"🚦 Rate limit exceeded. "
+                f"Your Azure OpenAI deployment has reached its quota. "
+                f"Please wait and try again, or check quota in Azure Portal."
+            )
+
+        # Generic error with helpful context
         else:
-            message = f"Connection failed: {error_msg}"
+            message = (
+                f"❌ Connection failed: {error_msg}\n\n"
+                f"Common issues:\n"
+                f"- API key not configured or invalid\n"
+                f"- Endpoint URL incorrect\n"
+                f"- Deployment name mismatch\n"
+                f"- Network connectivity issues"
+            )
 
         logfire.error(f"Azure OpenAI {config_type} test failed: {e}")
         return {
             "ok": False,
             "reason": "connection_failed",
-            "message": message
+            "message": message,
+            "error_details": str(e)
         }
 
 
