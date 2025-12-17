@@ -1364,6 +1364,41 @@ You are the Data-Builder Agent. Your purpose is to transform descriptions of dat
 Remember: Create production-ready data models.', 'System prompt for creating data models in the data array');
 
 -- =====================================================
+-- SECTION 11: SUPABASE ROLE PERMISSIONS
+-- =====================================================
+-- Grant permissions to Supabase roles for PostgREST access
+
+-- Grant schema access
+GRANT USAGE ON SCHEMA public TO authenticator, anon, authenticated;
+
+-- Grant table permissions for all Archon tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+  archon_settings,
+  archon_sources,
+  archon_crawled_pages,
+  archon_code_examples,
+  archon_page_metadata,
+  archon_projects,
+  archon_tasks,
+  archon_project_sources,
+  archon_document_versions,
+  archon_migrations,
+  archon_prompts
+TO authenticator, anon, authenticated;
+
+-- Grant sequence permissions
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticator, anon, authenticated;
+
+-- Set default privileges for future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES
+  TO authenticator, anon, authenticated;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES
+  TO authenticator, anon, authenticated;
+
+-- =====================================================
 -- SETUP COMPLETE
 -- =====================================================
 -- Your Archon database is now fully configured!

@@ -3,7 +3,7 @@
 # backup-archon.sh - Backup Archon Database
 #
 # PURPOSE:
-#   Backs up archon_db from the shared Supabase AI PostgreSQL instance
+#   Backs up Archon tables (archon_*) from the shared Supabase AI PostgreSQL 'postgres' database
 #
 # USAGE:
 #   ./backup-archon.sh [OPTIONS]
@@ -16,7 +16,7 @@
 #
 # BACKUP FORMAT:
 #   PostgreSQL custom format (pg_dump -F c)
-#   Filename: archon_db-YYYYMMDD_HHMMSS.dump
+#   Filename: archon_postgres-YYYYMMDD_HHMMSS.dump
 #
 # RETENTION POLICY:
 #   Default: Keep last 10 backups
@@ -48,7 +48,8 @@ RETENTION=10
 VERBOSE=false
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 SUPABASE_CONTAINER="supabase-ai-db"
-DATABASE_NAME="archon_db"
+DATABASE_NAME="postgres"
+BACKUP_PREFIX="archon_postgres"
 
 # Logging functions
 log_header() { echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${CYAN}$*${NC}"; echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
@@ -67,7 +68,7 @@ show_help() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Backup archon_db from shared Supabase AI PostgreSQL instance.
+Backup Archon tables (archon_*) from shared Supabase AI PostgreSQL 'postgres' database.
 
 OPTIONS:
   --backup-dir DIR    Custom backup directory (default: ./backups)
@@ -147,9 +148,9 @@ check_prerequisites() {
 }
 
 backup_database() {
-    log_section "Backing Up Database: ${DATABASE_NAME}"
+    log_section "Backing Up Database: ${DATABASE_NAME} (Archon tables)"
 
-    local backup_file="${BACKUP_DIR}/${DATABASE_NAME}-${TIMESTAMP}.dump"
+    local backup_file="${BACKUP_DIR}/${BACKUP_PREFIX}-${TIMESTAMP}.dump"
 
     log_info "Starting backup..."
     log_verbose "Backup file: ${backup_file}"
@@ -170,7 +171,7 @@ backup_database() {
 cleanup_old_backups() {
     log_section "Retention Policy Management"
 
-    local backup_pattern="${DATABASE_NAME}-*.dump"
+    local backup_pattern="${BACKUP_PREFIX}-*.dump"
     local backup_count=$(find "${BACKUP_DIR}" -name "${backup_pattern}" -type f 2>/dev/null | wc -l)
 
     log_info "Current backups: ${backup_count}"
@@ -196,7 +197,7 @@ cleanup_old_backups() {
 show_backup_summary() {
     log_section "Backup Summary"
 
-    local latest_backup=$(find "${BACKUP_DIR}" -name "${DATABASE_NAME}-*.dump" -type f -printf '%T+ %p\n' | \
+    local latest_backup=$(find "${BACKUP_DIR}" -name "${BACKUP_PREFIX}-*.dump" -type f -printf '%T+ %p\n' | \
                           sort -r | head -1 | cut -d' ' -f2-)
 
     if [ -n "${latest_backup}" ]; then
@@ -205,7 +206,7 @@ show_backup_summary() {
         log_info "Latest backup: ${file_name} (${file_size})"
     fi
 
-    local total_backups=$(find "${BACKUP_DIR}" -name "${DATABASE_NAME}-*.dump" -type f | wc -l)
+    local total_backups=$(find "${BACKUP_DIR}" -name "${BACKUP_PREFIX}-*.dump" -type f | wc -l)
     log_info "Total backups: ${total_backups}"
     log_info "Backup directory: ${BACKUP_DIR}"
 }

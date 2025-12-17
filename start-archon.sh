@@ -10,7 +10,7 @@
 #   - Archon runs independently with its own start/stop scripts
 #   - Connects to shared AI infrastructure (LLMs, Supabase AI, Qdrant, Neo4j)
 #   - Uses sporterp-ai-unified bridge network from local-ai-packaged
-#   - Database: archon_db in supabase-ai PostgreSQL instance (port 54323)
+#   - Database: archon_db database in supabase-ai PostgreSQL instance (via PostgREST on port 18000)
 #
 # PREREQUISITES:
 #   - local-ai-packaged must be running (provides bridge network and AI services)
@@ -78,6 +78,15 @@ source "$LIB_DIR/health-checks.sh"
 
 # shellcheck source=lib/network.sh
 source "$LIB_DIR/network.sh"
+
+# shellcheck source=lib/port-validation.sh
+source "$LIB_DIR/port-validation.sh"
+
+# shellcheck source=lib/config.sh
+source "$LIB_DIR/config.sh"
+
+# shellcheck source=lib/postgres-utils.sh
+source "$LIB_DIR/postgres-utils.sh"
 
 log_success "Shared libraries loaded"
 
@@ -334,7 +343,7 @@ check_ai_dependencies() {
     fi
     log_success "Bridge network exists"
 
-    # Check 3: Supabase AI container
+    # Check 3: Supabase AI container and PostgreSQL initialization
     log_info "Validating Supabase AI container..."
     if ! container_exists "$SUPABASE_CONTAINER"; then
         log_error "Supabase AI container not found: $SUPABASE_CONTAINER"
@@ -348,51 +357,12 @@ check_ai_dependencies() {
         return 1
     fi
 
-    if ! is_container_healthy "$SUPABASE_CONTAINER"; then
-        log_warn "Supabase AI container is not healthy yet"
-        log_info "Waiting for container to become healthy..."
-        if ! wait_for_healthy "$SUPABASE_CONTAINER" 120; then
-            log_error "Supabase AI container failed to become healthy"
-            return 1
-        fi
-    fi
-    log_success "Supabase AI container is healthy"
-
-    # Stabilization wait - give PostgreSQL time to fully initialize
-    log_info "Waiting for PostgreSQL to fully initialize (15 seconds)..."
-    sleep 15
-
-    # Check 4: PostgreSQL readiness (with retry logic)
-    log_info "Validating PostgreSQL readiness..."
-    local pg_retries=5
-    local pg_delay=3
-    local pg_success=false
-
-    for ((i=1; i<=pg_retries; i++)); do
-        if docker exec "$SUPABASE_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
-            log_success "PostgreSQL is ready"
-            pg_success=true
-            break
-        fi
-        if [ $i -lt $pg_retries ]; then
-            log_info "PostgreSQL not ready, waiting ${pg_delay}s (attempt $i/$pg_retries)..."
-            sleep $pg_delay
-        fi
-    done
-
-    if [ "$pg_success" = false ]; then
-        log_error "PostgreSQL failed to become ready after $pg_retries attempts"
+    # Initialize PostgreSQL with robust 4-step validation
+    if ! initialize_postgres_complete "$SUPABASE_CONTAINER" 5432; then
+        log_error "PostgreSQL initialization failed"
         return 1
     fi
-
-    # Check 5: Port binding verification
-    log_info "Verifying port 5432 is accepting connections..."
-    if ! wait_for_port_occupied 5432 60; then
-        log_error "Port 5432 not bound after 60s timeout"
-        log_error "PostgreSQL may not be fully initialized"
-        return 1
-    fi
-    log_success "Port 5432 is bound and accepting connections"
+    log_success "PostgreSQL fully initialized and ready"
 
     # Note: Database initialization moved to separate function (initialize_archon_database)
     # This function only validates that prerequisites are available
@@ -425,49 +395,52 @@ check_ai_dependencies() {
 initialize_archon_database() {
     log_info "Initializing Archon database..."
 
-    # Check if archon_db database exists
-    log_info "Checking for archon_db database..."
-    if ! docker exec "$SUPABASE_CONTAINER" psql -U postgres -lqt 2>/dev/null | \
-         cut -d \| -f 1 | grep -qw "archon_db"; then
+    # Archon shares Supabase 'postgres' database with other services
+    # All Archon tables are prefixed with 'archon_' for namespace isolation
+    local target_db="postgres"
 
-        log_warn "archon_db database not found"
-        log_info "Creating archon_db database..."
-
-        # Create database
-        if docker exec "$SUPABASE_CONTAINER" psql -U postgres \
-            -c "CREATE DATABASE archon_db WITH ENCODING='UTF8';" 2>/dev/null; then
-            log_success "Database created: archon_db"
-        else
-            log_error "Failed to create archon_db database"
-            return 1
-        fi
-
-        # Stabilization wait after database creation
-        log_info "Waiting for database to stabilize (5 seconds)..."
-        sleep 5
-
-        # Run initialization script
-        if [ -f "$SCRIPT_DIR/migration/complete_setup.sql" ]; then
-            log_info "Running database initialization script..."
-            if docker exec -i "$SUPABASE_CONTAINER" psql -U postgres archon_db < \
-                "$SCRIPT_DIR/migration/complete_setup.sql" >/dev/null 2>&1; then
-                log_success "Database initialized successfully"
-            else
-                log_error "Database initialization failed"
-                log_error "Check migration/complete_setup.sql for errors"
-                return 1
-            fi
-        else
-            log_warn "No initialization script found at migration/complete_setup.sql"
-            log_warn "Database created but not initialized"
-        fi
-
-        # Final stabilization wait after migrations
-        log_info "Waiting for migrations to complete (5 seconds)..."
-        sleep 5
-    else
-        log_success "archon_db database already exists"
+    # Check if archon_settings table exists (schema verification)
+    log_info "Verifying Archon schema in '$target_db' database..."
+    if docker exec "$SUPABASE_CONTAINER" psql -U postgres -d "$target_db" \
+        -c "\dt public.archon_settings" 2>/dev/null | grep -q "archon_settings"; then
+        log_success "Archon schema verified (archon_settings table exists)"
+        return 0
     fi
+
+    # Schema missing - need to run migrations
+    log_warn "Archon schema not found in '$target_db' database"
+    log_info "Running database initialization script..."
+
+    # Check if migration script exists (use PROJECT_ROOT, not SCRIPT_DIR)
+    local migration_script="$PROJECT_ROOT/migration/complete_setup.sql"
+    if [ ! -f "$migration_script" ]; then
+        log_error "Migration script not found: $migration_script"
+        return 1
+    fi
+
+    # Run initialization script on postgres database
+    if docker exec -i "$SUPABASE_CONTAINER" psql -U postgres "$target_db" < \
+        "$migration_script" >/dev/null 2>&1; then
+        log_success "Database schema initialized successfully"
+    else
+        log_error "Database initialization failed"
+        log_error "Check migration/complete_setup.sql for errors"
+        return 1
+    fi
+
+    # Verify schema was created
+    log_info "Verifying schema creation..."
+    if docker exec "$SUPABASE_CONTAINER" psql -U postgres -d "$target_db" \
+        -c "\dt public.archon_settings" 2>/dev/null | grep -q "archon_settings"; then
+        log_success "Schema verification passed"
+    else
+        log_error "Schema verification failed - archon_settings table not found"
+        return 1
+    fi
+
+    # Wait for PostgREST to refresh schema cache
+    log_info "Waiting for PostgREST to refresh schema cache (3 seconds)..."
+    sleep 3
 
     log_success "Database initialization complete"
     return 0

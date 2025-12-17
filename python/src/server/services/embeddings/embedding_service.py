@@ -370,7 +370,15 @@ async def create_embeddings_batch(
                     rag_settings = await _maybe_await(
                         credential_service.get_credentials_by_category("rag_strategy")
                     )
-                    batch_size = int(rag_settings.get("EMBEDDING_BATCH_SIZE", "100"))
+
+                    # Use provider-specific batch size if available
+                    provider_batch_key = f"{embedding_provider.upper()}_EMBEDDING_BATCH_SIZE"
+                    batch_size = int(rag_settings.get(
+                        provider_batch_key,
+                        rag_settings.get("EMBEDDING_BATCH_SIZE", "100")
+                    ))
+                    search_logger.info(f"Using batch size {batch_size} for provider {embedding_provider}")
+
                     embedding_dimensions = int(rag_settings.get("EMBEDDING_DIMENSIONS", "1536"))
                 except Exception as e:
                     search_logger.warning(f"Failed to load embedding settings: {e}, using defaults")

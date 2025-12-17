@@ -190,12 +190,18 @@ export const SettingsPage = () => {
         <div className="space-y-6">
           <motion.div variants={itemVariants}>
             <CollapsibleSettingsCard
-              title="API Keys"
+              title="API Keys (Advanced)"
               icon={Key}
               accentColor="pink"
               storageKey="api-keys"
-              defaultExpanded={true}
+              defaultExpanded={false}
             >
+              <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-sm text-yellow-200">
+                  💡 <strong>Tip:</strong> API keys can now be configured directly in <strong>RAG Settings</strong> under each provider.
+                  This section is for advanced users and bulk key management.
+                </p>
+              </div>
               <APIKeysSection />
             </CollapsibleSettingsCard>
           </motion.div>

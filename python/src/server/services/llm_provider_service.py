@@ -194,6 +194,30 @@ def invalidate_provider_cache(provider: str = None) -> None:
         logger.debug(f"Cache entries for provider '{safe_provider}' invalidated: {len(keys_to_remove)} entries removed")
 
 
+def invalidate_azure_deployment_cache() -> None:
+    """
+    Invalidate all cache entries related to Azure OpenAI deployments.
+
+    This clears both provider-specific entries and RAG strategy settings
+    to ensure fresh deployment names are fetched from the database.
+    Called when Azure deployment configuration changes.
+    """
+    global _settings_cache
+
+    # Clear Azure-specific provider cache entries
+    keys_to_remove = []
+    for key in list(_settings_cache.keys()):
+        # Clear Azure provider configs AND rag_strategy_settings
+        if "azure-openai" in key or key == "rag_strategy_settings":
+            keys_to_remove.append(key)
+
+    for key in keys_to_remove:
+        del _settings_cache[key]
+        _log_cache_access(key, "invalidate")
+
+    logger.debug(f"Azure deployment cache invalidated: {len(keys_to_remove)} entries removed")
+
+
 def get_cache_stats() -> dict[str, Any]:
     """
     Get cache statistics with security metrics for monitoring and debugging.
@@ -661,7 +685,22 @@ async def get_embedding_model(provider: str | None = None) -> str:
             safe_provider = _sanitize_for_log(provider_name)
             logger.warning(f"Invalid embedding provider: {safe_provider}, falling back to OpenAI")
             provider_name = "openai"
-        # Use custom model if specified (with validation)
+
+        # AZURE OPENAI: Always use deployment name (check BEFORE custom model)
+        # Azure uses deployment names instead of model names, ignore EMBEDDING_MODEL setting
+        if provider_name == "azure-openai":
+            try:
+                deployment_name = await credential_service.get_azure_embedding_deployment()
+                logger.debug(f"Using Azure embedding deployment: {deployment_name}")
+                return deployment_name
+            except ValueError as e:
+                logger.error(f"Azure embedding deployment not configured: {e}")
+                raise ValueError(
+                    "Azure OpenAI embedding deployment not configured. "
+                    "Set AZURE_OPENAI_EMBEDDING_DEPLOYMENT in Settings UI"
+                ) from e
+
+        # For non-Azure providers: Use custom model if specified (with validation)
         if custom_model and len(custom_model.strip()) > 0:
             custom_model = custom_model.strip()
             # Basic model name validation (check length and basic characters)
@@ -671,21 +710,9 @@ async def get_embedding_model(provider: str | None = None) -> str:
                 safe_model = _sanitize_for_log(custom_model)
                 logger.warning(f"Invalid custom embedding model '{safe_model}' for provider '{provider_name}', using default")
 
-        # Return provider-specific defaults
+        # Return provider-specific defaults for non-Azure providers
         if provider_name == "openai":
             return "text-embedding-3-small"
-        elif provider_name == "azure-openai":
-            # Azure uses deployment names instead of model names
-            # Get configured embedding deployment from database
-            try:
-                deployment_name = await credential_service.get_azure_embedding_deployment()
-                return deployment_name
-            except ValueError as e:
-                logger.error(f"Azure embedding deployment not configured: {e}")
-                raise ValueError(
-                    "Azure OpenAI embedding deployment not configured. "
-                    "Set AZURE_OPENAI_EMBEDDING_DEPLOYMENT in Settings UI"
-                ) from e
         elif provider_name == "ollama":
             # Ollama default embedding model
             return "nomic-embed-text"

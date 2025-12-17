@@ -34,6 +34,7 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+      - localai_default
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -46,6 +47,7 @@ services:
       - ./python/src:/app/src # Mount source code for hot reload
       - ./python/tests:/app/tests # Mount tests for UI test execution
       - ./migration:/app/migration # Mount migration files for version tracking
+      - ./backups:/app/backups:ro # Read-only access to backup files for monitoring
       # Read-only access to all projects for code analysis
       # REQUIRES: inotify watch limit of 524288 (see TROUBLESHOOTING_STARTUP_FIXES.md)
       # Run: sudo sysctl -w fs.inotify.max_user_watches=524288
@@ -104,6 +106,7 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+      - localai_default
     depends_on:
       archon-server:
         condition: service_healthy
@@ -148,6 +151,7 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+      - localai_default
     healthcheck:
       test:
         [
@@ -196,6 +200,7 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+      - localai_default
     volumes:
       - ./python/src/agent_work_orders:/app/src/agent_work_orders # Hot reload for agent work orders
       - ./data/agent-work-orders/repos:/repos # Persistent git repositories
@@ -234,6 +239,7 @@ services:
     networks:
       - app-network
       - sporterp-ai-unified
+      - localai_default
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3737"]
       interval: 30s
@@ -250,6 +256,10 @@ networks:
   # Internal network for Archon services
   app-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
 
   # External bridge network shared with local-ai-packaged for AI infrastructure
   # Created and managed by local-ai-packaged
@@ -257,3 +267,10 @@ networks:
   sporterp-ai-unified:
     external: true
     name: sporterp-ai-unified
+
+  # External network for direct access to Supabase and local-ai services
+  # Required for DATABASE_URI hostname resolution (supabase-ai-db:5432)
+  # Managed by local-ai-packaged
+  localai_default:
+    external: true
+    name: localai_default

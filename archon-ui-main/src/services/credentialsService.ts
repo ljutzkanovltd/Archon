@@ -24,6 +24,14 @@ export interface RagSettings {
   OLLAMA_EMBEDDING_INSTANCE_NAME?: string;
   EMBEDDING_MODEL?: string;
   EMBEDDING_PROVIDER?: string;
+  // Azure OpenAI Chat Configuration (separate from embeddings)
+  AZURE_OPENAI_CHAT_ENDPOINT?: string;
+  AZURE_OPENAI_CHAT_API_VERSION?: string;
+  AZURE_OPENAI_CHAT_DEPLOYMENT?: string;
+  // Azure OpenAI Embedding Configuration (separate from chat)
+  AZURE_OPENAI_EMBEDDING_ENDPOINT?: string;
+  AZURE_OPENAI_EMBEDDING_API_VERSION?: string;
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT?: string;
   // Crawling Performance Settings
   CRAWL_BATCH_SIZE?: number;
   CRAWL_MAX_CONCURRENT?: number;
@@ -203,6 +211,13 @@ class CredentialsService {
   OLLAMA_EMBEDDING_INSTANCE_NAME: "",
   EMBEDDING_PROVIDER: "openai",
   EMBEDDING_MODEL: "",
+      // Azure OpenAI Configuration defaults
+      AZURE_OPENAI_CHAT_ENDPOINT: "",
+      AZURE_OPENAI_CHAT_API_VERSION: "",
+      AZURE_OPENAI_CHAT_DEPLOYMENT: "",
+      AZURE_OPENAI_EMBEDDING_ENDPOINT: "",
+      AZURE_OPENAI_EMBEDDING_API_VERSION: "",
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "",
       // Crawling Performance Settings defaults
       CRAWL_BATCH_SIZE: 50,
       CRAWL_MAX_CONCURRENT: 10,
@@ -236,6 +251,14 @@ class CredentialsService {
             "EMBEDDING_PROVIDER",
             "EMBEDDING_MODEL",
             "CRAWL_WAIT_STRATEGY",
+            // Azure OpenAI Chat Configuration
+            "AZURE_OPENAI_CHAT_ENDPOINT",
+            "AZURE_OPENAI_CHAT_API_VERSION",
+            "AZURE_OPENAI_CHAT_DEPLOYMENT",
+            // Azure OpenAI Embedding Configuration
+            "AZURE_OPENAI_EMBEDDING_ENDPOINT",
+            "AZURE_OPENAI_EMBEDDING_API_VERSION",
+            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
           ].includes(cred.key)
         ) {
           (settings as any)[cred.key] = cred.value || "";

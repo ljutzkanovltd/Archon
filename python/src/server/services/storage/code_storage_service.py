@@ -103,7 +103,20 @@ async def _get_model_choice() -> str:
 
         # If no custom model is set, use provider-specific defaults
         if not model or model.strip() == "":
-            # Provider-specific defaults
+            # For Azure OpenAI, get the deployment name from database
+            if active_provider == "azure-openai":
+                try:
+                    deployment_name = await credential_service.get_azure_chat_deployment()
+                    search_logger.debug(f"Using Azure chat deployment: {deployment_name}")
+                    return deployment_name
+                except ValueError as e:
+                    search_logger.error(f"Azure chat deployment not configured: {e}")
+                    raise ValueError(
+                        "Azure OpenAI chat deployment not configured. "
+                        "Set AZURE_OPENAI_CHAT_DEPLOYMENT in Settings UI"
+                    ) from e
+
+            # Provider-specific defaults for other providers
             provider_defaults = {
                 "openai": "gpt-4o-mini",
                 "openrouter": "anthropic/claude-3.5-sonnet",
@@ -114,6 +127,16 @@ async def _get_model_choice() -> str:
             }
             model = provider_defaults.get(active_provider, "gpt-4o-mini")
             search_logger.debug(f"Using default model for provider {active_provider}: {model}")
+
+        # For Azure, if MODEL_CHOICE is set, verify it's not a placeholder
+        if active_provider == "azure-openai" and model in ["<chat-deployment>", ""]:
+            try:
+                deployment_name = await credential_service.get_azure_chat_deployment()
+                search_logger.debug(f"Replacing placeholder with Azure deployment: {deployment_name}")
+                return deployment_name
+            except ValueError as e:
+                search_logger.error(f"Azure chat deployment not configured: {e}")
+                raise
 
         search_logger.debug(f"Using model for provider {active_provider}: {model}")
         return model

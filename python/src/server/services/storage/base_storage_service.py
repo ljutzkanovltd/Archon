@@ -36,7 +36,7 @@ class BaseStorageService(ABC):
 
         self.threading_service = get_utils_threading_service()
 
-    def smart_chunk_text(self, text: str, chunk_size: int = 5000) -> list[str]:
+    def smart_chunk_text(self, text: str, chunk_size: int = 600) -> list[str]:
         """
         Split text into chunks intelligently, preserving context.
 
@@ -48,7 +48,7 @@ class BaseStorageService(ABC):
 
         Args:
             text: Text to chunk
-            chunk_size: Maximum chunk size (default: 5000)
+            chunk_size: Maximum chunk size (default: 600, optimized for Qwen3-Embedding 256-token limit)
 
         Returns:
             List of text chunks
@@ -120,14 +120,14 @@ class BaseStorageService(ABC):
         return chunks
 
     async def smart_chunk_text_async(
-        self, text: str, chunk_size: int = 5000, progress_callback: Callable | None = None
+        self, text: str, chunk_size: int = 600, progress_callback: Callable | None = None
     ) -> list[str]:
         """
         Async version of smart_chunk_text with optional progress reporting.
 
         Args:
             text: Text to chunk
-            chunk_size: Maximum chunk size
+            chunk_size: Maximum chunk size (default: 600, optimized for Qwen3-Embedding 256-token limit)
             progress_callback: Optional callback for progress updates
 
         Returns:

@@ -63,7 +63,6 @@ class DocumentStorageService(BaseStorageService):
                 # Use base class chunking
                 chunks = await self.smart_chunk_text_async(
                     file_content,
-                    chunk_size=1200,
                     progress_callback=lambda msg, pct: report_progress(
                         f"Chunking: {msg}", 10 + float(pct) * 0.2
                     ),
