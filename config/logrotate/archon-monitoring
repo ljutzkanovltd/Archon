@@ -1,0 +1,88 @@
+# Logrotate configuration for Archon monitoring logs
+#
+# This file should be installed to /etc/logrotate.d/archon-monitoring
+# Install command: sudo cp config/logrotate/archon-monitoring /etc/logrotate.d/
+
+# Main monitoring log
+/var/log/archon-monitoring.log {
+    # Rotate daily
+    daily
+
+    # Keep 30 days of logs
+    rotate 30
+
+    # Compress rotated logs (saves disk space)
+    compress
+
+    # Delay compression until next rotation (current log stays uncompressed)
+    delaycompress
+
+    # Don't error if log file is missing
+    missingok
+
+    # Don't rotate if log is empty
+    notifempty
+
+    # Create new log file with specific permissions
+    create 0640 ljutzkanov ljutzkanov
+
+    # Use date as suffix instead of numbers
+    dateext
+    dateformat -%Y%m%d
+
+    # Shared scripts for all logs
+    sharedscripts
+
+    # Post-rotation script (optional - send notification)
+    postrotate
+        # Uncomment to send notification after rotation
+        # echo "Archon monitoring log rotated on $(date)" | mail -s "Log Rotation" admin@example.com
+
+        # Restart monitoring if running as a service (optional)
+        # systemctl reload archon-monitoring.service 2>/dev/null || true
+    endscript
+}
+
+# Restore test logs (keep longer for audit trail)
+/home/ljutzkanov/Documents/Projects/archon/logs/restore-test-*.log {
+    # Rotate weekly
+    weekly
+
+    # Keep 12 weeks (3 months)
+    rotate 12
+
+    # Compress
+    compress
+    delaycompress
+
+    # Don't error if missing
+    missingok
+    notifempty
+
+    # Don't create new file (script creates on demand)
+    nocreate
+
+    # Date format
+    dateext
+    dateformat -%Y%m%d
+}
+
+# Database size metrics (keep for historical analysis)
+/home/ljutzkanov/Documents/Projects/archon/logs/metrics/db-size-*.csv {
+    # Rotate monthly
+    monthly
+
+    # Keep 24 months (2 years)
+    rotate 24
+
+    # Compress old metrics
+    compress
+    delaycompress
+
+    missingok
+    notifempty
+    nocreate
+
+    dateext
+    dateformat -%Y%m
+}

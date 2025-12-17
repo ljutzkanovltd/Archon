@@ -29,3 +29,13 @@ data/
 
 # Local release notes testing
 release-notes-*.md
+
+# Local backups (managed by backup scripts)
+backups/
+
+# Local configuration overrides
+config/*.env
+config/*.local
+
+# Task tracking (temporary)
+docs/tasks/

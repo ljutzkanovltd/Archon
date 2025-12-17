@@ -1,0 +1,40 @@
+[Unit]
+Description=Archon Database Backup Service
+Documentation=file:///home/ljutzkanov/Documents/Projects/archon/docs/DISASTER_RECOVERY.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ljutzkanov
+Group=ljutzkanov
+WorkingDirectory=/home/ljutzkanov/Documents/Projects/archon
+
+# Pre-flight checks
+ExecStartPre=/usr/bin/docker ps --filter "name=supabase-ai-db" --filter "status=running" --quiet
+ExecStartPre=/bin/bash -c 'docker exec supabase-ai-db pg_isready -U postgres || exit 1'
+
+# Execute backup
+ExecStart=/home/ljutzkanov/Documents/Projects/archon/scripts/backup-archon.sh --verbose
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=archon-backup
+
+# Resource limits
+TimeoutStartSec=300
+PrivateTmp=yes
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ljutzkanov/Documents/Projects/archon/backups
+
+# Restart policy
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

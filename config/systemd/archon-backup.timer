@@ -1,0 +1,21 @@
+[Unit]
+Description=Daily Archon Database Backup Timer
+Documentation=file:///home/ljutzkanov/Documents/Projects/archon/docs/DISASTER_RECOVERY.md
+Requires=archon-backup.service
+
+[Timer]
+# Run daily at 2:00 AM
+OnCalendar=daily
+OnCalendar=02:00
+
+# If system was off at scheduled time, run on next boot
+Persistent=true
+
+# Add random delay of 0-30 minutes to avoid system load spikes
+RandomizedDelaySec=30min
+
+# Start timer 5 minutes after boot (if boot time overlaps with schedule)
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target
