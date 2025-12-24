@@ -123,6 +123,22 @@ const PROVIDERS: ProviderConfig[] = [
     supportedModes: ["chat", "embedding"],
     description: "Local LLM server",
   },
+  {
+    key: "openrouter",
+    name: "OpenRouter",
+    color: "indigo",
+    icon: "🌐",
+    supportedModes: ["chat", "embedding"],
+    description: "Unified API for multiple LLM providers",
+  },
+  {
+    key: "grok",
+    name: "Grok",
+    color: "slate",
+    icon: "⚡",
+    supportedModes: ["chat"],
+    description: "xAI's Grok models",
+  },
 ];
 
 const API_KEY_PROVIDERS: ApiKeyConfig[] = [
@@ -225,6 +241,120 @@ const STRATEGY_SETTINGS = [
   },
 ];
 
+const CRAWLING_SETTINGS = [
+  {
+    key: "CRAWL_BATCH_SIZE",
+    label: "Batch Size",
+    description: "Number of documents to crawl in each batch (10-100)",
+    type: "number" as const,
+    min: 10,
+    max: 100,
+  },
+  {
+    key: "CRAWL_MAX_CONCURRENT",
+    label: "Max Concurrent",
+    description: "Maximum number of concurrent crawl operations (1-20)",
+    type: "number" as const,
+    min: 1,
+    max: 20,
+  },
+  {
+    key: "CRAWL_WAIT_STRATEGY",
+    label: "Wait Strategy",
+    description: "Page load wait strategy for crawling",
+    type: "select" as const,
+    options: [
+      { value: "domcontentloaded", label: "DOM Content Loaded" },
+      { value: "load", label: "Full Load" },
+      { value: "networkidle", label: "Network Idle" },
+    ],
+  },
+  {
+    key: "CRAWL_PAGE_TIMEOUT",
+    label: "Page Timeout (seconds)",
+    description: "Maximum time to wait for page load (5-120 seconds)",
+    type: "number" as const,
+    min: 5,
+    max: 120,
+  },
+  {
+    key: "CRAWL_DELAY_BEFORE_HTML",
+    label: "Delay Before HTML (ms)",
+    description: "Delay in milliseconds before extracting HTML (0-10000)",
+    type: "number" as const,
+    min: 0,
+    max: 10000,
+  },
+];
+
+const STORAGE_SETTINGS = [
+  {
+    key: "DOCUMENT_STORAGE_BATCH_SIZE",
+    label: "Document Batch Size",
+    description: "Number of documents to store in each batch (10-100)",
+    type: "number" as const,
+    min: 10,
+    max: 100,
+  },
+  {
+    key: "EMBEDDING_BATCH_SIZE",
+    label: "Embedding Batch Size",
+    description: "Number of embeddings to process in each batch (20-200)",
+    type: "number" as const,
+    min: 20,
+    max: 200,
+  },
+  {
+    key: "DELETE_BATCH_SIZE",
+    label: "Delete Batch Size",
+    description: "Number of items to delete in each batch (10-100)",
+    type: "number" as const,
+    min: 10,
+    max: 100,
+  },
+  {
+    key: "ENABLE_PARALLEL_BATCHES",
+    label: "Enable Parallel Batches",
+    description: "Process multiple batches in parallel for better performance",
+    type: "boolean" as const,
+  },
+];
+
+const ADVANCED_SETTINGS = [
+  {
+    key: "MEMORY_THRESHOLD_PERCENT",
+    label: "Memory Threshold (%)",
+    description: "Memory usage threshold percentage before throttling (0-100)",
+    type: "number" as const,
+    min: 0,
+    max: 100,
+  },
+  {
+    key: "DISPATCHER_CHECK_INTERVAL",
+    label: "Dispatcher Interval (ms)",
+    description: "Task dispatcher check interval in milliseconds (1000-60000)",
+    type: "number" as const,
+    min: 1000,
+    max: 60000,
+  },
+  {
+    key: "CODE_EXTRACTION_BATCH_SIZE",
+    label: "Code Extraction Batch",
+    description: "Number of code blocks to extract in each batch (10-100)",
+    type: "number" as const,
+    min: 10,
+    max: 100,
+  },
+  {
+    key: "CODE_SUMMARY_MAX_WORKERS",
+    label: "Code Summary Workers",
+    description: "Maximum workers for code summarization (1-10)",
+    type: "number" as const,
+    min: 1,
+    max: 10,
+  },
+];
+
 // ============================================================================
 // Local Storage Keys for Provider Persistence
 // ============================================================================
@@ -322,7 +452,21 @@ const ProviderCard: React.FC<ProviderCardProps> = ({
         </div>
       )}
       <div className="flex items-start gap-3">
-        <div className="text-3xl">{provider.icon}</div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white p-2 shadow-sm dark:bg-gray-700">
+          <img
+            src={`/logos/${provider.key}.svg`}
+            alt={`${provider.name} logo`}
+            className="h-full w-full object-contain"
+            onError={(e) => {
+              // Fallback to emoji icon if logo not found
+              const target = e.target as HTMLImageElement;
+              target.style.display = "none";
+              const fallback = target.nextElementSibling as HTMLElement;
+              if (fallback) fallback.style.display = "block";
+            }}
+          />
+          <div className="hidden text-2xl">{provider.icon}</div>
+        </div>
         <div className="flex-1">
           <h4 className="font-medium text-gray-900 dark:text-white">
             {provider.name}
@@ -796,6 +940,73 @@ export default function RAGSettingsTab() {
     }
   };
 
+  const saveCrawlingSettings = async () => {
+    try {
+      setSaving("crawling");
+
+      // Extract only crawling settings from the settings state
+      const crawlingSettings = {
+        CRAWL_BATCH_SIZE: settings.CRAWL_BATCH_SIZE,
+        CRAWL_MAX_CONCURRENT: settings.CRAWL_MAX_CONCURRENT,
+        CRAWL_WAIT_STRATEGY: settings.CRAWL_WAIT_STRATEGY,
+        CRAWL_PAGE_TIMEOUT: settings.CRAWL_PAGE_TIMEOUT,
+        CRAWL_DELAY_BEFORE_HTML: settings.CRAWL_DELAY_BEFORE_HTML,
+      };
+
+      await credentialsService.updateRagSettings(crawlingSettings);
+      showToast("Crawling performance settings saved successfully", "success");
+    } catch (error) {
+      console.error("Failed to save crawling settings:", error);
+      showToast("Failed to save crawling settings", "error");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveStorageSettings = async () => {
+    try {
+      setSaving("storage");
+
+      // Extract only storage settings from the settings state
+      const storageSettings = {
+        DOCUMENT_STORAGE_BATCH_SIZE: settings.DOCUMENT_STORAGE_BATCH_SIZE,
+        EMBEDDING_BATCH_SIZE: settings.EMBEDDING_BATCH_SIZE,
+        DELETE_BATCH_SIZE: settings.DELETE_BATCH_SIZE,
+        ENABLE_PARALLEL_BATCHES: settings.ENABLE_PARALLEL_BATCHES,
+      };
+
+      await credentialsService.updateRagSettings(storageSettings);
+      showToast("Storage performance settings saved successfully", "success");
+    } catch (error) {
+      console.error("Failed to save storage settings:", error);
+      showToast("Failed to save storage settings", "error");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveAdvancedSettings = async () => {
+    try {
+      setSaving("advanced");
+
+      // Extract only advanced settings from the settings state
+      const advancedSettings = {
+        MEMORY_THRESHOLD_PERCENT: settings.MEMORY_THRESHOLD_PERCENT,
+        DISPATCHER_CHECK_INTERVAL: settings.DISPATCHER_CHECK_INTERVAL,
+        CODE_EXTRACTION_BATCH_SIZE: settings.CODE_EXTRACTION_BATCH_SIZE,
+        CODE_SUMMARY_MAX_WORKERS: settings.CODE_SUMMARY_MAX_WORKERS,
+      };
+
+      await credentialsService.updateRagSettings(advancedSettings);
+      showToast("Advanced settings saved successfully", "success");
+    } catch (error) {
+      console.error("Failed to save advanced settings:", error);
+      showToast("Failed to save advanced settings", "error");
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const saveAzureConfig = async () => {
     try {
       setSaving("azure");
@@ -1056,6 +1267,247 @@ export default function RAGSettingsTab() {
                 <>
                   <HiSave className="h-4 w-4" />
                   Save Strategy Settings
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Crawling Performance Settings Section */}
+      <div className="space-y-4">
+        <h3 className="font-medium text-gray-900 dark:text-white">
+          Crawling Performance Settings
+        </h3>
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          {CRAWLING_SETTINGS.map((setting) => (
+            <div
+              key={setting.key}
+              className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0 dark:border-gray-700"
+            >
+              <div className="flex-1">
+                <div className="font-medium text-gray-900 dark:text-white">
+                  {setting.label}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {setting.description}
+                </div>
+              </div>
+              <div>
+                {setting.type === "select" ? (
+                  <select
+                    value={(settings as any)[setting.key] || "domcontentloaded"}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: e.target.value,
+                      })
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  >
+                    {setting.options?.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : setting.type === "number" ? (
+                  <input
+                    type="number"
+                    value={(settings as any)[setting.key] || 0}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: parseInt(e.target.value, 10),
+                      })
+                    }
+                    min={setting.min}
+                    max={setting.max}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={(settings as any)[setting.key] || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: e.target.value,
+                      })
+                    }
+                    className="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={saveCrawlingSettings}
+              disabled={saving === "crawling"}
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving === "crawling" ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <HiSave className="h-4 w-4" />
+                  Save Crawling Settings
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Storage Performance Settings Section */}
+      <div className="space-y-4">
+        <h3 className="font-medium text-gray-900 dark:text-white">
+          Storage Performance Settings
+        </h3>
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          {STORAGE_SETTINGS.map((setting) => (
+            <div
+              key={setting.key}
+              className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0 dark:border-gray-700"
+            >
+              <div className="flex-1">
+                <div className="font-medium text-gray-900 dark:text-white">
+                  {setting.label}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {setting.description}
+                </div>
+              </div>
+              <div>
+                {setting.type === "boolean" ? (
+                  <button
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: !(settings as any)[setting.key],
+                      })
+                    }
+                    className={`${
+                      (settings as any)[setting.key]
+                        ? "bg-brand-600"
+                        : "bg-gray-200 dark:bg-gray-700"
+                    } relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800`}
+                  >
+                    <span
+                      className={`${
+                        (settings as any)[setting.key]
+                          ? "translate-x-7"
+                          : "translate-x-1"
+                      } inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform`}
+                    />
+                  </button>
+                ) : setting.type === "number" ? (
+                  <input
+                    type="number"
+                    value={(settings as any)[setting.key] || 0}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: parseInt(e.target.value, 10),
+                      })
+                    }
+                    min={setting.min}
+                    max={setting.max}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={(settings as any)[setting.key] || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        [setting.key]: e.target.value,
+                      })
+                    }
+                    className="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={saveStorageSettings}
+              disabled={saving === "storage"}
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving === "storage" ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <HiSave className="h-4 w-4" />
+                  Save Storage Settings
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Settings Section */}
+      <div className="space-y-4">
+        <h3 className="font-medium text-gray-900 dark:text-white">
+          Advanced Settings
+        </h3>
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          {ADVANCED_SETTINGS.map((setting) => (
+            <div
+              key={setting.key}
+              className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0 dark:border-gray-700"
+            >
+              <div className="flex-1">
+                <div className="font-medium text-gray-900 dark:text-white">
+                  {setting.label}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {setting.description}
+                </div>
+              </div>
+              <div>
+                <input
+                  type="number"
+                  value={(settings as any)[setting.key] || 0}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      [setting.key]: parseInt(e.target.value, 10),
+                    })
+                  }
+                  min={setting.min}
+                  max={setting.max}
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+          ))}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={saveAdvancedSettings}
+              disabled={saving === "advanced"}
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving === "advanced" ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <HiSave className="h-4 w-4" />
+                  Save Advanced Settings
                 </>
               )}
             </button>

@@ -36,6 +36,25 @@ export interface RagSettings {
   OLLAMA_EMBEDDING_URL?: string;
   OLLAMA_EMBEDDING_INSTANCE_NAME?: string;
 
+  // Crawling Performance Settings
+  CRAWL_BATCH_SIZE?: number;
+  CRAWL_MAX_CONCURRENT?: number;
+  CRAWL_WAIT_STRATEGY?: string;
+  CRAWL_PAGE_TIMEOUT?: number;
+  CRAWL_DELAY_BEFORE_HTML?: number;
+
+  // Storage Performance Settings
+  DOCUMENT_STORAGE_BATCH_SIZE?: number;
+  EMBEDDING_BATCH_SIZE?: number;
+  DELETE_BATCH_SIZE?: number;
+  ENABLE_PARALLEL_BATCHES?: boolean;
+
+  // Advanced Settings
+  MEMORY_THRESHOLD_PERCENT?: number;
+  DISPATCHER_CHECK_INTERVAL?: number;
+  CODE_EXTRACTION_BATCH_SIZE?: number;
+  CODE_SUMMARY_MAX_WORKERS?: number;
+
   // Provider API Keys
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;

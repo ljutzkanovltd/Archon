@@ -524,6 +524,22 @@ async def get_rag_settings():
             "LLM_INSTANCE_NAME": "",
             "OLLAMA_EMBEDDING_URL": "",
             "OLLAMA_EMBEDDING_INSTANCE_NAME": "",
+            # Crawling Performance Settings
+            "CRAWL_BATCH_SIZE": 50,
+            "CRAWL_MAX_CONCURRENT": 10,
+            "CRAWL_WAIT_STRATEGY": "domcontentloaded",
+            "CRAWL_PAGE_TIMEOUT": 60,
+            "CRAWL_DELAY_BEFORE_HTML": 0,
+            # Storage Performance Settings
+            "DOCUMENT_STORAGE_BATCH_SIZE": 50,
+            "EMBEDDING_BATCH_SIZE": 100,
+            "DELETE_BATCH_SIZE": 50,
+            "ENABLE_PARALLEL_BATCHES": True,
+            # Advanced Settings
+            "MEMORY_THRESHOLD_PERCENT": 80,
+            "DISPATCHER_CHECK_INTERVAL": 5000,
+            "CODE_EXTRACTION_BATCH_SIZE": 50,
+            "CODE_SUMMARY_MAX_WORKERS": 3,
         }
 
         # Get RAG settings from credentials with category "rag_strategy"
