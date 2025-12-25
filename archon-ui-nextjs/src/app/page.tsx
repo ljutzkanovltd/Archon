@@ -98,10 +98,62 @@ export default function DashboardPage() {
 
   if (stats.loading) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-brand-600 border-r-transparent"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
+      <div className="p-6 animate-fadeIn">
+        {/* Header Skeleton */}
+        <div className="mb-6">
+          <div className="h-8 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="mt-2 h-5 w-96 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+        </div>
+
+        {/* Stats Grid Skeleton */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  <div className="mt-2 h-9 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  <div className="mt-1 h-3 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                </div>
+                <div className="h-12 w-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Task Breakdown Chart Skeleton */}
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="mb-4 h-6 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="space-y-4">
+                {[...Array(4)].map((_, j) => (
+                  <div key={j}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <div className="h-4 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                      <div className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                    </div>
+                    <div className="h-2 w-full animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick Actions Skeleton */}
+        <div className="mt-8 grid gap-6 md:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                <div className="flex-1">
+                  <div className="h-5 w-28 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  <div className="mt-1 h-4 w-36 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -119,9 +171,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 animate-fadeIn">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 transition-opacity duration-200 ease-in-out">
         <h1 className="h1 text-gray-900 dark:text-white">Dashboard</h1>
         <p className="body-1 mt-2 text-gray-600 dark:text-gray-400">
           Welcome to Archon Knowledge Base & Task Management
@@ -129,9 +181,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 transition-opacity duration-200 ease-in-out">
         {/* Total Projects */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -148,7 +200,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Total Tasks */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -168,7 +220,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Completion Rate */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -188,7 +240,7 @@ export default function DashboardPage() {
         </div>
 
         {/* User Tasks */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -208,7 +260,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Agent Tasks */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -228,7 +280,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Active Users (Real Data) */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -272,7 +324,7 @@ export default function DashboardPage() {
       {/* Task Breakdown Chart */}
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         {/* Task Status Breakdown */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <h2 className="h3 mb-4 text-gray-900 dark:text-white">
             Task Status Breakdown
           </h2>
@@ -336,7 +388,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Task Assignment Breakdown */}
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <h2 className="h3 mb-4 text-gray-900 dark:text-white">
             Task Assignment
           </h2>
@@ -376,7 +428,7 @@ export default function DashboardPage() {
       <div className="mt-8 grid gap-6 md:grid-cols-3">
         <Link
           href="/projects"
-          className="group rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-brand-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-brand-400"
+          className="group rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:border-brand-500 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-brand-400"
         >
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-brand-100 p-2 group-hover:bg-brand-200 dark:bg-brand-900/20">
@@ -391,7 +443,7 @@ export default function DashboardPage() {
 
         <Link
           href="/projects?view=tasks"
-          className="group rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-blue-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-400"
+          className="group rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:border-blue-500 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-400"
         >
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-blue-100 p-2 group-hover:bg-blue-200 dark:bg-blue-900/20">
@@ -406,7 +458,7 @@ export default function DashboardPage() {
 
         <Link
           href="/documents"
-          className="group rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-green-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-green-400"
+          className="group rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:border-green-500 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-green-400"
         >
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-green-100 p-2 group-hover:bg-green-200 dark:bg-green-900/20">

@@ -34,6 +34,15 @@ const config: Config = {
         "3xl": "106rem",
         "4xl": "112.5rem",
       },
+      animation: {
+        fadeIn: "fadeIn 200ms ease-in-out",
+      },
+      keyframes: {
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+      },
     },
   },
   plugins: [require("flowbite/plugin")],
