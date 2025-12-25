@@ -282,13 +282,13 @@ export function DesktopSidebar() {
         </div>
       </div>
 
-      {/* Resize handle */}
+      {/* Resize handle - Enhanced discoverability */}
       {!desktop.isCollapsed && (
         <div
-          className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-brand-500 hover:w-1.5 transition-all"
+          className="absolute right-0 top-0 h-full w-[3px] cursor-col-resize bg-gradient-to-r from-transparent via-gray-300 to-transparent hover:w-1 hover:via-brand-500 transition-all duration-200 dark:via-gray-600 dark:hover:via-brand-400"
           onMouseDown={handleResizeStart}
           onDoubleClick={handleDoubleClick}
-          title="Drag to resize, double-click to reset"
+          title="Drag to resize | Double-click to reset"
         />
       )}
 
