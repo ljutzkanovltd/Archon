@@ -13,10 +13,11 @@ export const projectService = {
   /**
    * Get all projects
    */
-  async listProjects(): Promise<Project[]> {
+  async listProjects(includeArchived = false): Promise<Project[]> {
     try {
       // Fetching projects from API
-      const response = await callAPIWithETag<{ projects: Project[] }>("/api/projects");
+      const url = includeArchived ? "/api/projects?include_archived=true" : "/api/projects";
+      const response = await callAPIWithETag<{ projects: Project[] }>(url);
       // API response received
 
       const projects = response.projects || [];
@@ -32,6 +33,8 @@ export const projectService = {
           ...project,
           // Ensure pinned is properly handled as boolean
           pinned: project.pinned === true,
+          // Ensure archived is properly handled as boolean
+          archived: project.archived === true,
           progress: project.progress || 0,
           updated: project.updated || formatRelativeTime(project.updated_at),
         };
@@ -42,6 +45,55 @@ export const projectService = {
       return processedProjects;
     } catch (error) {
       console.error("Failed to list projects:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Archive a project and all its tasks
+   */
+  async archiveProject(projectId: string, archivedBy = "User"): Promise<{
+    project_id: string;
+    message: string;
+    tasks_archived: number;
+    archived_by: string;
+  }> {
+    try {
+      const response = await callAPIWithETag<{
+        project_id: string;
+        message: string;
+        tasks_archived: number;
+        archived_by: string;
+      }>(`/api/projects/${projectId}/archive`, {
+        method: "POST",
+        body: JSON.stringify({ archived_by: archivedBy }),
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to archive project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Unarchive a project and all its tasks
+   */
+  async unarchiveProject(projectId: string): Promise<{
+    project_id: string;
+    message: string;
+    tasks_unarchived: number;
+  }> {
+    try {
+      const response = await callAPIWithETag<{
+        project_id: string;
+        message: string;
+        tasks_unarchived: number;
+      }>(`/api/projects/${projectId}/unarchive`, {
+        method: "POST",
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to unarchive project ${projectId}:`, error);
       throw error;
     }
   },

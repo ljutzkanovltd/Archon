@@ -1,4 +1,4 @@
-import { Clipboard, Edit, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Clipboard, Edit, Trash2 } from "lucide-react";
 import type React from "react";
 import { useToast } from "@/features/shared/hooks/useToast";
 import { cn, glassmorphism } from "../../../ui/primitives/styles";
@@ -7,16 +7,22 @@ import { SimpleTooltip } from "../../../ui/primitives/tooltip";
 interface TaskCardActionsProps {
   taskId: string;
   taskTitle: string;
+  isArchived?: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onArchive?: () => void;
+  onUnarchive?: () => void;
   isDeleting?: boolean;
 }
 
 export const TaskCardActions: React.FC<TaskCardActionsProps> = ({
   taskId,
   taskTitle,
+  isArchived = false,
   onEdit,
   onDelete,
+  onArchive,
+  onUnarchive,
   isDeleting = false,
 }) => {
   const { showToast } = useToast();
@@ -89,6 +95,53 @@ export const TaskCardActions: React.FC<TaskCardActionsProps> = ({
           <Edit className="w-3 h-3" />
         </button>
       </SimpleTooltip>
+
+      {/* Archive/Unarchive button */}
+      {!isArchived && onArchive && (
+        <SimpleTooltip content="Archive task">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center",
+              "transition-all duration-300",
+              "bg-gray-100/80 dark:bg-gray-500/20",
+              "text-gray-600 dark:text-gray-400",
+              "hover:bg-gray-200 dark:hover:bg-gray-500/30",
+              "hover:shadow-[0_0_10px_rgba(156,163,175,0.3)]",
+            )}
+            aria-label={`Archive ${taskTitle}`}
+          >
+            <Archive className="w-3 h-3" />
+          </button>
+        </SimpleTooltip>
+      )}
+
+      {isArchived && onUnarchive && (
+        <SimpleTooltip content="Restore task">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnarchive();
+            }}
+            className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center",
+              "transition-all duration-300",
+              "bg-green-100/80 dark:bg-green-500/20",
+              "text-green-600 dark:text-green-400",
+              "hover:bg-green-200 dark:hover:bg-green-500/30",
+              "hover:shadow-[0_0_10px_rgba(34,197,94,0.3)]",
+            )}
+            aria-label={`Restore ${taskTitle}`}
+          >
+            <ArchiveRestore className="w-3 h-3" />
+          </button>
+        </SimpleTooltip>
+      )}
 
       <SimpleTooltip content="Copy Task ID">
         <button

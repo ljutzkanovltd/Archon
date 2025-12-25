@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { LayoutGrid, List, Plus, Search, X } from "lucide-react";
+import { Archive, LayoutGrid, List, Plus, Search, X } from "lucide-react";
 import type React from "react";
 import type { ReactNode } from "react";
 import { Button } from "../../ui/primitives/button";
@@ -13,6 +13,8 @@ interface ProjectHeaderProps {
   rightContent?: ReactNode;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
+  showArchived?: boolean;
+  onShowArchivedChange?: (show: boolean) => void;
 }
 
 const titleVariants = {
@@ -40,6 +42,8 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   rightContent,
   searchQuery,
   onSearchChange,
+  showArchived = false,
+  onShowArchivedChange,
 }) => {
   return (
     <motion.div
@@ -83,6 +87,23 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
               </button>
             )}
           </div>
+        )}
+        {/* Show Archived toggle */}
+        {onShowArchivedChange && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onShowArchivedChange(!showArchived)}
+            className={cn(
+              "flex items-center gap-2 px-3",
+              showArchived && "bg-gray-500/20 text-gray-300 dark:text-gray-400",
+            )}
+            aria-label={showArchived ? "Hide archived projects" : "Show archived projects"}
+            aria-pressed={showArchived}
+          >
+            <Archive className="w-4 h-4" aria-hidden="true" />
+            <span className="text-sm">{showArchived ? "Hide" : "Show"} Archived</span>
+          </Button>
         )}
         {/* Layout toggle - show if mode and change handler provided */}
         {layoutMode && onLayoutModeChange && (

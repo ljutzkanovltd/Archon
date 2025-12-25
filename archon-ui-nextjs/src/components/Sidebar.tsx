@@ -10,14 +10,19 @@ import {
   HiDocumentText,
   HiChevronDown,
   HiX,
+  HiDatabase,
+  HiCog,
+  HiServer,
+  HiClipboardList,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { TaskCountBadge } from "./Sidebar/TaskCountBadge";
 
 interface MenuItemProps {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  badge?: string;
+  badge?: string | React.ReactNode;
   children?: MenuItemProps[];
 }
 
@@ -110,9 +115,16 @@ function MenuItem({
         <span className="flex-1 whitespace-nowrap">{item.label}</span>
       )}
       {!isCollapsed && item.badge && (
-        <span className="ml-auto inline-flex items-center justify-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800 dark:bg-brand-900 dark:text-brand-300">
-          {item.badge}
-        </span>
+        typeof item.badge === 'string' ? (
+          <span className="ml-auto inline-flex items-center justify-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800 dark:bg-brand-900 dark:text-brand-300">
+            {item.badge}
+          </span>
+        ) : (
+          <div className="ml-auto">{item.badge}</div>
+        )
+      )}
+      {isCollapsed && item.badge && typeof item.badge !== 'string' && (
+        <div className="absolute right-2">{item.badge}</div>
       )}
     </Link>
   );
@@ -228,9 +240,25 @@ export function DesktopSidebar() {
       })),
     },
     {
-      href: "/documents",
-      icon: HiDocumentText,
-      label: "Documents",
+      href: "/tasks",
+      icon: HiClipboardList,
+      label: "Tasks",
+      badge: <TaskCountBadge isCollapsed={desktop.isCollapsed} />,
+    },
+    {
+      href: "/knowledge-base",
+      icon: HiDatabase,
+      label: "Knowledge Base",
+    },
+    {
+      href: "/mcp",
+      icon: HiServer,
+      label: "MCP Server",
+    },
+    {
+      href: "/settings",
+      icon: HiCog,
+      label: "Settings",
     },
   ];
 
@@ -322,9 +350,25 @@ export function MobileSidebar() {
       })),
     },
     {
-      href: "/documents",
-      icon: HiDocumentText,
-      label: "Documents",
+      href: "/tasks",
+      icon: HiClipboardList,
+      label: "Tasks",
+      badge: <TaskCountBadge isCollapsed={false} isMobile={true} />,
+    },
+    {
+      href: "/knowledge-base",
+      icon: HiDatabase,
+      label: "Knowledge Base",
+    },
+    {
+      href: "/mcp",
+      icon: HiServer,
+      label: "MCP Server",
+    },
+    {
+      href: "/settings",
+      icon: HiCog,
+      label: "Settings",
     },
   ];
 

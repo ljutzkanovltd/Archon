@@ -769,6 +769,123 @@ async def list_tasks(
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+@router.get("/tasks/completion-stats")
+async def get_completion_stats(
+    project_id: str | None = None,
+    days: int = 7,
+    limit: int = 50
+):
+    """
+    Get task completion statistics and recently completed tasks.
+
+    Provides project completion rate, average completion time, and list
+    of recently completed tasks from the last N days.
+
+    Args:
+        project_id: Optional project UUID to filter by project
+        days: Number of days to look back (default: 7)
+        limit: Maximum number of recently completed tasks (default: 50)
+
+    Returns:
+        Object with stats (if project_id provided) and recently_completed array
+    """
+    try:
+        logfire.debug(
+            f"Getting completion stats | project_id={project_id} | days={days} | limit={limit}"
+        )
+
+        task_service = TaskService()
+        success, result = task_service.get_completion_stats(project_id, days, limit)
+
+        if not success:
+            error_msg = result.get("error", "Failed to get completion stats")
+            logfire.error(f"Completion stats retrieval failed | error={error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        logfire.info(
+            f"Completion stats retrieved | completed_tasks_count={result.get('count', 0)} | days={days}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to get completion stats | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/v1/active-users")
+async def get_active_users():
+    """
+    Get list of active users based on task activity in the last 24 hours.
+
+    Returns unique assignees who have tasks that were updated in the last 24 hours,
+    along with their last activity timestamp.
+
+    Returns:
+        {
+            "count": int,
+            "users": [
+                {
+                    "name": str,
+                    "last_activity": str (ISO datetime)
+                }
+            ]
+        }
+    """
+    try:
+        from datetime import timedelta
+
+        logfire.debug("Getting active users from last 24 hours")
+
+        # Calculate 24 hours ago
+        twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+
+        # Query tasks updated in last 24 hours
+        supabase = get_supabase_client()
+        response = (
+            supabase.table("archon_tasks")
+            .select("assignee, updated_at")
+            .gte("updated_at", twenty_four_hours_ago.isoformat())
+            .eq("archived", False)
+            .execute()
+        )
+
+        if not response.data:
+            logfire.info("No active users found in last 24 hours")
+            return {"count": 0, "users": []}
+
+        # Group by assignee and get latest activity
+        users_dict = {}
+        for task in response.data:
+            assignee = task.get("assignee", "Unknown")
+            updated_at = task.get("updated_at")
+
+            if assignee not in users_dict or (updated_at and updated_at > users_dict[assignee]):
+                users_dict[assignee] = updated_at
+
+        # Format result
+        users = [
+            {"name": name, "last_activity": activity}
+            for name, activity in users_dict.items()
+        ]
+
+        # Sort by last activity (most recent first)
+        users.sort(key=lambda x: x["last_activity"], reverse=True)
+
+        logfire.info(f"Active users retrieved | count={len(users)}")
+
+        return {
+            "count": len(users),
+            "users": users
+        }
+
+    except Exception as e:
+        logfire.error(f"Failed to get active users | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str):
     """Get a specific task by ID."""
@@ -1275,4 +1392,349 @@ async def restore_project_version(
         logfire.error(
             f"Failed to restore version | error={str(e)} | project_id={project_id} | field_name={field_name} | version_number={version_number}"
         )
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+class ArchiveProjectRequest(BaseModel):
+    archived_by: str = "User"
+
+
+@router.post("/projects/{project_id}/archive")
+async def archive_project(project_id: str, request: ArchiveProjectRequest):
+    """
+    Archive a project and all its associated tasks.
+
+    This endpoint calls the PostgreSQL function archive_project_and_tasks()
+    which automatically cascades the archival to all tasks.
+
+    Args:
+        project_id: UUID of the project to archive
+        request: Contains archived_by field (default: "User")
+
+    Returns:
+        Success message with count of tasks archived
+    """
+    try:
+        logfire.debug(f"Archiving project | project_id={project_id} | archived_by={request.archived_by}")
+
+        project_service = ProjectService()
+        success, result = project_service.archive_project(project_id, request.archived_by)
+
+        if not success:
+            error_msg = result.get("error", "Failed to archive project")
+            logfire.error(f"Project archival failed | project_id={project_id} | error={error_msg}")
+            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
+
+        logfire.info(
+            f"Project archived successfully | project_id={project_id} | tasks_archived={result.get('tasks_archived', 0)}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to archive project | error={str(e)} | project_id={project_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/projects/{project_id}/unarchive")
+async def unarchive_project(project_id: str):
+    """
+    Unarchive a project and all its associated tasks.
+
+    This endpoint calls the PostgreSQL function unarchive_project_and_tasks()
+    which automatically cascades the unarchival to all tasks.
+
+    Args:
+        project_id: UUID of the project to unarchive
+
+    Returns:
+        Success message with count of tasks unarchived
+    """
+    try:
+        logfire.debug(f"Unarchiving project | project_id={project_id}")
+
+        project_service = ProjectService()
+        success, result = project_service.unarchive_project(project_id)
+
+        if not success:
+            error_msg = result.get("error", "Failed to unarchive project")
+            logfire.error(f"Project unarchival failed | project_id={project_id} | error={error_msg}")
+            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
+
+        logfire.info(
+            f"Project unarchived successfully | project_id={project_id} | tasks_unarchived={result.get('tasks_unarchived', 0)}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to unarchive project | error={str(e)} | project_id={project_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+class ArchiveTaskRequest(BaseModel):
+    archived_by: str = "User"
+
+
+@router.post("/tasks/{task_id}/archive")
+async def archive_task(task_id: str, request: ArchiveTaskRequest):
+    """
+    Archive a specific task.
+    
+    Args:
+        task_id: UUID of the task to archive
+        request: Contains archived_by field (default: "User")
+    
+    Returns:
+        Success message with task details
+    """
+    try:
+        logfire.debug(f"Archiving task | task_id={task_id} | archived_by={request.archived_by}")
+        
+        task_service = TaskService()
+        success, result = await task_service.archive_task(task_id, request.archived_by)
+        
+        if not success:
+            error_msg = result.get("error", "Failed to archive task")
+            logfire.error(f"Task archival failed | task_id={task_id} | error={error_msg}")
+            
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            elif "already archived" in error_msg.lower():
+                raise HTTPException(status_code=409, detail=error_msg)
+            else:
+                raise HTTPException(status_code=500, detail=error_msg)
+        
+        logfire.info(f"Task archived successfully | task_id={task_id}")
+        
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to archive task | error={str(e)} | task_id={task_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/tasks/{task_id}/unarchive")
+async def unarchive_task(task_id: str):
+    """
+    Unarchive a specific task.
+    
+    Args:
+        task_id: UUID of the task to unarchive
+    
+    Returns:
+        Success message with task details
+    """
+    try:
+        logfire.debug(f"Unarchiving task | task_id={task_id}")
+        
+        task_service = TaskService()
+        success, result = await task_service.unarchive_task(task_id)
+        
+        if not success:
+            error_msg = result.get("error", "Failed to unarchive task")
+            logfire.error(f"Task unarchival failed | task_id={task_id} | error={error_msg}")
+            
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            elif "not archived" in error_msg.lower():
+                raise HTTPException(status_code=409, detail=error_msg)
+            else:
+                raise HTTPException(status_code=500, detail=error_msg)
+        
+        logfire.info(f"Task unarchived successfully | task_id={task_id}")
+        
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to unarchive task | error={str(e)} | task_id={task_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+
+@router.get("/tasks/{task_id}/history")
+async def get_task_history(
+    task_id: str,
+    field_name: str | None = None,
+    limit: int = 50
+):
+    """
+    Get change history for a specific task.
+
+    Returns chronological list of all field changes for the task,
+    automatically logged by the archon_task_history trigger.
+
+    Args:
+        task_id: UUID of the task
+        field_name: Optional filter for specific field (status, assignee, priority, etc.)
+        limit: Maximum number of changes to return (default: 50)
+
+    Returns:
+        Array of changes with old/new values, changed_by, and timestamps
+    """
+    try:
+        logfire.debug(f"Getting task history | task_id={task_id} | field_name={field_name} | limit={limit}")
+
+        task_service = TaskService()
+        success, result = task_service.get_task_history(task_id, field_name, limit)
+
+        if not success:
+            error_msg = result.get("error", "Failed to get task history")
+            logfire.error(f"Task history retrieval failed | task_id={task_id} | error={error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        logfire.info(f"Task history retrieved | task_id={task_id} | changes_count={result.get('count', 0)}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to get task history | error={str(e)} | task_id={task_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/tasks/{task_id}/versions")
+async def get_task_versions(
+    task_id: str,
+    field_name: str | None = None,
+    limit: int = 10
+):
+    """
+    Get version history for a task's fields.
+    
+    Returns snapshots of significant field changes over time.
+    
+    Args:
+        task_id: UUID of the task
+        field_name: Optional filter for specific field (title, description, sources, code_examples)
+        limit: Maximum number of versions to return (default: 10)
+    
+    Returns:
+        JSON with versions list containing version snapshots
+    """
+    try:
+        logfire.debug(f"Getting task versions | task_id={task_id} | field_name={field_name} | limit={limit}")
+        
+        task_service = TaskService()
+        success, result = task_service.get_task_versions(task_id, field_name, limit)
+        
+        if not success:
+            error_msg = result.get("error", "Failed to get task versions")
+            logfire.error(f"Task versions retrieval failed | task_id={task_id} | error={error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        logfire.info(f"Task versions retrieved | task_id={task_id} | count={result.get('count', 0)}")
+        
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to get task versions | error={str(e)} | task_id={task_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# ============================================================================
+# ADMIN ENDPOINTS - Data Retention and Maintenance
+# ============================================================================
+
+
+class PurgeTaskHistoryRequest(BaseModel):
+    """Request model for purging old task history"""
+    retention_days: int = 365
+    keep_archived: bool = True
+    dry_run: bool = False
+
+
+@router.post("/admin/purge-task-history")
+async def purge_task_history(request: PurgeTaskHistoryRequest):
+    """
+    Purge old task history records based on retention policy.
+
+    This is an admin endpoint that cleans up old task_history records while
+    preserving important history (archived tasks, completion events, archival events).
+
+    Args:
+        retention_days: Number of days to retain history (default: 365)
+        keep_archived: Keep history for archived tasks indefinitely (default: true)
+        dry_run: Preview mode - count what would be deleted without deleting (default: false)
+
+    Returns:
+        JSON with purge statistics:
+        - deleted_count: Number of records deleted (or would be deleted if dry_run)
+        - oldest_deleted: Timestamp of oldest deleted record
+        - newest_deleted: Timestamp of newest deleted record
+        - retention_days: Retention policy used
+        - keep_archived: Whether archived task history was preserved
+        - dry_run: Whether this was a preview run
+        - message: Human-readable summary
+
+    Examples:
+        # Dry run (preview)
+        POST /api/admin/purge-task-history
+        {
+            "retention_days": 365,
+            "keep_archived": true,
+            "dry_run": true
+        }
+
+        # Actually purge with 180-day retention
+        POST /api/admin/purge-task-history
+        {
+            "retention_days": 180,
+            "keep_archived": true,
+            "dry_run": false
+        }
+
+    Notes:
+        - Always preserves: task completion events (status→done), archival events (archived→true)
+        - If keep_archived=true: preserves ALL history for archived tasks
+        - Use dry_run=true first to preview impact before actual purge
+        - Recommended to run during low-traffic periods
+        - Consider backing up database before large purges
+    """
+    try:
+        logfire.info(
+            f"Admin purge task history request | retention_days={request.retention_days} | "
+            f"keep_archived={request.keep_archived} | dry_run={request.dry_run}"
+        )
+
+        task_service = TaskService()
+        success, result = task_service.purge_old_task_history(
+            retention_days=request.retention_days,
+            keep_archived=request.keep_archived,
+            dry_run=request.dry_run
+        )
+
+        if not success:
+            error_msg = result.get("error", "Failed to purge task history")
+            logfire.error(f"Task history purge failed | error={error_msg}")
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        deleted_count = result.get("deleted_count", 0)
+        log_msg = (
+            f"Task history purge {'preview' if request.dry_run else 'completed'} | "
+            f"deleted_count={deleted_count} | retention_days={request.retention_days}"
+        )
+
+        if request.dry_run:
+            logfire.info(log_msg)
+        else:
+            logfire.warning(log_msg)  # Use warning level for actual deletions
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to purge task history | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})

@@ -1,3 +1,4 @@
+import { History } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import {
   Button,
@@ -22,6 +23,7 @@ import {
 import { useTaskEditor } from "../hooks";
 import { type Assignee, COMMON_ASSIGNEES, type Task, type TaskPriority } from "../types";
 import { FeatureSelect } from "./FeatureSelect";
+import { TaskHistoryTimeline } from "./TaskHistoryTimeline";
 
 interface TaskEditModalProps {
   isModalOpen: boolean;
@@ -186,6 +188,19 @@ export const TaskEditModal = memo(
               </FormField>
             </FormGrid>
           </div>
+
+          {/* Task History Timeline - only show for existing tasks */}
+          {editingTask?.id && (
+            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-4">
+                <History className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Task History</h3>
+              </div>
+              <div className="max-h-96 overflow-y-auto pr-2">
+                <TaskHistoryTimeline taskId={editingTask.id} />
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button onClick={handleClose} variant="outline" disabled={isSavingTask}>

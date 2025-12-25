@@ -54,6 +54,11 @@ export interface Project {
   technical_sources?: string[];
   business_sources?: string[];
 
+  // Archival fields (Phase 0)
+  archived?: boolean;
+  archived_at?: string | null;
+  archived_by?: string | null;
+
   // Extended UI properties
   description?: string;
   progress?: number;

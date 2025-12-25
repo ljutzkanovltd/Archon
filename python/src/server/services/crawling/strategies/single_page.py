@@ -1,16 +1,24 @@
 """
 Single Page Crawling Strategy
 
-Handles crawling of individual web pages.
+Handles crawling of individual web pages with rate limiting support.
 """
 import asyncio
+import os
+import time
 import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from crawl4ai import CacheMode, CrawlerRunConfig
 
 from ....config.logfire_config import get_logger
+from ..adaptive_throttler import get_global_adaptive_throttler
+from ..async_limiter import GlobalRateLimiter
+from ..metrics import RateLimitEvent, RateLimitReason, get_global_metrics_collector
+from ..rate_limiter import RateLimitHandler
+from ..robots_manager import get_global_robots_manager
 
 logger = get_logger(__name__)
 
@@ -21,13 +29,48 @@ class SinglePageCrawlStrategy:
     def __init__(self, crawler, markdown_generator):
         """
         Initialize single page crawl strategy.
-        
+
         Args:
             crawler (AsyncWebCrawler): The Crawl4AI crawler instance for web crawling operations
             markdown_generator (DefaultMarkdownGenerator): The markdown generator instance for converting HTML to markdown
         """
         self.crawler = crawler
         self.markdown_generator = markdown_generator
+
+        # Initialize rate limiting components
+        # Get configuration from environment variables
+        default_rate = float(os.getenv('CRAWL_DEFAULT_RATE_LIMIT', '1.0'))
+        base_delay = float(os.getenv('CRAWL_BASE_DELAY', '1.0'))
+        max_delay = float(os.getenv('CRAWL_MAX_DELAY', '60.0'))
+        adaptive_enabled = os.getenv('CRAWL_ADAPTIVE_THROTTLE', 'false').lower() == 'true'
+        respect_robots = os.getenv('CRAWL_RESPECT_ROBOTS', 'true').lower() == 'true'
+
+        # Global async rate limiter (per-domain token bucket)
+        self.rate_limiter = GlobalRateLimiter.get_instance(default_rate=default_rate)
+
+        # Rate limit handler (detection + exponential backoff)
+        self.rate_limit_handler = RateLimitHandler(
+            base_delay=base_delay,
+            max_delay=max_delay,
+            jitter_range=(0.0, 1.0)
+        )
+
+        # Adaptive throttler (latency-based)
+        self.adaptive_throttler = get_global_adaptive_throttler() if adaptive_enabled else None
+
+        # robots.txt manager
+        self.robots_manager = get_global_robots_manager() if respect_robots else None
+
+        # Metrics collector
+        self.metrics_collector = get_global_metrics_collector()
+
+        logger.info(
+            f"Initialized crawling strategy: "
+            f"rate_limit={default_rate} req/s, "
+            f"backoff={base_delay}-{max_delay}s, "
+            f"adaptive={adaptive_enabled}, "
+            f"respect_robots={respect_robots}"
+        )
 
     def _get_wait_selector_for_docs(self, url: str) -> str:
         """Get appropriate wait selector based on documentation framework."""
@@ -77,10 +120,64 @@ class SinglePageCrawlStrategy:
         original_url = url
         url = transform_url_func(url)
 
+        # Extract domain for rate limiting
+        domain = urlparse(url).netloc
+
+        # Check robots.txt if enabled
+        if self.robots_manager:
+            # Check if URL is allowed
+            if not self.robots_manager.is_allowed(url):
+                logger.warning(f"URL disallowed by robots.txt: {url}")
+
+                # Record metric
+                self.metrics_collector.record_event(
+                    event_type=RateLimitEvent.ROBOTS_BLOCKED,
+                    domain=domain,
+                    reason=RateLimitReason.ROBOTS_TXT,
+                    url=url
+                )
+
+                return {
+                    "success": False,
+                    "error": f"Crawling disallowed by robots.txt for {url}"
+                }
+
+            # Get and apply crawl-delay from robots.txt
+            crawl_delay = self.robots_manager.get_crawl_delay(url)
+            if crawl_delay:
+                logger.info(
+                    f"Applying robots.txt Crawl-Delay for {domain}: {crawl_delay}s"
+                )
+
+                # Record metric
+                self.metrics_collector.record_event(
+                    event_type=RateLimitEvent.CRAWL_DELAY,
+                    domain=domain,
+                    delay_seconds=crawl_delay,
+                    url=url
+                )
+
+                await asyncio.sleep(crawl_delay)
+
         last_error = None
+        start_time = None  # Track request timing for adaptive throttling
 
         for attempt in range(retry_count):
             try:
+                # Apply per-domain rate limiting BEFORE making request
+                wait_time = await self.rate_limiter.acquire(domain)
+                if wait_time > 0:
+                    logger.info(
+                        f"Rate limiter delayed request to {domain} by {wait_time:.2f}s"
+                    )
+
+                # Apply adaptive throttling if enabled
+                if self.adaptive_throttler:
+                    adaptive_delay = await self.adaptive_throttler.acquire(domain)
+                    if adaptive_delay > 0:
+                        logger.debug(
+                            f"Adaptive throttler delayed request to {domain} by {adaptive_delay:.2f}s"
+                        )
                 if not self.crawler:
                     logger.error(f"No crawler instance available for URL: {url}")
                     return {
@@ -137,22 +234,62 @@ class SinglePageCrawlStrategy:
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")
                 logger.info(f"Using wait_until: {crawl_config.wait_until}, page_timeout: {crawl_config.page_timeout}")
 
+                # Track request timing for adaptive throttling
+                start_time = time.time()
+
                 try:
                     result = await self.crawler.arun(url=url, config=crawl_config)
+
+                    # Record response time for adaptive throttling
+                    if self.adaptive_throttler and start_time:
+                        latency = time.time() - start_time
+                        self.adaptive_throttler.record_response(
+                            domain,
+                            latency=latency,
+                            is_error=not result.success
+                        )
                 except Exception as e:
                     last_error = f"Crawler exception for {url}: {str(e)}"
                     logger.error(last_error)
                     if attempt < retry_count - 1:
-                        await asyncio.sleep(2 ** attempt)
+                        # Use rate limit handler for backoff (no response, so no detection)
+                        await self.rate_limit_handler.backoff(
+                            attempt,
+                            {'retry_after': None, 'reason': 'Crawler exception'},
+                            domain=domain
+                        )
                     continue
+
+                # Check for rate limiting in the response
+                is_rate_limited, rate_limit_info = self.rate_limit_handler.check_rate_limit(result)
+
+                if is_rate_limited:
+                    logger.warning(
+                        f"Rate limit detected for {url}: {rate_limit_info['reason']}"
+                    )
+
+                    # If we have retries left, backoff and try again
+                    if attempt < retry_count - 1:
+                        await self.rate_limit_handler.backoff(attempt, rate_limit_info, domain=domain)
+                        continue
+
+                    # Out of retries, return error
+                    return {
+                        "success": False,
+                        "error": f"Rate limited after {retry_count} attempts: {rate_limit_info['reason']}"
+                    }
 
                 if not result.success:
                     last_error = f"Failed to crawl {url}: {result.error_message}"
                     logger.warning(f"Crawl attempt {attempt + 1} failed: {last_error}")
 
-                    # Exponential backoff before retry
+                    # Use rate limit handler for backoff
                     if attempt < retry_count - 1:
-                        await asyncio.sleep(2 ** attempt)
+                        await self.rate_limit_handler.backoff(
+                            attempt,
+                            {'retry_after': None, 'reason': f'Crawl failed: {result.error_message}'},
+                            domain=domain
+                        )
                     continue
 
                 # Validate content
@@ -161,7 +298,11 @@ class SinglePageCrawlStrategy:
                     logger.warning(f"Crawl attempt {attempt + 1}: {last_error}")
 
                     if attempt < retry_count - 1:
-                        await asyncio.sleep(2 ** attempt)
+                        await self.rate_limit_handler.backoff(
+                            attempt,
+                            {'retry_after': None, 'reason': 'Insufficient content'},
+                            domain=domain
+                        )
                     continue
 
                 # Success! Return both markdown AND HTML
@@ -204,14 +345,24 @@ class SinglePageCrawlStrategy:
             except TimeoutError:
                 last_error = f"Timeout crawling {url}"
                 logger.warning(f"Crawl attempt {attempt + 1} timed out")
+                # Use rate limit handler for backoff
+                if attempt < retry_count - 1:
+                    await self.rate_limit_handler.backoff(
+                        attempt,
+                        {'retry_after': None, 'reason': 'Timeout'},
+                        domain=domain
+                    )
             except Exception as e:
                 last_error = f"Error crawling page: {str(e)}"
                 logger.error(f"Error on attempt {attempt + 1} crawling {url}: {e}")
                 logger.error(traceback.format_exc())
-
-            # Exponential backoff before retry
-            if attempt < retry_count - 1:
-                await asyncio.sleep(2 ** attempt)
+                # Use rate limit handler for backoff
+                if attempt < retry_count - 1:
+                    await self.rate_limit_handler.backoff(
+                        attempt,
+                        {'retry_after': None, 'reason': f'Exception: {str(e)}'},
+                        domain=domain
+                    )
 
         # All retries failed
         return {

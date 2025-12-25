@@ -14,6 +14,8 @@ interface ProjectListProps {
   onProjectSelect: (project: Project) => void;
   onPinProject: (e: React.MouseEvent, projectId: string) => void;
   onDeleteProject: (e: React.MouseEvent, projectId: string, title: string) => void;
+  onArchiveProject?: (e: React.MouseEvent, projectId: string, title: string) => void;
+  onUnarchiveProject?: (e: React.MouseEvent, projectId: string, title: string) => void;
   onRetry: () => void;
 }
 
@@ -35,6 +37,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onProjectSelect,
   onPinProject,
   onDeleteProject,
+  onArchiveProject,
+  onUnarchiveProject,
   onRetry,
 }) => {
   // Sort projects - pinned first, then by creation date (newest first)
@@ -109,6 +113,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                 onSelect={onProjectSelect}
                 onPin={onPinProject}
                 onDelete={onDeleteProject}
+                onArchive={onArchiveProject}
+                onUnarchive={onUnarchiveProject}
               />
             </li>
           ))}

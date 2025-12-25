@@ -1,0 +1,583 @@
+# Crawl Configuration for Archon Knowledge Base
+# This file defines crawling behavior for specific libraries
+
+# Global settings
+global:
+  max_concurrent_crawls: 2  # Maximum concurrent crawl operations (2-3 recommended)
+  default_crawl_delay: 1.0  # Default delay between requests (seconds)
+  default_max_depth: 2      # Default crawl depth
+  retry_attempts: 3         # Number of retry attempts on failure
+  timeout: 600              # Maximum time per crawl (seconds)
+  poll_interval: 3.0        # Progress polling interval (seconds)
+  extract_code_examples: true  # Extract code examples by default
+
+# Expected minimum word counts for validation
+expected_word_counts:
+  odoo: 200000
+  fastapi: 300000
+  react: 400000
+  next_js: 350000
+  postgresql: 500000
+  typescript: 450000
+  supabase: 300000
+  docker_compose: 200000
+  pydanticai: 400000
+  model_context_protocol: 150000
+  tanstack_query: 200000
+  tailwind_css: 300000
+  azure_storage_blob: 100000
+  azure_functions: 150000
+  azure_app_service: 150000
+  azure_postgresql: 100000
+  n8n: 250000
+  qdrant: 200000
+  langfuse: 150000
+  flowise: 100000
+  default: 50000  # Default for unlisted libraries
+
+# Per-source crawl configurations
+source_configs:
+  # Odoo - requires aggressive rate limiting due to "too many requests" errors
+  odoo:
+    max_depth: 3
+    crawl_delay: 2.0  # 0.5 requests per second
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 1
+    notes: "Prone to rate limiting - use slow crawl rate"
+    critical_sections:
+      - /developer/
+      - /developer/reference/backend/orm
+      - /developer/tutorials/
+
+  # FastAPI - comprehensive crawl with all sections
+  fastapi:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 300000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /tutorial/
+      - /reference/
+      - /advanced/
+    notes: "Ensure tutorial and API reference are included"
+
+  # React - new documentation site
+  react:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 400000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /learn/
+      - /reference/react
+      - /reference/react/hooks
+
+  # Next.js - comprehensive framework docs
+  next_js:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 350000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /docs/app/
+      - /docs/pages/
+      - /docs/api-reference/
+
+  # PostgreSQL - large documentation set
+  postgresql:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 500000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /docs/15/sql-
+      - /docs/15/tutorial-
+
+  # TypeScript - handbook and reference
+  typescript:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 450000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /docs/handbook/
+
+  # Supabase - comprehensive platform docs
+  supabase:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 300000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /docs/guides/database
+      - /docs/guides/auth
+      - /docs/reference/
+
+  # TanStack Query - data fetching library
+  tanstack_query:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 1
+    critical_sections:
+      - /docs/framework/react/guides/
+      - /docs/framework/react/reference/
+
+  # PydanticAI - already crawled well (127 pages, 409k words)
+  pydanticai:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 400000
+    extract_code_examples: true
+    priority: 1
+    notes: "Already complete - 127 pages, 409k words"
+
+  # Model Context Protocol
+  model_context_protocol:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 1
+    notes: "Has /llms.txt support - prioritize this"
+
+  # Azure services - moderate rate limiting for Microsoft Learn
+  azure_storage_blob:
+    max_depth: 2
+    crawl_delay: 1.5  # Slower for Microsoft Learn
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 1
+
+  azure_functions:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 2
+
+  azure_app_service:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 2
+
+  azure_postgresql:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 2
+
+  azure_virtual_networks:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 80000
+    extract_code_examples: false
+    priority: 3
+
+  azure_ai_foundry:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 2
+    notes: "Already crawled - 136 pages, 384k words"
+
+  # Workflow automation
+  n8n:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 250000
+    extract_code_examples: true
+    priority: 1
+    notes: "Has /llms.txt support"
+
+  flowise:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 2
+    notes: "Has /llms.txt support"
+
+  # Vector databases
+  qdrant:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 1
+    notes: "Has /llms.txt support"
+
+  # Observability
+  langfuse:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 2
+    notes: "Has /llms.txt support"
+
+  # LLM inference (GitHub-based docs)
+  ollama:
+    max_depth: 1
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 1
+    notes: "GitHub-based documentation"
+
+  llama_cpp:
+    max_depth: 1
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 1
+    notes: "GitHub-based documentation"
+
+  # ============================================================
+  # COMPUTER VISION LIBRARIES - DEEP CRAWL FOR CONTEXT
+  # ============================================================
+
+  # OpenCV - Foundation library (comprehensive crawl)
+  opencv_docs_4x:
+    max_depth: 3
+    crawl_delay: 1.0
+    expected_word_count: 500000
+    extract_code_examples: true
+    priority: 1
+    notes: "OpenCV 4.x stable docs - comprehensive CV library, deep crawl for full context"
+
+  opencv_python:
+    max_depth: 3
+    crawl_delay: 1.0
+    expected_word_count: 300000
+    extract_code_examples: true
+    priority: 1
+    notes: "OpenCV Python tutorials - deep crawl for examples"
+
+  opencv_github:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 1
+    notes: "OpenCV GitHub - focus on README, docs/, samples/, LICENSE"
+
+  # SAM2/SAM3 - Meta foundation models
+  sam2:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 1
+    notes: "SAM2 - Segment Anything Model 2, include notebooks and examples"
+
+  sam3:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 1
+    notes: "SAM3 - Latest Segment Anything Model"
+
+  # Detection - YOLO and frameworks
+  yolox:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 1
+    notes: "YOLOX - Commercial-friendly YOLO variant for real-time detection"
+
+  detectron2:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 2
+    notes: "Detectron2 - Meta detection framework, crawl docs site + GitHub"
+
+  mmdetection:
+    max_depth: 2
+    crawl_delay: 1.2
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 2
+    notes: "MMDetection - OpenMMLab toolbox"
+
+  # Tracking - MOT
+  bytetrack:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 1
+    notes: "ByteTrack - Multi-object tracking for player IDs and ball trajectories"
+
+  norfair:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 2
+    notes: "Norfair - Lightweight tracking alternative"
+
+  # Field registration
+  kpsfr:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 1
+    notes: "KpSFR - Keypoint-based Spatial Field Registration for pitch/field detection"
+
+  # Pose estimation
+  mediapipe:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 200000
+    extract_code_examples: true
+    priority: 1
+    notes: "MediaPipe - Google edge AI for pose estimation, browser/mobile ready"
+
+  mediapipe_docs:
+    max_depth: 3
+    crawl_delay: 1.0
+    expected_word_count: 150000
+    extract_code_examples: true
+    priority: 1
+    notes: "MediaPipe framework docs - comprehensive documentation site"
+
+  # Edge inference - ONNX Runtime (critical for deployment)
+  onnxruntime:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 1
+    notes: "ONNXRuntime GitHub - cross-platform inference"
+
+  onnxruntime_docs:
+    max_depth: 3
+    crawl_delay: 1.0
+    expected_word_count: 300000
+    extract_code_examples: true
+    priority: 1
+    notes: "ONNXRuntime docs site - comprehensive deployment guides"
+
+  onnxruntime_mobile:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 1
+    notes: "ONNXRuntime mobile deployment docs"
+
+  onnxruntime_webgpu:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 1
+    notes: "ONNXRuntime WebGPU execution provider for browser inference"
+
+  # Utilities
+  roboflow_supervision:
+    max_depth: 2
+    crawl_delay: 1.0
+    expected_word_count: 100000
+    extract_code_examples: true
+    priority: 2
+    notes: "Roboflow Supervision - data visualization and pipeline utilities"
+
+  roboflow_notebooks:
+    max_depth: 1
+    crawl_delay: 1.0
+    expected_word_count: 50000
+    extract_code_examples: true
+    priority: 3
+    notes: "Roboflow notebooks - practical CV workflows (audit reuse rights)"
+
+  # Sports research
+  soccernet:
+    max_depth: 2
+    crawl_delay: 1.5
+    expected_word_count: 100000
+    extract_code_examples: false
+    priority: 2
+    notes: "SoccerNet - football benchmarks for methods and evaluation"
+
+# Priority-based crawl phases
+crawl_phases:
+  # Phase 1: Urgent - /llms.txt sources (highest quality)
+  phase_1_urgent:
+    priority: 1
+    filter: "sources_with_llms_txt"
+    libraries:
+      - model_context_protocol
+      - pydanticai
+      - tanstack_query
+      - flowbite_react
+      - supabase
+      - n8n
+      - qdrant
+      - langfuse
+      - flowise
+      - copilotkit
+      - sqlalchemy
+      - uvicorn
+      - vite
+      - framer_motion
+      - vitest
+      - clickhouse
+      - docker_compose
+    estimated_time: "3-4 hours"
+    batch_size: 3
+    notes: "These have native /llms.txt support - highest quality docs"
+
+  # Phase 2: Critical - Tier 1 without /llms.txt
+  phase_2_critical:
+    priority: 1
+    filter: "tier_1_without_llms_txt"
+    libraries:
+      - fastapi
+      - react
+      - next_js
+      - typescript
+      - tailwind_css
+      - postgresql
+      - odoo
+      - ollama
+      - llama_cpp
+      - azure_storage_blob
+    estimated_time: "4-5 hours"
+    batch_size: 2
+    notes: "Core framework documentation - critical for project success"
+
+  # Phase 3: High priority - Tier 2
+  phase_3_high:
+    priority: 2
+    libraries:
+      - redux_toolkit
+      - react_hook_form
+      - d3_js
+      - recharts
+      - httpx
+      - neo4j
+      - postgrest
+      - azure_functions
+      - azure_app_service
+      - azure_postgresql
+    estimated_time: "3-4 hours"
+    batch_size: 2
+
+  # Phase 4: Medium priority - Tier 3
+  phase_4_medium:
+    priority: 3
+    libraries:
+      - biome
+      - ruff
+      - azure_virtual_networks
+      - caddy
+      - kong
+    estimated_time: "2-3 hours"
+    batch_size: 2
+
+# Scheduled maintenance
+maintenance_schedule:
+  tier_1_refresh:
+    frequency: "weekly"
+    day: "sunday"
+    time: "02:00"
+    mode: "stale"
+    priority_filter: 1
+    notes: "Weekly refresh of critical documentation"
+
+  tier_2_refresh:
+    frequency: "biweekly"
+    day: "sunday"
+    time: "03:00"
+    mode: "stale"
+    priority_filter: 2
+    notes: "Bi-weekly refresh of high-priority docs"
+
+  tier_3_refresh:
+    frequency: "monthly"
+    day: "first_sunday"
+    time: "03:00"
+    mode: "stale"
+    priority_filter: 3
+    notes: "Monthly refresh of medium-priority docs"
+
+  validation_check:
+    frequency: "daily"
+    time: "01:00"
+    mode: "validate"
+    notes: "Daily completeness validation (no crawling)"
+
+# Error handling
+error_handling:
+  rate_limit_backoff:
+    initial_delay: 5.0
+    max_delay: 60.0
+    multiplier: 2.0
+    max_retries: 3
+
+  common_issues:
+    too_many_requests:
+      action: "increase_crawl_delay"
+      new_delay: 3.0
+      retry: true
+
+    timeout:
+      action: "retry"
+      max_retries: 2
+
+    forbidden:
+      action: "skip"
+      log: true
+      notes: "May require authentication or different approach"
+
+# Monitoring and alerts
+monitoring:
+  log_level: "INFO"
+  save_progress: true
+  progress_log_path: "../logs/crawl_progress.json"
+  error_log_path: "../logs/crawl_errors.log"
+
+  alerts:
+    enable_notifications: false
+    # When enabled, configure:
+    # slack_webhook: ""
+    # email_recipients: []
+    # failure_threshold: 3  # Alert after N consecutive failures
+
+# Notes and best practices
+notes: |
+  CRAWLING BEST PRACTICES:
+
+  1. **Start with /llms.txt sources** (Phase 1) - These are optimized for LLM consumption
+  2. **Use batch size 2-3** - Higher values may overload the system
+  3. **Respect rate limits** - Especially for Odoo (crawl_delay: 2.0)
+  4. **Monitor word counts** - Validate completeness after crawling
+  5. **Check for errors** - Look for "429", "too many requests" in results
+  6. **Schedule regular updates** - Weekly for Tier 1, bi-weekly for Tier 2
+  7. **Use dry-run mode first** - Test before actual crawling
+
+  TROUBLESHOOTING:
+
+  - If Odoo fails: Increase crawl_delay to 3.0 or 4.0
+  - If Azure fails: Check if VPN is required
+  - If GitHub fails: May need authentication token
+  - If validation shows low word counts: Re-crawl with higher max_depth

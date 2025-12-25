@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Custom breakpoints */
+  --breakpoint-3xl: 106rem;
+  --breakpoint-4xl: 112.5rem;
+
+  /* Light/Dark colors */
+  --color-light-100: #f3f4f6;
+  --color-light-200: #f9fafb;
+  --color-light-300: #9ca3af;
+
+  --color-dark-100: #111928;
+  --color-dark-200: #131524;
+
+  /* Brand colors - Archon red theme */
+  --color-brand-100: #f7dee0;
+  --color-brand-200: #f4cbce;
+  --color-brand-300: #ef9ca0;
+  --color-brand-400: #e7656a;
+  --color-brand-500: #e0474d;
+  --color-brand-600: #ed1c24;
+  --color-brand-700: var(--color-brand-700, #ef0606);
+  --color-brand-800: var(--color-brand-800, #d10505);
+}
+
+/*
+  Border color compatibility for Tailwind v4
+  Default border color changed to currentColor, so we maintain v3 behavior
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
+
+/* Typography utilities */
+@utility h1 {
+  @apply text-[34px] leading-[42px] font-bold;
+}
+
+@utility h2 {
+  @apply text-[24px] leading-[36px] font-semibold;
+}
+
+@utility h3 {
+  @apply text-[20px] leading-[28px] font-semibold;
+}
+
+@utility h4 {
+  @apply text-[18px] leading-[20px] font-bold;
+}
+
+@utility body-1 {
+  @apply text-[16px] leading-[24px] font-normal;
+}
+
+@utility body-2 {
+  @apply text-[14px] leading-[20px] font-normal;
+}
+
+@utility button {
+  @apply text-sm leading-6 font-medium rounded-lg px-4 py-2 truncate flex items-center justify-center gap-2;
+}
+
+@utility errors {
+  @apply text-red-700 text-[16px] leading-[24px] font-medium;
+}
+
+/* Base styles */
+@layer base {
+  * {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-white text-dark-200 min-h-screen;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+
+  /* Custom form elements */
+  input[type="radio"] {
+    @apply appearance-none w-5 h-5 rounded-full border border-gray-300 bg-gray-50;
+    @apply transition duration-200 ease-in-out;
+    @apply hover:border-brand-500 hover:bg-gray-100 hover:shadow;
+  }
+
+  input[type="radio"]:checked {
+    @apply border-brand-500 bg-brand-500;
+    @apply shadow-[inset_0_0_0_4px_white];
+  }
+
+  input[type="checkbox"] {
+    @apply appearance-none w-5 h-5 rounded border border-gray-300 bg-gray-50;
+    @apply transition duration-200 ease-in-out;
+    @apply hover:border-brand-500 hover:bg-gray-100 hover:shadow;
+  }
+
+  input[type="checkbox"]:checked {
+    @apply border-brand-500 bg-brand-500;
+    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-lg;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}

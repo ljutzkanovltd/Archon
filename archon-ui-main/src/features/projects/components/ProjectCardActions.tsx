@@ -1,4 +1,4 @@
-import { Clipboard, Pin, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Clipboard, Pin, Trash2 } from "lucide-react";
 import type React from "react";
 import { useToast } from "@/features/shared/hooks/useToast";
 import { cn, glassmorphism } from "../../ui/primitives/styles";
@@ -8,18 +8,26 @@ interface ProjectCardActionsProps {
   projectId: string;
   projectTitle: string;
   isPinned: boolean;
+  isArchived?: boolean;
   onPin: (e: React.MouseEvent) => void;
   onDelete: (e: React.MouseEvent) => void;
+  onArchive?: (e: React.MouseEvent) => void;
+  onUnarchive?: (e: React.MouseEvent) => void;
   isDeleting?: boolean;
+  isArchiving?: boolean;
 }
 
 export const ProjectCardActions: React.FC<ProjectCardActionsProps> = ({
   projectId,
   projectTitle,
   isPinned,
+  isArchived = false,
   onPin,
   onDelete,
+  onArchive,
+  onUnarchive,
   isDeleting = false,
+  isArchiving = false,
 }) => {
   const { showToast } = useToast();
 
@@ -47,6 +55,55 @@ export const ProjectCardActions: React.FC<ProjectCardActionsProps> = ({
   };
   return (
     <div className="flex items-center gap-1.5">
+      {/* Archive/Unarchive Button */}
+      {isArchived ? (
+        <SimpleTooltip content={isArchiving ? "Restoring..." : "Restore project"}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isArchiving && onUnarchive) onUnarchive(e);
+            }}
+            disabled={isArchiving || !onUnarchive}
+            className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center",
+              "transition-all duration-300",
+              glassmorphism.priority.medium.background,
+              glassmorphism.priority.medium.text,
+              glassmorphism.priority.medium.hover,
+              glassmorphism.priority.medium.glow,
+              isArchiving && "opacity-50 cursor-not-allowed",
+            )}
+            aria-label={isArchiving ? "Restoring project..." : `Restore ${projectTitle}`}
+          >
+            <ArchiveRestore className={cn("w-3 h-3", isArchiving && "animate-pulse")} />
+          </button>
+        </SimpleTooltip>
+      ) : (
+        <SimpleTooltip content={isArchiving ? "Archiving..." : "Archive project"}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isArchiving && onArchive) onArchive(e);
+            }}
+            disabled={isArchiving || !onArchive}
+            className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center",
+              "transition-all duration-300",
+              glassmorphism.priority.low.background,
+              glassmorphism.priority.low.text,
+              glassmorphism.priority.low.hover,
+              glassmorphism.priority.low.glow,
+              isArchiving && "opacity-50 cursor-not-allowed",
+            )}
+            aria-label={isArchiving ? "Archiving project..." : `Archive ${projectTitle}`}
+          >
+            <Archive className={cn("w-3 h-3", isArchiving && "animate-pulse")} />
+          </button>
+        </SimpleTooltip>
+      )}
+
       {/* Delete Button */}
       <SimpleTooltip content={isDeleting ? "Deleting..." : "Delete project"}>
         <button

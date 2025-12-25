@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, ListTodo } from "lucide-react";
+import { Activity, Archive, CheckCircle2, ListTodo } from "lucide-react";
 import type React from "react";
 import { isOptimistic } from "@/features/shared/utils/optimistic";
 import { OptimisticIndicator } from "../../ui/primitives/OptimisticIndicator";
@@ -19,6 +19,8 @@ interface ProjectCardProps {
   onSelect: (project: Project) => void;
   onPin: (e: React.MouseEvent, projectId: string) => void;
   onDelete: (e: React.MouseEvent, projectId: string, title: string) => void;
+  onArchive?: (e: React.MouseEvent, projectId: string, title: string) => void;
+  onUnarchive?: (e: React.MouseEvent, projectId: string, title: string) => void;
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({
@@ -28,6 +30,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onSelect,
   onPin,
   onDelete,
+  onArchive,
+  onUnarchive,
 }) => {
   // Check if project is optimistic
   const optimistic = isOptimistic(project);
@@ -55,6 +59,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       <div className="flex-1 p-4 pb-2">
         {/* Title section */}
         <div className="flex flex-col items-center justify-center mb-4 min-h-[48px]">
+          {/* Archived badge (shown above title) */}
+          {project.archived && (
+            <div className="flex items-center gap-1 px-2 py-0.5 mb-2 bg-gray-500 dark:bg-gray-600 text-white text-[10px] font-bold rounded-full shadow-lg">
+              <Archive className="w-3 h-3" />
+              <span>ARCHIVED</span>
+            </div>
+          )}
           <h3
             className={cn(
               "font-medium text-center leading-tight line-clamp-2 transition-all duration-300",
@@ -63,6 +74,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
                 : project.pinned
                   ? "text-purple-700 dark:text-purple-300"
                   : "text-gray-500 dark:text-gray-400",
+              project.archived && "opacity-60",
             )}
           >
             {project.title}
@@ -242,6 +254,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           projectId={project.id}
           projectTitle={project.title}
           isPinned={project.pinned}
+          isArchived={project.archived}
           onPin={(e) => {
             e.stopPropagation();
             onPin(e, project.id);
@@ -250,6 +263,22 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             e.stopPropagation();
             onDelete(e, project.id, project.title);
           }}
+          onArchive={
+            onArchive
+              ? (e) => {
+                  e.stopPropagation();
+                  onArchive(e, project.id, project.title);
+                }
+              : undefined
+          }
+          onUnarchive={
+            onUnarchive
+              ? (e) => {
+                  e.stopPropagation();
+                  onUnarchive(e, project.id, project.title);
+                }
+              : undefined
+          }
         />
       </div>
     </SelectableCard>

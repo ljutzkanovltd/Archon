@@ -132,6 +132,51 @@ export const taskService = {
   },
 
   /**
+   * Archive a task
+   */
+  async archiveTask(taskId: string, archivedBy = "User"): Promise<{
+    task_id: string;
+    message: string;
+    archived_by: string;
+  }> {
+    try {
+      const response = await callAPIWithETag<{
+        task_id: string;
+        message: string;
+        archived_by: string;
+      }>(`/api/tasks/${taskId}/archive`, {
+        method: "POST",
+        body: JSON.stringify({ archived_by: archivedBy }),
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to archive task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Unarchive a task
+   */
+  async unarchiveTask(taskId: string): Promise<{
+    task_id: string;
+    message: string;
+  }> {
+    try {
+      const response = await callAPIWithETag<{
+        task_id: string;
+        message: string;
+      }>(`/api/tasks/${taskId}/unarchive`, {
+        method: "POST",
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to unarchive task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Update task order for better drag-and-drop support
    */
   async updateTaskOrder(taskId: string, newOrder: number, newStatus?: DatabaseTaskStatus): Promise<Task> {

@@ -147,27 +147,31 @@ def register_project_tools(mcp: FastMCP):
     @mcp.tool()
     async def manage_project(
         ctx: Context,
-        action: str,  # "create" | "update" | "delete"
+        action: str,  # "create" | "update" | "delete" | "archive" | "unarchive"
         project_id: str | None = None,
         title: str | None = None,
         description: str | None = None,
         github_repo: str | None = None,
+        archived_by: str | None = None,  # For archive action
     ) -> str:
         """
-        Manage projects (consolidated: create/update/delete).
-        
+        Manage projects (consolidated: create/update/delete/archive/unarchive).
+
         Args:
-            action: "create" | "update" | "delete"
-            project_id: Project UUID for update/delete
+            action: "create" | "update" | "delete" | "archive" | "unarchive"
+            project_id: Project UUID for update/delete/archive/unarchive
             title: Project title (required for create)
             description: Project goals and scope
             github_repo: GitHub URL (e.g. "https://github.com/org/repo")
-        
+            archived_by: User archiving the project (default: "User")
+
         Examples:
             manage_project("create", title="Auth System")
             manage_project("update", project_id="p-1", description="Updated")
             manage_project("delete", project_id="p-1")
-        
+            manage_project("archive", project_id="p-1", archived_by="User")
+            manage_project("unarchive", project_id="p-1")
+
         Returns: {success: bool, project?: object, message: string}
         """
         try:
@@ -316,11 +320,57 @@ def register_project_tools(mcp: FastMCP):
                         })
                     else:
                         return MCPErrorFormatter.from_http_error(response, "delete project")
-                        
+
+                elif action == "archive":
+                    if not project_id:
+                        return MCPErrorFormatter.format_error(
+                            "validation_error",
+                            "project_id required for archive"
+                        )
+
+                    # Call database function directly via API endpoint
+                    response = await client.post(
+                        urljoin(api_url, f"/api/projects/{project_id}/archive"),
+                        json={"archived_by": archived_by or "User"}
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({
+                            "success": True,
+                            "project_id": project_id,
+                            "message": result.get("message", "Project archived successfully"),
+                            "tasks_archived": result.get("tasks_archived", 0)
+                        })
+                    else:
+                        return MCPErrorFormatter.from_http_error(response, "archive project")
+
+                elif action == "unarchive":
+                    if not project_id:
+                        return MCPErrorFormatter.format_error(
+                            "validation_error",
+                            "project_id required for unarchive"
+                        )
+
+                    response = await client.post(
+                        urljoin(api_url, f"/api/projects/{project_id}/unarchive")
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({
+                            "success": True,
+                            "project_id": project_id,
+                            "message": result.get("message", "Project unarchived successfully"),
+                            "tasks_unarchived": result.get("tasks_unarchived", 0)
+                        })
+                    else:
+                        return MCPErrorFormatter.from_http_error(response, "unarchive project")
+
                 else:
                     return MCPErrorFormatter.format_error(
                         "invalid_action",
-                        f"Unknown action: {action}"
+                        f"Unknown action: {action}. Valid actions: create, update, delete, archive, unarchive"
                     )
                     
         except httpx.RequestError as e:

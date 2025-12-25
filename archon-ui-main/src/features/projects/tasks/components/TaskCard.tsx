@@ -1,4 +1,4 @@
-import { Tag } from "lucide-react";
+import { Archive, Tag } from "lucide-react";
 import type React from "react";
 import { useCallback } from "react";
 import { useDrag, useDrop } from "react-dnd";
@@ -20,6 +20,8 @@ export interface TaskCardProps {
   onTaskReorder: (taskId: string, targetIndex: number, status: Task["status"]) => void;
   onEdit?: (task: Task) => void; // Optional edit handler
   onDelete?: (task: Task) => void; // Optional delete handler
+  onArchive?: (task: Task) => void; // Optional archive handler
+  onUnarchive?: (task: Task) => void; // Optional unarchive handler
   hoveredTaskId?: string | null;
   onTaskHover?: (taskId: string | null) => void;
   selectedTasks?: Set<string>;
@@ -33,6 +35,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onTaskReorder,
   onEdit,
   onDelete,
+  onArchive,
+  onUnarchive,
   hoveredTaskId,
   onTaskHover,
   selectedTasks,
@@ -61,6 +65,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       // Delete task - no handler provided
     }
   }, [onDelete, task]);
+
+  const handleArchive = useCallback(() => {
+    if (onArchive) {
+      onArchive(task);
+    }
+  }, [onArchive, task]);
+
+  const handleUnarchive = useCallback(() => {
+    if (onUnarchive) {
+      onUnarchive(task);
+    }
+  }, [onUnarchive, task]);
 
   const handlePriorityChange = useCallback(
     (priority: TaskPriority) => {
@@ -162,6 +178,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         <div className="flex flex-col h-full p-3">
           {/* Header with feature and actions */}
           <div className="flex items-center gap-2 mb-2 pl-1.5">
+            {/* Archived badge */}
+            {task.archived && (
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-500 dark:bg-gray-600 text-white text-[10px] font-bold rounded-full shadow-lg">
+                <Archive className="w-3 h-3" />
+                <span>ARCHIVED</span>
+              </div>
+            )}
+
             {task.feature && (
               <div
                 className="px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 backdrop-blur-md"
@@ -184,8 +208,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               <TaskCardActions
                 taskId={task.id}
                 taskTitle={task.title}
+                isArchived={task.archived}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
                 isDeleting={false}
               />
             </div>

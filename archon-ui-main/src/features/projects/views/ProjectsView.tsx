@@ -14,7 +14,14 @@ import { NewProjectModal } from "../components/NewProjectModal";
 import { ProjectHeader } from "../components/ProjectHeader";
 import { ProjectList } from "../components/ProjectList";
 import { DocsTab } from "../documents/DocsTab";
-import { projectKeys, useDeleteProject, useProjects, useUpdateProject } from "../hooks/useProjectQueries";
+import {
+  projectKeys,
+  useArchiveProject,
+  useDeleteProject,
+  useProjects,
+  useUnarchiveProject,
+  useUpdateProject,
+} from "../hooks/useProjectQueries";
 import { useTaskCounts } from "../tasks/hooks";
 import { TasksTab } from "../tasks/TasksTab";
 import type { Project } from "../types";
@@ -52,6 +59,7 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
   const [layoutMode, setLayoutMode] = useState<"horizontal" | "sidebar">("horizontal");
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<{
@@ -60,12 +68,14 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
   } | null>(null);
 
   // React Query hooks
-  const { data: projects = [], isLoading: isLoadingProjects, error: projectsError } = useProjects();
+  const { data: projects = [], isLoading: isLoadingProjects, error: projectsError } = useProjects(showArchived);
   const { data: taskCounts = {}, refetch: refetchTaskCounts } = useTaskCounts();
 
   // Mutations
   const updateProjectMutation = useUpdateProject();
   const deleteProjectMutation = useDeleteProject();
+  const archiveProjectMutation = useArchiveProject();
+  const unarchiveProjectMutation = useUnarchiveProject();
 
   // Sort and filter projects
   const sortedProjects = useMemo(() => {
@@ -171,6 +181,18 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
     setProjectToDelete(null);
   };
 
+  // Handle archive project
+  const handleArchiveProject = (e: React.MouseEvent, projectId: string, _title: string) => {
+    e.stopPropagation();
+    archiveProjectMutation.mutate({ projectId, archivedBy: "User" });
+  };
+
+  // Handle unarchive project
+  const handleUnarchiveProject = (e: React.MouseEvent, projectId: string, _title: string) => {
+    e.stopPropagation();
+    unarchiveProjectMutation.mutate(projectId);
+  };
+
   // Staggered entrance animation
   const isVisible = useStaggeredEntrance([1, 2, 3], 0.15);
 
@@ -188,6 +210,8 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
         onLayoutModeChange={setLayoutMode}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        showArchived={showArchived}
+        onShowArchivedChange={setShowArchived}
       />
 
       {layoutMode === "horizontal" ? (
@@ -201,6 +225,8 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
             onProjectSelect={handleProjectSelect}
             onPinProject={handlePinProject}
             onDeleteProject={handleDeleteProject}
+            onArchiveProject={handleArchiveProject}
+            onUnarchiveProject={handleUnarchiveProject}
             onRetry={() => queryClient.invalidateQueries({ queryKey: projectKeys.lists() })}
           />
 

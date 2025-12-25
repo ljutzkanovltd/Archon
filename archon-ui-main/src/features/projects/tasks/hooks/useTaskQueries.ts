@@ -217,3 +217,114 @@ export function useDeleteTask(projectId: string) {
     },
   });
 }
+
+// Archive task mutation with optimistic updates
+export function useArchiveTask(projectId: string) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation<
+    Awaited<ReturnType<typeof taskService.archiveTask>>,
+    Error,
+    { taskId: string; archivedBy?: string },
+    { previousTasks?: Task[] }
+  >({
+    mutationFn: ({ taskId, archivedBy }) => taskService.archiveTask(taskId, archivedBy),
+    onMutate: async ({ taskId }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: taskKeys.byProject(projectId) });
+
+      // Snapshot the previous value
+      const previousTasks = queryClient.getQueryData<Task[]>(taskKeys.byProject(projectId));
+
+      // Optimistically update the task
+      queryClient.setQueryData<Task[]>(taskKeys.byProject(projectId), (old) => {
+        if (!old) return old;
+        return old.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                archived: true,
+                archived_at: new Date().toISOString(),
+              }
+            : task,
+        );
+      });
+
+      return { previousTasks };
+    },
+    onError: (error, { taskId }, context) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Failed to archive task:", error, { taskId });
+
+      // Rollback on error
+      if (context?.previousTasks) {
+        queryClient.setQueryData(taskKeys.byProject(projectId), context.previousTasks);
+      }
+
+      showToast(`Failed to archive task: ${errorMessage}`, "error");
+    },
+    onSuccess: () => {
+      // Invalidate queries to refetch
+      queryClient.invalidateQueries({ queryKey: taskKeys.byProject(projectId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.counts() });
+      showToast("Task archived successfully", "success");
+    },
+  });
+}
+
+// Unarchive task mutation with optimistic updates
+export function useUnarchiveTask(projectId: string) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation<
+    Awaited<ReturnType<typeof taskService.unarchiveTask>>,
+    Error,
+    string,
+    { previousTasks?: Task[] }
+  >({
+    mutationFn: (taskId: string) => taskService.unarchiveTask(taskId),
+    onMutate: async (taskId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: taskKeys.byProject(projectId) });
+
+      // Snapshot the previous value
+      const previousTasks = queryClient.getQueryData<Task[]>(taskKeys.byProject(projectId));
+
+      // Optimistically update the task
+      queryClient.setQueryData<Task[]>(taskKeys.byProject(projectId), (old) => {
+        if (!old) return old;
+        return old.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                archived: false,
+                archived_at: null,
+                archived_by: null,
+              }
+            : task,
+        );
+      });
+
+      return { previousTasks };
+    },
+    onError: (error, taskId, context) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Failed to unarchive task:", error, { taskId });
+
+      // Rollback on error
+      if (context?.previousTasks) {
+        queryClient.setQueryData(taskKeys.byProject(projectId), context.previousTasks);
+      }
+
+      showToast(`Failed to unarchive task: ${errorMessage}`, "error");
+    },
+    onSuccess: () => {
+      // Invalidate queries to refetch
+      queryClient.invalidateQueries({ queryKey: taskKeys.byProject(projectId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.counts() });
+      showToast("Task restored successfully", "success");
+    },
+  });
+}

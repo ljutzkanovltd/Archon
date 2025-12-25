@@ -1,4 +1,4 @@
-import { Check, Edit, Tag, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Check, Edit, Tag, Trash2 } from "lucide-react";
 import React, { useState } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../ui/primitives";
@@ -22,6 +22,8 @@ interface TableViewProps {
   onTaskView?: (task: Task) => void;
   onTaskComplete?: (taskId: string) => void;
   onTaskDelete?: (task: Task) => void;
+  onTaskArchive?: (task: Task) => void;
+  onTaskUnarchive?: (task: Task) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task["status"]) => void;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
 }
@@ -33,6 +35,8 @@ interface DraggableRowProps {
   onTaskView?: (task: Task) => void;
   onTaskComplete?: (taskId: string) => void;
   onTaskDelete?: (task: Task) => void;
+  onTaskArchive?: (task: Task) => void;
+  onTaskUnarchive?: (task: Task) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task["status"]) => void;
 }
 
@@ -43,6 +47,8 @@ const DraggableRow = ({
   onTaskView,
   onTaskComplete,
   onTaskDelete,
+  onTaskArchive,
+  onTaskUnarchive,
   onTaskReorder,
 }: DraggableRowProps) => {
   const updateTaskMutation = useUpdateTask(projectId);
@@ -114,6 +120,18 @@ const DraggableRow = ({
   const handleEdit = () => {
     if (onTaskView) {
       onTaskView(task);
+    }
+  };
+
+  const handleArchive = () => {
+    if (onTaskArchive) {
+      onTaskArchive(task);
+    }
+  };
+
+  const handleUnarchive = () => {
+    if (onTaskUnarchive) {
+      onTaskUnarchive(task);
     }
   };
 
@@ -205,6 +223,40 @@ const DraggableRow = ({
               <TooltipContent>Mark as complete</TooltipContent>
             </Tooltip>
 
+            {!task.archived && onTaskArchive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={handleArchive}
+                    className="h-7 w-7 p-0 text-gray-600 hover:text-gray-700"
+                    aria-label="Archive task"
+                  >
+                    <Archive className="w-3 h-3" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Archive task</TooltipContent>
+              </Tooltip>
+            )}
+
+            {task.archived && onTaskUnarchive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={handleUnarchive}
+                    className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
+                    aria-label="Restore task"
+                  >
+                    <ArchiveRestore className="w-3 h-3" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Restore task</TooltipContent>
+              </Tooltip>
+            )}
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -233,6 +285,8 @@ export const TableView = ({
   onTaskView,
   onTaskComplete,
   onTaskDelete,
+  onTaskArchive,
+  onTaskUnarchive,
   onTaskReorder,
 }: TableViewProps) => {
   // Group tasks by status for better organization
@@ -306,6 +360,8 @@ export const TableView = ({
                     onTaskView={onTaskView}
                     onTaskComplete={onTaskComplete}
                     onTaskDelete={onTaskDelete}
+                    onTaskArchive={onTaskArchive}
+                    onTaskUnarchive={onTaskUnarchive}
                     onTaskReorder={onTaskReorder}
                   />
                 ))}

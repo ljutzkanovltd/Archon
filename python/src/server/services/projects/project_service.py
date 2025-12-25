@@ -73,13 +73,14 @@ class ProjectService:
             logger.error(f"Error creating project: {e}")
             return False, {"error": f"Database error: {str(e)}"}
 
-    def list_projects(self, include_content: bool = True) -> tuple[bool, dict[str, Any]]:
+    def list_projects(self, include_content: bool = True, include_archived: bool = False) -> tuple[bool, dict[str, Any]]:
         """
         List all projects.
 
         Args:
             include_content: If True (default), includes docs, features, data fields.
                            If False, returns lightweight metadata only with counts.
+            include_archived: If True, includes archived projects. Default: False (only active projects)
 
         Returns:
             Tuple of (success, result_dict)
@@ -87,12 +88,13 @@ class ProjectService:
         try:
             if include_content:
                 # Current behavior - maintain backward compatibility
-                response = (
-                    self.supabase_client.table("archon_projects")
-                    .select("*")
-                    .order("created_at", desc=True)
-                    .execute()
-                )
+                query = self.supabase_client.table("archon_projects").select("*")
+
+                # Filter archived projects by default
+                if not include_archived:
+                    query = query.eq("archived", False)
+
+                response = query.order("created_at", desc=True).execute()
 
                 projects = []
                 for project in response.data:
@@ -111,12 +113,13 @@ class ProjectService:
             else:
                 # Lightweight response for MCP - fetch all data but only return metadata + stats
                 # FIXED: N+1 query problem - now using single query
-                response = (
-                    self.supabase_client.table("archon_projects")
-                    .select("*")  # Fetch all fields in single query
-                    .order("created_at", desc=True)
-                    .execute()
-                )
+                query = self.supabase_client.table("archon_projects").select("*")
+
+                # Filter archived projects by default
+                if not include_archived:
+                    query = query.eq("archived", False)
+
+                response = query.order("created_at", desc=True).execute()
 
                 projects = []
                 for project in response.data:
@@ -384,3 +387,95 @@ class ProjectService:
         except Exception as e:
             logger.error(f"Error updating project: {e}")
             return False, {"error": f"Error updating project: {str(e)}"}
+
+    def archive_project(self, project_id: str, archived_by: str = "User") -> tuple[bool, dict[str, Any]]:
+        """
+        Archive a project and all its associated tasks.
+
+        Calls the PostgreSQL function archive_project_and_tasks() which:
+        - Sets archived=true, archived_at=NOW(), archived_by on the project
+        - Cascades archival to all associated tasks
+        - Returns count of tasks archived
+
+        Args:
+            project_id: UUID of the project to archive
+            archived_by: Username/identifier of who is archiving (default: "User")
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # Call the database function via RPC
+            response = self.supabase_client.rpc(
+                "archive_project_and_tasks",
+                {"project_id_param": project_id, "archived_by_param": archived_by}
+            ).execute()
+
+            if not response.data:
+                logger.error("Database function returned empty data for project archival")
+                return False, {"error": "Failed to archive project - database returned no data"}
+
+            result = response.data
+
+            # Check if the function returned a success indicator
+            if isinstance(result, dict) and result.get("success") is False:
+                error_message = result.get("message", "Project not found or already archived")
+                return False, {"error": error_message}
+
+            logger.info(f"Project {project_id} archived successfully by {archived_by}")
+
+            return True, {
+                "project_id": project_id,
+                "message": "Project archived successfully",
+                "tasks_archived": result.get("tasks_archived", 0) if isinstance(result, dict) else 0,
+                "archived_by": archived_by
+            }
+
+        except Exception as e:
+            logger.error(f"Error archiving project {project_id}: {e}")
+            return False, {"error": f"Error archiving project: {str(e)}"}
+
+    def unarchive_project(self, project_id: str) -> tuple[bool, dict[str, Any]]:
+        """
+        Unarchive a project and all its associated tasks.
+
+        Calls the PostgreSQL function unarchive_project_and_tasks() which:
+        - Sets archived=false, clears archived_at and archived_by on the project
+        - Cascades unarchival to all associated tasks
+        - Returns count of tasks unarchived
+
+        Args:
+            project_id: UUID of the project to unarchive
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # Call the database function via RPC
+            response = self.supabase_client.rpc(
+                "unarchive_project_and_tasks",
+                {"project_id_param": project_id}
+            ).execute()
+
+            if not response.data:
+                logger.error("Database function returned empty data for project unarchival")
+                return False, {"error": "Failed to unarchive project - database returned no data"}
+
+            result = response.data
+
+            # Check if the function returned a success indicator
+            if isinstance(result, dict) and result.get("success") is False:
+                error_message = result.get("message", "Project not found")
+                return False, {"error": error_message}
+
+            logger.info(f"Project {project_id} unarchived successfully")
+
+            return True, {
+                "project_id": project_id,
+                "message": "Project unarchived successfully",
+                "tasks_unarchived": result.get("tasks_unarchived", 0) if isinstance(result, dict) else 0
+            }
+
+        except Exception as e:
+            logger.error(f"Error unarchiving project {project_id}: {e}")
+            return False, {"error": f"Error unarchiving project: {str(e)}"}

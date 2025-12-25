@@ -11,9 +11,11 @@
 
 export {
   projectKeys,
+  useArchiveProject,
   useCreateProject,
   useDeleteProject,
   useProjectFeatures,
   useProjects,
+  useUnarchiveProject,
   useUpdateProject,
 } from "./useProjectQueries";

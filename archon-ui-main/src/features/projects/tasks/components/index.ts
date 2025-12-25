@@ -13,4 +13,5 @@ export type { TaskCardProps } from "./TaskCard";
 export { TaskCard } from "./TaskCard";
 export { TaskCardActions } from "./TaskCardActions";
 export { TaskEditModal } from "./TaskEditModal";
+export { TaskHistoryTimeline } from "./TaskHistoryTimeline";
 export { TaskPriorityComponent } from "./TaskPriorityComponent";

@@ -371,3 +371,199 @@ def register_task_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error managing task ({action}): {e}", exc_info=True)
             return MCPErrorFormatter.from_exception(e, f"{action} task")
+
+    @mcp.tool()
+    async def get_task_history(
+        ctx: Context,
+        task_id: str,
+        field_name: str | None = None,
+        limit: int = 50,
+    ) -> str:
+        """
+        Retrieve task change history from archon_task_history table.
+
+        Args:
+            task_id: Task UUID (required)
+            field_name: Optional filter by field (e.g., "status", "assignee", "priority")
+            limit: Maximum number of changes to return (default: 50)
+
+        Returns:
+            JSON array of task changes with old/new values, changed_by, and timestamps
+
+        Examples:
+            get_task_history(task_id="abc-123")  # All changes
+            get_task_history(task_id="abc-123", field_name="status")  # Only status changes
+            get_task_history(task_id="abc-123", limit=10)  # Last 10 changes
+        """
+        try:
+            api_url = get_api_url()
+            timeout = get_default_timeout()
+
+            params: dict[str, Any] = {"limit": limit}
+            if field_name:
+                params["field_name"] = field_name
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    urljoin(api_url, f"/api/tasks/{task_id}/history"),
+                    params=params
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "task_id": task_id,
+                        "changes": result.get("changes", []),
+                        "count": len(result.get("changes", [])),
+                        "field_filter": field_name
+                    })
+                elif response.status_code == 404:
+                    return MCPErrorFormatter.format_error(
+                        error_type="not_found",
+                        message=f"Task {task_id} not found or has no history",
+                        suggestion="Verify the task ID is correct",
+                        http_status=404,
+                    )
+                else:
+                    return MCPErrorFormatter.from_http_error(response, "get task history")
+
+        except httpx.RequestError as e:
+            return MCPErrorFormatter.from_exception(e, "get task history", {"task_id": task_id})
+        except Exception as e:
+            logger.error(f"Error getting task history: {e}", exc_info=True)
+            return MCPErrorFormatter.from_exception(e, "get task history")
+
+    @mcp.tool()
+    async def get_completion_stats(
+        ctx: Context,
+        project_id: str | None = None,
+        days: int = 7,
+        limit: int = 50,
+    ) -> str:
+        """
+        Get task completion statistics and recently completed tasks.
+
+        Args:
+            project_id: Optional project UUID to filter by project
+            days: Number of days to look back (default: 7)
+            limit: Maximum number of recently completed tasks to return (default: 50)
+
+        Returns:
+            JSON with project completion stats and list of recently completed tasks
+
+        Examples:
+            get_completion_stats()  # Last 7 days, all projects
+            get_completion_stats(project_id="p-123")  # Specific project
+            get_completion_stats(days=30, limit=100)  # Last 30 days, top 100 tasks
+        """
+        try:
+            api_url = get_api_url()
+            timeout = get_default_timeout()
+
+            params: dict[str, Any] = {"days": days, "limit": limit}
+            if project_id:
+                params["project_id"] = project_id
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    urljoin(api_url, "/api/tasks/completion-stats"),
+                    params=params
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "project_id": project_id,
+                        "days_range": days,
+                        "stats": result.get("stats", {}),
+                        "recently_completed": result.get("recently_completed", []),
+                        "count": len(result.get("recently_completed", []))
+                    })
+                elif response.status_code == 404:
+                    return MCPErrorFormatter.format_error(
+                        error_type="not_found",
+                        message=f"Project {project_id} not found" if project_id else "No completion data found",
+                        suggestion="Verify the project ID is correct" if project_id else "Try a different time range",
+                        http_status=404,
+                    )
+                else:
+                    return MCPErrorFormatter.from_http_error(response, "get completion stats")
+
+        except httpx.RequestError as e:
+            return MCPErrorFormatter.from_exception(e, "get completion stats", {"project_id": project_id})
+        except Exception as e:
+            logger.error(f"Error getting completion stats: {e}", exc_info=True)
+            return MCPErrorFormatter.from_exception(e, "get completion stats")
+
+    @mcp.tool()
+    async def get_task_versions(
+        ctx: Context,
+        task_id: str,
+        field_name: str | None = None,
+        limit: int = 10,
+    ) -> str:
+        """
+        Get version history for a task's fields.
+        
+        This retrieves snapshots of significant field changes over time,
+        separate from the granular history in task_history.
+        
+        Args:
+            task_id: UUID of the task (required)
+            field_name: Optional filter for specific field ("title", "description", "sources", "code_examples")
+            limit: Maximum number of versions to return (default: 10)
+        
+        Returns:
+            JSON with versions list containing:
+            - version_number: Sequential version number
+            - field_name: Name of the versioned field
+            - content: JSONB snapshot of the field value
+            - change_summary: Description of what changed
+            - created_at: Timestamp of the version
+            - created_by: Who created this version
+        
+        Examples:
+            get_task_versions(task_id="task-123") # All field versions
+            get_task_versions(task_id="task-123", field_name="title") # Only title versions
+            get_task_versions(task_id="task-123", limit=5) # Last 5 versions
+        """
+        try:
+            api_url = get_api_url()
+            timeout = get_default_timeout()
+
+            params = {"limit": limit}
+            if field_name:
+                params["field_name"] = field_name
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    urljoin(api_url, f"/api/tasks/{task_id}/versions"),
+                    params=params
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "task_id": task_id,
+                        "versions": result.get("versions", []),
+                        "count": result.get("count", 0),
+                        "field_filter": field_name
+                    })
+                elif response.status_code == 404:
+                    return MCPErrorFormatter.format_error(
+                        error_type="not_found",
+                        message=f"Task {task_id} not found or has no versions",
+                        suggestion="Verify the task ID is correct. Versions are created for significant changes to title, description, sources, and code_examples.",
+                        http_status=404,
+                    )
+                else:
+                    return MCPErrorFormatter.from_http_error(response, "get task versions")
+
+        except httpx.RequestError as e:
+            return MCPErrorFormatter.from_exception(e, "get task versions", {"task_id": task_id})
+        except Exception as e:
+            logger.error(f"Error getting task versions: {e}", exc_info=True)
+            return MCPErrorFormatter.from_exception(e, "get task versions")

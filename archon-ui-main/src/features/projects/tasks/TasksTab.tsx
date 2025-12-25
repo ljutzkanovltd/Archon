@@ -1,12 +1,12 @@
-import { LayoutGrid, Plus, Table } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Archive, LayoutGrid, Plus, Table } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { DeleteConfirmModal } from "../../ui/components/DeleteConfirmModal";
 import { Button, Card } from "../../ui/primitives";
 import { cn, glassmorphism } from "../../ui/primitives/styles";
 import { TaskEditModal } from "./components/TaskEditModal";
-import { useDeleteTask, useProjectTasks, useUpdateTask } from "./hooks";
+import { useArchiveTask, useDeleteTask, useProjectTasks, useUnarchiveTask, useUpdateTask } from "./hooks";
 import type { Task } from "./types";
 import { getReorderTaskOrder, ORDER_INCREMENT, validateTaskOrder } from "./utils";
 import { BoardView, TableView } from "./views";
@@ -21,13 +21,21 @@ export const TasksTab = ({ projectId }: TasksTabProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Fetch tasks using TanStack Query
-  const { data: tasks = [], isLoading: isLoadingTasks } = useProjectTasks(projectId);
+  const { data: allTasks = [], isLoading: isLoadingTasks } = useProjectTasks(projectId);
+
+  // Filter tasks based on archived state
+  const tasks = useMemo(() => {
+    return (allTasks as Task[]).filter((task) => (showArchived ? task.archived : !task.archived));
+  }, [allTasks, showArchived]);
 
   // Mutations for task operations
   const updateTaskMutation = useUpdateTask(projectId);
   const deleteTaskMutation = useDeleteTask(projectId);
+  const archiveTaskMutation = useArchiveTask(projectId);
+  const unarchiveTaskMutation = useUnarchiveTask(projectId);
 
   // Modal management functions
   const openEditModal = (task: Task) => {
@@ -68,6 +76,33 @@ export const TasksTab = ({ projectId }: TasksTabProps) => {
       },
     });
   };
+
+  // Archive task
+  const handleArchiveTask = useCallback(
+    (task: Task) => {
+      archiveTaskMutation.mutate(
+        { taskId: task.id, archivedBy: "User" },
+        {
+          onError: (error) => {
+            console.error("Failed to archive task:", error);
+          },
+        },
+      );
+    },
+    [archiveTaskMutation],
+  );
+
+  // Unarchive task
+  const handleUnarchiveTask = useCallback(
+    (task: Task) => {
+      unarchiveTaskMutation.mutate(task.id, {
+        onError: (error) => {
+          console.error("Failed to unarchive task:", error);
+        },
+      });
+    },
+    [unarchiveTaskMutation],
+  );
 
   // Get default order for new tasks in a status
   const getDefaultTaskOrder = useCallback((statusTasks: Task[]) => {
@@ -185,6 +220,8 @@ export const TasksTab = ({ projectId }: TasksTabProps) => {
               onTaskView={openEditModal}
               onTaskComplete={completeTask}
               onTaskDelete={openDeleteModal}
+              onTaskArchive={handleArchiveTask}
+              onTaskUnarchive={handleUnarchiveTask}
               onTaskReorder={handleTaskReorder}
               onTaskUpdate={updateTaskInline}
             />
@@ -196,12 +233,20 @@ export const TasksTab = ({ projectId }: TasksTabProps) => {
               onTaskReorder={handleTaskReorder}
               onTaskEdit={openEditModal}
               onTaskDelete={openDeleteModal}
+              onTaskArchive={handleArchiveTask}
+              onTaskUnarchive={handleUnarchiveTask}
             />
           )}
         </div>
 
         {/* Fixed View Controls using Radix primitives */}
-        <ViewControls viewMode={viewMode} onViewChange={setViewMode} onAddTask={openCreateModal} />
+        <ViewControls
+          viewMode={viewMode}
+          onViewChange={setViewMode}
+          onAddTask={openCreateModal}
+          showArchived={showArchived}
+          onShowArchivedChange={setShowArchived}
+        />
 
         {/* Edit/Create Task Modal */}
         <TaskEditModal isModalOpen={isModalOpen} editingTask={editingTask} projectId={projectId} onClose={closeModal} />
@@ -226,12 +271,47 @@ interface ViewControlsProps {
   viewMode: "table" | "board";
   onViewChange: (mode: "table" | "board") => void;
   onAddTask: () => void;
+  showArchived: boolean;
+  onShowArchivedChange: (show: boolean) => void;
 }
 
-const ViewControls = ({ viewMode, onViewChange, onAddTask }: ViewControlsProps) => {
+const ViewControls = ({ viewMode, onViewChange, onAddTask, showArchived, onShowArchivedChange }: ViewControlsProps) => {
   return (
     <div className="fixed bottom-6 left-0 right-0 flex justify-center z-50 pointer-events-none">
       <div className="flex items-center gap-4">
+        {/* Show Archived Toggle Button */}
+        <Button
+          onClick={() => onShowArchivedChange(!showArchived)}
+          variant="outline"
+          className={cn(
+            "pointer-events-auto relative",
+            glassmorphism.background.subtle,
+            glassmorphism.border.default,
+            glassmorphism.shadow.elevated,
+            showArchived
+              ? "text-gray-600 dark:text-gray-400"
+              : "text-gray-500 dark:text-gray-500 opacity-60",
+            "hover:text-gray-700 dark:hover:text-gray-300",
+            "transition-all duration-300",
+          )}
+          aria-label={showArchived ? "Hide archived tasks" : "Show archived tasks"}
+          aria-pressed={showArchived}
+        >
+          <Archive className="w-4 h-4 mr-2" />
+          <span>{showArchived ? "Hide Archived" : "Show Archived"}</span>
+          {/* Glow effect when active */}
+          {showArchived && (
+            <span
+              className={cn(
+                "absolute bottom-0 left-0 right-0 h-[2px]",
+                "bg-gradient-to-r from-transparent via-gray-500 to-transparent",
+                "shadow-[0_0_10px_2px_rgba(156,163,175,0.4)]",
+                "dark:shadow-[0_0_20px_5px_rgba(156,163,175,0.7)]",
+              )}
+            />
+          )}
+        </Button>
+
         {/* Add Task Button with Glassmorphism */}
         <Button
           onClick={onAddTask}

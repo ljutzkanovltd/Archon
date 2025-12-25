@@ -25,6 +25,7 @@ COPY src/server/services/__init__.py src/server/services/
 COPY src/server/services/mcp_service_client.py src/server/services/
 COPY src/server/services/client_manager.py src/server/services/
 COPY src/server/services/mcp_session_manager.py src/server/services/
+COPY src/server/services/token_counter.py src/server/services/
 COPY src/server/config/__init__.py src/server/config/
 COPY src/server/config/service_discovery.py src/server/config/
 COPY src/server/config/logfire_config.py src/server/config/

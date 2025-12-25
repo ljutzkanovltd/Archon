@@ -1,0 +1,15 @@
+
+> archon-ui-nextjs@0.1.0 dev
+> next dev -p 3738
+
+ ⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::3738
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::3738)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '::',
+  port: 3738
+}
+[?25h

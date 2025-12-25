@@ -22,12 +22,12 @@ export const projectKeys = {
 };
 
 // Fetch all projects with smart polling
-export function useProjects() {
+export function useProjects(includeArchived = false) {
   const { refetchInterval } = useSmartPolling(2000); // 2 second base interval for active polling
 
   return useQuery<Project[]>({
-    queryKey: projectKeys.lists(),
-    queryFn: () => projectService.listProjects(),
+    queryKey: [...projectKeys.lists(), includeArchived ? "with-archived" : "active-only"],
+    queryFn: () => projectService.listProjects(includeArchived),
     refetchInterval, // Smart interval based on page visibility/focus
     refetchOnWindowFocus: true, // Refetch immediately when tab gains focus (ETag makes this cheap)
     staleTime: STALE_TIMES.normal,
@@ -209,6 +209,112 @@ export function useDeleteProject() {
       // Also remove the project's feature queries
       queryClient.removeQueries({ queryKey: projectKeys.features(projectId), exact: false });
       showToast("Project deleted successfully", "success");
+    },
+  });
+}
+
+// Archive project mutation with optimistic updates
+export function useArchiveProject() {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ projectId, archivedBy }: { projectId: string; archivedBy?: string }) =>
+      projectService.archiveProject(projectId, archivedBy),
+    onMutate: async ({ projectId }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: projectKeys.lists() });
+
+      // Snapshot the previous value
+      const previousProjects = queryClient.getQueryData<Project[]>(projectKeys.lists());
+
+      // Optimistically update the project
+      queryClient.setQueryData(projectKeys.lists(), (old: Project[] | undefined) => {
+        if (!old) return old;
+        return old.map((project) =>
+          project.id === projectId
+            ? {
+                ...project,
+                archived: true,
+                archived_at: new Date().toISOString(),
+              }
+            : project,
+        );
+      });
+
+      return { previousProjects };
+    },
+    onError: (error, { projectId }, context) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Failed to archive project:", error, { projectId });
+
+      // Rollback on error
+      if (context?.previousProjects) {
+        queryClient.setQueryData(projectKeys.lists(), context.previousProjects);
+      }
+
+      showToast(`Failed to archive project: ${errorMessage}`, "error");
+    },
+    onSuccess: (response) => {
+      // Invalidate queries to refetch
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+      showToast(
+        `Project archived successfully (${response.tasks_archived} tasks archived)`,
+        "success",
+      );
+    },
+  });
+}
+
+// Unarchive project mutation with optimistic updates
+export function useUnarchiveProject() {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+
+  return useMutation({
+    mutationFn: (projectId: string) => projectService.unarchiveProject(projectId),
+    onMutate: async (projectId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: projectKeys.lists() });
+
+      // Snapshot the previous value
+      const previousProjects = queryClient.getQueryData<Project[]>(projectKeys.lists());
+
+      // Optimistically update the project
+      queryClient.setQueryData(projectKeys.lists(), (old: Project[] | undefined) => {
+        if (!old) return old;
+        return old.map((project) =>
+          project.id === projectId
+            ? {
+                ...project,
+                archived: false,
+                archived_at: null,
+                archived_by: null,
+              }
+            : project,
+        );
+      });
+
+      return { previousProjects };
+    },
+    onError: (error, projectId, context) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Failed to unarchive project:", error, { projectId });
+
+      // Rollback on error
+      if (context?.previousProjects) {
+        queryClient.setQueryData(projectKeys.lists(), context.previousProjects);
+      }
+
+      showToast(`Failed to unarchive project: ${errorMessage}`, "error");
+    },
+    onSuccess: (response) => {
+      // Invalidate queries to refetch
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+      showToast(
+        `Project restored successfully (${response.tasks_unarchived} tasks restored)`,
+        "success",
+      );
     },
   });
 }
