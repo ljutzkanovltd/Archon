@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { knowledgeBaseApi } from "@/lib/apiClient";
+import { knowledgeBaseApi, tasksApi } from "@/lib/apiClient";
 import { KnowledgeSource, CrawlRequest, UploadMetadata } from "@/lib/types";
 import { KnowledgeSourceCard } from "@/components/KnowledgeBase/KnowledgeSourceCard";
 import { AddSourceDialog } from "@/components/KnowledgeBase/AddSourceDialog";
@@ -9,7 +9,7 @@ import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlingProgress } from "@/components/KnowledgeBase/CrawlingProgress";
 import { usePageTitle } from "@/hooks";
-import { HiPlus, HiSearch } from "react-icons/hi";
+import { HiPlus, HiSearch, HiLink, HiCheckCircle } from "react-icons/hi";
 
 export default function KnowledgeBasePage() {
   usePageTitle("Knowledge Base", "Archon");
@@ -27,8 +27,14 @@ export default function KnowledgeBasePage() {
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [sourceToEdit, setSourceToEdit] = useState<KnowledgeSource | null>(null);
 
+  // Additional metrics state
+  const [tasksLinked, setTasksLinked] = useState<number>(0);
+  const [completionRate, setCompletionRate] = useState<number>(0);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+
   useEffect(() => {
     loadSources();
+    loadAdditionalMetrics();
   }, []);
 
   useEffect(() => {
@@ -71,6 +77,13 @@ export default function KnowledgeBasePage() {
         );
 
         setSources(sourcesWithCounts);
+
+        // Calculate completion rate (sources with >5 documents)
+        const sourcesWithDocs = sourcesWithCounts.filter(s => (s.documents_count || 0) > 5).length;
+        const rate = sourcesWithCounts.length > 0
+          ? Math.round((sourcesWithDocs / sourcesWithCounts.length) * 100)
+          : 0;
+        setCompletionRate(rate);
       } else {
         setError(response.error || "Failed to load sources");
       }
@@ -78,6 +91,34 @@ export default function KnowledgeBasePage() {
       setError(err instanceof Error ? err.message : "Failed to load sources");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadAdditionalMetrics = async () => {
+    setMetricsLoading(true);
+
+    try {
+      // Fetch tasks with source_id to count linked tasks
+      // Note: This assumes backend supports filtering by source_id existence
+      // For now, we'll get all tasks and count those with source metadata
+      const tasksResponse = await tasksApi.getAll({ per_page: 1000 });
+
+      if (tasksResponse.success && tasksResponse.items) {
+        // Count tasks that have source references in metadata or description
+        const linkedCount = tasksResponse.items.filter(task => {
+          // Check if task has source_id or source references
+          return task.sources_count && task.sources_count > 0;
+        }).length;
+
+        setTasksLinked(linkedCount);
+      }
+
+      // Calculate completion rate (sources with >5 documents)
+      // We'll calculate this from sources data once loaded
+    } catch (err) {
+      console.error("Failed to load additional metrics:", err);
+    } finally {
+      setMetricsLoading(false);
     }
   };
 
@@ -282,30 +323,83 @@ export default function KnowledgeBasePage() {
         </div>
       </div>
 
-      {/* Stats - Compact */}
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+      {/* Stats - Compact with 6 cards */}
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {/* Total Sources */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Sources</div>
           <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-            {sources.length}
+            {isLoading ? (
+              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              sources.length
+            )}
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+
+        {/* Total Documents */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Documents</div>
           <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-            {sources.reduce((sum, s) => sum + (s.documents_count || 0), 0).toLocaleString()}
+            {isLoading ? (
+              <div className="h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              sources.reduce((sum, s) => sum + (s.documents_count || 0), 0).toLocaleString()
+            )}
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+
+        {/* Code Examples */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Code Examples</div>
           <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-            {sources.reduce((sum, s) => sum + (s.code_examples_count || 0), 0).toLocaleString()}
+            {isLoading ? (
+              <div className="h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              sources.reduce((sum, s) => sum + (s.code_examples_count || 0), 0).toLocaleString()
+            )}
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-800">
+
+        {/* Total Words */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Words</div>
           <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-            {sources.reduce((sum, s) => sum + (s.total_words || 0), 0).toLocaleString()}
+            {isLoading ? (
+              <div className="h-7 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              sources.reduce((sum, s) => sum + (s.total_words || 0), 0).toLocaleString()
+            )}
+          </div>
+        </div>
+
+        {/* Tasks Linked - NEW */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+            <HiLink className="h-3 w-3" />
+            Tasks Linked
+          </div>
+          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+            {metricsLoading ? (
+              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              tasksLinked
+            )}
+          </div>
+        </div>
+
+        {/* Completion Rate - NEW */}
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+            <HiCheckCircle className="h-3 w-3" />
+            Completion Rate
+          </div>
+          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+            {isLoading ? (
+              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            ) : (
+              `${completionRate}%`
+            )}
           </div>
         </div>
       </div>
