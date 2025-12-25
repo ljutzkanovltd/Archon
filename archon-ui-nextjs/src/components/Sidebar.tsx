@@ -13,10 +13,9 @@ import {
   HiDatabase,
   HiCog,
   HiServer,
-  HiClipboardList,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { TaskCountBadge } from "./Sidebar/TaskCountBadge";
+import { ProjectTaskBadge } from "./Sidebar/ProjectTaskBadge";
 
 interface MenuItemProps {
   href: string;
@@ -236,14 +235,13 @@ export function DesktopSidebar() {
         href: `/projects/${project.id}`,
         icon: HiFolder,
         label: project.title,
-        badge: project.archived ? "Archived" : undefined,
+        badge: project.archived
+          ? "Archived"
+          : <ProjectTaskBadge
+              projectId={project.id}
+              isCollapsed={desktop.isCollapsed}
+            />,
       })),
-    },
-    {
-      href: "/tasks",
-      icon: HiClipboardList,
-      label: "Tasks",
-      badge: <TaskCountBadge isCollapsed={desktop.isCollapsed} />,
     },
     {
       href: "/knowledge-base",
@@ -346,14 +344,14 @@ export function MobileSidebar() {
         href: `/projects/${project.id}`,
         icon: HiFolder,
         label: project.title,
-        badge: project.archived ? "Archived" : undefined,
+        badge: project.archived
+          ? "Archived"
+          : <ProjectTaskBadge
+              projectId={project.id}
+              isCollapsed={false}
+              isMobile={true}
+            />,
       })),
-    },
-    {
-      href: "/tasks",
-      icon: HiClipboardList,
-      label: "Tasks",
-      badge: <TaskCountBadge isCollapsed={false} isMobile={true} />,
     },
     {
       href: "/knowledge-base",

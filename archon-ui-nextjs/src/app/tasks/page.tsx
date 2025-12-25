@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 /**
  * Tasks Page - Redirects to Projects Page
  *
- * Tasks are now managed within projects. This page redirects users
- * to the projects page where they can view and manage tasks under
- * each project.
+ * Tasks are now managed per-project. This page redirects users
+ * to the projects page where they can view task counts for each
+ * project and manage tasks within project context.
  */
 export default function TasksPage() {
   const router = useRouter();
@@ -27,7 +27,7 @@ export default function TasksPage() {
           Redirecting to Projects...
         </p>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-500">
-          Tasks are now managed under projects
+          Tasks are now managed per-project
         </p>
       </div>
     </div>
