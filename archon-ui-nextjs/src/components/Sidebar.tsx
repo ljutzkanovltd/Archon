@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useProjectStore } from "@/store/useProjectStore";
+import { useTaskStore } from "@/store/useTaskStore";
 import {
   HiChartPie,
   HiFolder,
@@ -13,6 +14,7 @@ import {
   HiDatabase,
   HiCog,
   HiServer,
+  HiClipboardList,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ProjectTaskBadge } from "./Sidebar/ProjectTaskBadge";
@@ -44,28 +46,47 @@ function MenuItem({
   if (hasChildren) {
     return (
       <div>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`flex w-full items-center justify-between rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 ${
-            isActive ? "bg-gray-100 dark:bg-gray-700" : ""
-          } ${isCollapsed ? "justify-center" : ""}`}
-        >
-          <div className="flex items-center gap-3">
+        {/* Parent item - Link with separate toggle button */}
+        <div className="flex items-center gap-1">
+          <Link
+            href={item.href}
+            className={`flex flex-1 items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 ${
+              isActive ? "bg-gray-100 dark:bg-gray-700" : ""
+            } ${isCollapsed ? "justify-center" : ""}`}
+            title={isCollapsed ? item.label : undefined}
+          >
             <Icon className="h-5 w-5 flex-shrink-0 text-gray-500 dark:text-gray-400" />
             {!isCollapsed && (
               <span className="flex-1 whitespace-nowrap text-left">
                 {item.label}
               </span>
             )}
-          </div>
+            {!isCollapsed && item.badge && (
+              typeof item.badge === 'string' ? (
+                <span className="inline-flex items-center justify-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800 dark:bg-brand-900 dark:text-brand-300">
+                  {item.badge}
+                </span>
+              ) : (
+                <div>{item.badge}</div>
+              )
+            )}
+          </Link>
+
+          {/* Separate toggle button for expand/collapse */}
           {!isCollapsed && (
-            <HiChevronDown
-              className={`h-5 w-5 transition-transform ${
-                isOpen ? "" : "-rotate-90"
-              }`}
-            />
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              aria-label={isOpen ? "Collapse submenu" : "Expand submenu"}
+            >
+              <HiChevronDown
+                className={`h-5 w-5 transition-transform ${
+                  isOpen ? "" : "-rotate-90"
+                }`}
+              />
+            </button>
           )}
-        </button>
+        </div>
 
         {/* Children */}
         {isOpen && !isCollapsed && item.children && (
@@ -132,6 +153,7 @@ function MenuItem({
 export function DesktopSidebar() {
   const { desktop } = useSidebar();
   const { projects, fetchProjects } = useProjectStore();
+  const { tasks, fetchTasks } = useTaskStore();
 
   // Sidebar width management
   const MIN_WIDTH = 64; // Collapsed width
@@ -219,6 +241,22 @@ export function DesktopSidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fetch tasks on mount
+  useEffect(() => {
+    if (tasks.length === 0) {
+      fetchTasks({ include_closed: false, per_page: 1000 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Calculate active task count (todo, doing, review)
+  const activeTaskCount = tasks.filter(
+    (task) =>
+      !task.archived &&
+      task.status &&
+      ["todo", "doing", "review"].includes(task.status)
+  ).length;
+
   // Build menu items with projects as children
   const menuItems: MenuItemProps[] = [
     {
@@ -242,6 +280,12 @@ export function DesktopSidebar() {
               isCollapsed={desktop.isCollapsed}
             />,
       })),
+    },
+    {
+      href: "/tasks",
+      icon: HiClipboardList,
+      label: "Tasks",
+      badge: activeTaskCount > 0 ? String(activeTaskCount) : undefined,
     },
     {
       href: "/knowledge-base",
@@ -319,6 +363,7 @@ export function DesktopSidebar() {
 export function MobileSidebar() {
   const { mobile } = useSidebar();
   const { projects, fetchProjects } = useProjectStore();
+  const { tasks, fetchTasks } = useTaskStore();
 
   // Fetch projects on mount
   useEffect(() => {
@@ -327,6 +372,22 @@ export function MobileSidebar() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch tasks on mount
+  useEffect(() => {
+    if (tasks.length === 0) {
+      fetchTasks({ include_closed: false, per_page: 1000 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Calculate active task count (todo, doing, review)
+  const activeTaskCount = tasks.filter(
+    (task) =>
+      !task.archived &&
+      task.status &&
+      ["todo", "doing", "review"].includes(task.status)
+  ).length;
 
   // Build menu items with projects as children
   const menuItems: MenuItemProps[] = [
@@ -352,6 +413,12 @@ export function MobileSidebar() {
               isMobile={true}
             />,
       })),
+    },
+    {
+      href: "/tasks",
+      icon: HiClipboardList,
+      label: "Tasks",
+      badge: activeTaskCount > 0 ? String(activeTaskCount) : undefined,
     },
     {
       href: "/knowledge-base",

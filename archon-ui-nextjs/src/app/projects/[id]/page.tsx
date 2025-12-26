@@ -12,6 +12,7 @@ import { TaskTableView } from "@/components/Projects/tasks/views/TaskTableView";
 import { TaskModal, TaskFormData } from "@/components/Tasks/TaskModal";
 import { Task } from "@/lib/types";
 import { useState, useCallback } from "react";
+import { BreadCrumb } from "@/components/common/BreadCrumb";
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -193,6 +194,15 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="p-8">
+      {/* Breadcrumb */}
+      <BreadCrumb
+        items={[
+          { label: "Projects", href: "/projects" },
+          { label: selectedProject.title, href: `/projects/${projectId}` }
+        ]}
+        className="mb-4"
+      />
+
       {/* Header */}
       <div className="mb-6">
         <button

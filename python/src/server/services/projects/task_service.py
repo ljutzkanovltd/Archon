@@ -160,6 +160,7 @@ class TaskService:
         self,
         project_id: str = None,
         status: str = None,
+        assignee: str = None,
         include_closed: bool = False,
         exclude_large_fields: bool = False,
         include_archived: bool = False,
@@ -171,6 +172,7 @@ class TaskService:
         Args:
             project_id: Filter by project
             status: Filter by status
+            assignee: Filter by assignee (User, planner, agents, etc.)
             include_closed: Include done tasks
             exclude_large_fields: If True, excludes sources and code_examples fields
             include_archived: If True, includes archived tasks
@@ -213,6 +215,11 @@ class TaskService:
                 # Only exclude done tasks if no specific status filter is applied
                 query = query.neq("status", "done")
                 filters_applied.append("exclude done tasks")
+
+            if assignee:
+                # Filter by assignee
+                query = query.eq("assignee", assignee)
+                filters_applied.append(f"assignee={assignee}")
 
             # Apply keyword search if provided
             if search_query:

@@ -279,12 +279,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Active Users (Real Data) */}
+        {/* Active Agents (Real Data) */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Active Users
+                Active Agents
               </p>
               {activeUsersLoading ? (
                 <div className="mt-2 h-9 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
@@ -304,10 +304,15 @@ export default function DashboardPage() {
                   Failed to load
                 </p>
               ) : activeUsersData && activeUsersData.count > 0 ? (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {activeUsersData.users.slice(0, 3).map(u => u.name).join(", ")}
-                  {activeUsersData.count > 3 && ` +${activeUsersData.count - 3} more`}
-                </p>
+                <>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {activeUsersData.users.slice(0, 3).map(u => u.name).join(", ")}
+                    {activeUsersData.count > 3 && ` +${activeUsersData.count - 3} more`}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                    AI assistants active in last 24h
+                  </p>
+                </>
               ) : (
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   No activity in last 24h

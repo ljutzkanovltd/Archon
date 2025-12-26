@@ -201,7 +201,31 @@ export const tasksApi = {
     project_id?: string;
     include_closed?: boolean;
   }): Promise<PaginatedResponse<Task>> => {
-    const response = await apiClient.get("/api/tasks", { params });
+    // Map frontend filter_by + filter_value to backend parameter names
+    const backendParams: Record<string, any> = {
+      page: params?.page,
+      per_page: params?.per_page,
+      q: params?.query,
+      include_closed: params?.include_closed,
+    };
+
+    // Map filter_by + filter_value to backend parameters
+    if (params?.filter_by && params?.filter_value) {
+      if (params.filter_by === "status") {
+        backendParams.status = params.filter_value;
+      } else if (params.filter_by === "project") {
+        backendParams.project_id = params.filter_value;
+      } else if (params.filter_by === "assignee") {
+        backendParams.assignee = params.filter_value;
+      }
+    }
+
+    // Also support direct project_id parameter
+    if (params?.project_id) {
+      backendParams.project_id = params.project_id;
+    }
+
+    const response = await apiClient.get("/api/tasks", { params: backendParams });
     // Backend returns {tasks: [...], pagination: {total, page, per_page, pages}}
     // Transform to PaginatedResponse format
     const data = response.data;

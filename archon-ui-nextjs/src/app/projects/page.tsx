@@ -9,6 +9,7 @@ import { useProjectStore } from "@/store/useProjectStore";
 import { usePageTitle } from "@/hooks";
 import { Project } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { BreadCrumb } from "@/components/common/BreadCrumb";
 
 export default function ProjectsPage() {
   usePageTitle("Projects", "Archon");
@@ -174,6 +175,12 @@ export default function ProjectsPage() {
 
   return (
     <div className="p-8">
+      {/* Breadcrumb */}
+      <BreadCrumb
+        items={[{ label: "Projects", href: "/projects" }]}
+        className="mb-4"
+      />
+
       {/* Page Header */}
       <div className="mb-6">
         <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">

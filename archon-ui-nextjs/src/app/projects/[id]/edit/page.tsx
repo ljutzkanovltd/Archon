@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { HiArrowLeft, HiCheck, HiX } from "react-icons/hi";
 import { useProjectStore } from "@/store/useProjectStore";
 import { usePageTitle } from "@/hooks";
+import { BreadCrumb } from "@/components/common/BreadCrumb";
 
 export default function EditProjectPage() {
   const params = useParams();
@@ -99,6 +100,16 @@ export default function EditProjectPage() {
 
   return (
     <div className="p-8">
+      {/* Breadcrumb */}
+      <BreadCrumb
+        items={[
+          { label: "Projects", href: "/projects" },
+          { label: selectedProject.title, href: `/projects/${projectId}` },
+          { label: "Edit", href: `/projects/${projectId}/edit` }
+        ]}
+        className="mb-4"
+      />
+
       {/* Header */}
       <div className="mb-6">
         <button
