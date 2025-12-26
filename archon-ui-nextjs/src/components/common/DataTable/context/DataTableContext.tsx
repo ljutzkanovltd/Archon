@@ -474,3 +474,65 @@ export function useSelection() {
     hasSelection: selectedCount > 0,
   };
 }
+
+/**
+ * Filtered & Sorted Data hook
+ * Returns processed data after applying search, filters, and sorting
+ */
+export function useFilteredData<T = any>() {
+  const { data, columns } = useDataTableProps<T>();
+  const { searchQuery, sort } = useDataTableState();
+
+  return useMemo(() => {
+    let processedData = [...(data || [])];
+
+    // Apply search filter
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+
+      processedData = processedData.filter((item) => {
+        // Search across all columns
+        return columns.some((column) => {
+          const value = (item as any)[column.key];
+
+          if (value === null || value === undefined) {
+            return false;
+          }
+
+          // Convert value to string and search
+          const stringValue = String(value).toLowerCase();
+          return stringValue.includes(query);
+        });
+      });
+    }
+
+    // Apply sorting
+    if (sort) {
+      processedData.sort((a, b) => {
+        const aValue = (a as any)[sort.field];
+        const bValue = (b as any)[sort.field];
+
+        // Handle null/undefined
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+
+        // Compare values
+        let comparison = 0;
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          comparison = aValue.localeCompare(bValue);
+        } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+          comparison = aValue - bValue;
+        } else if (aValue instanceof Date && bValue instanceof Date) {
+          comparison = aValue.getTime() - bValue.getTime();
+        } else {
+          // Fallback: convert to string and compare
+          comparison = String(aValue).localeCompare(String(bValue));
+        }
+
+        return sort.direction === 'asc' ? comparison : -comparison;
+      });
+    }
+
+    return processedData;
+  }, [data, columns, searchQuery, sort]);
+}

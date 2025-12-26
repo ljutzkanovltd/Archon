@@ -6,6 +6,7 @@ import {
   useDataTableContext,
   useSorting,
   useSelection,
+  useFilteredData,
 } from "./context/DataTableContext";
 
 interface DataTableListProps {
@@ -22,7 +23,8 @@ interface DataTableListProps {
  * - Responsive design
  */
 export function DataTableList({ variant = "table" }: DataTableListProps) {
-  const { columns, data, rowButtons, keyExtractor } = useDataTableContext();
+  const { columns, rowButtons, keyExtractor } = useDataTableContext();
+  const filteredData = useFilteredData();
   const { toggleSort, getSortDirection } = useSorting();
   const { isSelected, toggleSelection, isAllSelected, toggleSelectAll } =
     useSelection();
@@ -89,7 +91,7 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
         </thead>
 
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-          {data.map((item) => {
+          {filteredData.map((item) => {
             const itemKey = keyExtractor?.(item) || String(item);
             const actions = rowButtons?.(item) || [];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useDataTableContext } from "./context/DataTableContext";
+import { useDataTableContext, useFilteredData } from "./context/DataTableContext";
 
 /**
  * DataTableGrid - Grid view component
@@ -9,7 +9,8 @@ import { useDataTableContext } from "./context/DataTableContext";
  * Uses customRender prop to render each item as a card
  */
 export function DataTableGrid() {
-  const { data, customRender, keyExtractor } = useDataTableContext();
+  const { customRender, keyExtractor } = useDataTableContext();
+  const filteredData = useFilteredData();
 
   if (!customRender) {
     return (
@@ -23,7 +24,7 @@ export function DataTableGrid() {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {data.map((item) => {
+      {filteredData.map((item) => {
         const itemKey = keyExtractor?.(item) || String(item);
         return <div key={itemKey}>{customRender(item)}</div>;
       })}

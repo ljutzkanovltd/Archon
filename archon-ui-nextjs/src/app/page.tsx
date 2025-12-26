@@ -457,7 +457,7 @@ export default function DashboardPage() {
         </Link>
 
         <Link
-          href="/documents"
+          href="/knowledge-base"
           className="group rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm transition-all duration-200 hover:border-green-500 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-green-400"
         >
           <div className="flex items-center gap-3">
@@ -477,8 +477,8 @@ export default function DashboardPage() {
               </svg>
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">Documents</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Browse knowledge base</p>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Knowledge Base</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Browse sources and docs</p>
             </div>
           </div>
         </Link>

@@ -189,6 +189,7 @@ export {
   useFiltering,
   useSorting,
   useSelection,
+  useFilteredData,
 } from "./context/DataTableContext";
 
 export type { DataTableColumn, DataTableButton } from "./context/DataTableContext";
