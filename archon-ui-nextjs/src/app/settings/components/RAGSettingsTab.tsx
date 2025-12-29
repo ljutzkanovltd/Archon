@@ -31,10 +31,9 @@ type ProviderKey =
   | "azure-openai"
   | "google"
   | "anthropic"
-  | "cohere"
-  | "voyage"
-  | "jina"
-  | "ollama";
+  | "ollama"
+  | "openrouter"
+  | "grok";
 
 interface ProviderConfig {
   key: ProviderKey;
@@ -43,15 +42,6 @@ interface ProviderConfig {
   icon: string;
   supportedModes: SelectionMode[];
   description: string;
-}
-
-interface ApiKeyConfig {
-  name: string;
-  label: string;
-  keyName: keyof RagSettings;
-  placeholder: string;
-  color: string;
-  isEncrypted: boolean;
 }
 
 // ============================================================================
@@ -92,30 +82,6 @@ const PROVIDERS: ProviderConfig[] = [
     description: "Claude 3.5, Claude 3",
   },
   {
-    key: "cohere",
-    name: "Cohere",
-    color: "purple",
-    icon: "💬",
-    supportedModes: ["embedding"],
-    description: "Embed v3, Embed v2",
-  },
-  {
-    key: "voyage",
-    name: "Voyage AI",
-    color: "cyan",
-    icon: "⛵",
-    supportedModes: ["embedding"],
-    description: "Voyage embeddings",
-  },
-  {
-    key: "jina",
-    name: "Jina AI",
-    color: "pink",
-    icon: "🔮",
-    supportedModes: ["embedding"],
-    description: "Jina embeddings",
-  },
-  {
     key: "ollama",
     name: "Ollama",
     color: "gray",
@@ -138,65 +104,6 @@ const PROVIDERS: ProviderConfig[] = [
     icon: "⚡",
     supportedModes: ["chat"],
     description: "xAI's Grok models",
-  },
-];
-
-const API_KEY_PROVIDERS: ApiKeyConfig[] = [
-  {
-    name: "openai",
-    label: "OpenAI",
-    keyName: "OPENAI_API_KEY",
-    placeholder: "sk-...",
-    color: "green",
-    isEncrypted: true,
-  },
-  {
-    name: "anthropic",
-    label: "Anthropic",
-    keyName: "ANTHROPIC_API_KEY",
-    placeholder: "sk-ant-...",
-    color: "orange",
-    isEncrypted: true,
-  },
-  {
-    name: "cohere",
-    label: "Cohere",
-    keyName: "COHERE_API_KEY",
-    placeholder: "cohere-...",
-    color: "purple",
-    isEncrypted: true,
-  },
-  {
-    name: "voyage",
-    label: "Voyage AI",
-    keyName: "VOYAGE_API_KEY",
-    placeholder: "voyage-...",
-    color: "blue",
-    isEncrypted: true,
-  },
-  {
-    name: "jina",
-    label: "Jina AI",
-    keyName: "JINA_API_KEY",
-    placeholder: "jina-...",
-    color: "cyan",
-    isEncrypted: true,
-  },
-  {
-    name: "google",
-    label: "Google AI",
-    keyName: "GOOGLE_API_KEY",
-    placeholder: "AIza...",
-    color: "red",
-    isEncrypted: true,
-  },
-  {
-    name: "azure",
-    label: "Azure OpenAI",
-    keyName: "AZURE_OPENAI_API_KEY",
-    placeholder: "azure-...",
-    color: "teal",
-    isEncrypted: true,
   },
 ];
 
@@ -666,92 +573,6 @@ const AzureConfigPanel: React.FC<AzureConfigPanelProps> = ({
 };
 
 // ============================================================================
-// API Key Input Component
-// ============================================================================
-
-interface ApiKeyInputProps {
-  provider: ApiKeyConfig;
-  value: string;
-  onChange: (value: string) => void;
-  onSave: () => Promise<void>;
-  saving: boolean;
-}
-
-const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
-  provider,
-  value,
-  onChange,
-  onSave,
-  saving,
-}) => {
-  const [showKey, setShowKey] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
-
-  useEffect(() => {
-    setHasKey(!!value && value.length > 0);
-  }, [value]);
-
-  const colorClasses = {
-    green: "border-green-500/30 bg-green-500/5",
-    orange: "border-orange-500/30 bg-orange-500/5",
-    purple: "border-purple-500/30 bg-purple-500/5",
-    blue: "border-blue-500/30 bg-blue-500/5",
-    cyan: "border-cyan-500/30 bg-cyan-500/5",
-    red: "border-red-500/30 bg-red-500/5",
-    teal: "border-teal-500/30 bg-teal-500/5",
-  };
-
-  const colorClass = colorClasses[provider.color as keyof typeof colorClasses];
-
-  return (
-    <div className={`rounded-lg border p-4 ${colorClass}`}>
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <HiKey className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-          <h3 className="font-medium text-gray-900 dark:text-white">
-            {provider.label}
-          </h3>
-          {hasKey && (
-            <HiCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
-          )}
-        </div>
-        <button
-          onClick={() => setShowKey(!showKey)}
-          className="rounded p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
-          title={showKey ? "Hide key" : "Show key"}
-        >
-          {showKey ? (
-            <HiEyeOff className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-          ) : (
-            <HiEye className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-          )}
-        </button>
-      </div>
-      <div className="flex gap-2">
-        <input
-          type={showKey ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={provider.placeholder}
-          className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-        />
-        <button
-          onClick={onSave}
-          disabled={saving}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          ) : (
-            <HiSave className="h-5 w-5" />
-          )}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
 // RAG Settings Tab Component
 // ============================================================================
 
@@ -787,7 +608,6 @@ export default function RAGSettingsTab() {
       AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "",
     });
 
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -816,20 +636,7 @@ export default function RAGSettingsTab() {
       const azureChat = await credentialsService.getAzureChatConfig();
       const azureEmbed = await credentialsService.getAzureEmbeddingConfig();
 
-      // Separate strategy settings from API keys
-      const strategySettings: Partial<RagSettings> = {};
-      const keys: Record<string, string> = {};
-
-      Object.entries(ragSettings).forEach(([key, value]) => {
-        if (key.endsWith("_API_KEY")) {
-          keys[key] = value as string;
-        } else {
-          strategySettings[key as keyof RagSettings] = value;
-        }
-      });
-
-      setSettings(strategySettings as RagSettings);
-      setApiKeys(keys);
+      setSettings(ragSettings);
       setAzureChatConfig(azureChat);
       setAzureEmbeddingConfig(azureEmbed);
 
@@ -896,28 +703,6 @@ export default function RAGSettingsTab() {
   // ==========================================================================
   // Save Handlers
   // ==========================================================================
-
-  const saveApiKey = async (provider: ApiKeyConfig) => {
-    try {
-      setSaving(provider.keyName);
-      const value = apiKeys[provider.keyName] || "";
-
-      await credentialsService.updateCredential({
-        key: provider.keyName,
-        value,
-        is_encrypted: provider.isEncrypted,
-        category: "api_keys",
-        description: `${provider.label} API key`,
-      });
-
-      showToast(`${provider.label} API key saved successfully`, "success");
-    } catch (error) {
-      console.error(`Failed to save ${provider.label} API key:`, error);
-      showToast(`Failed to save ${provider.label} API key`, "error");
-    } finally {
-      setSaving(null);
-    }
-  };
 
   const saveStrategySettings = async () => {
     try {
@@ -1058,7 +843,8 @@ export default function RAGSettingsTab() {
           ? config.AZURE_OPENAI_CHAT_API_VERSION
           : (config as AzureEmbeddingConfig).AZURE_OPENAI_EMBEDDING_API_VERSION;
 
-      const apiKey = apiKeys["AZURE_OPENAI_API_KEY"] || "";
+      // Get Azure API key from settings
+      const apiKey = settings.AZURE_OPENAI_API_KEY || "";
 
       const result = await credentialsService.testProviderConnection(
         "azure-openai",
@@ -1515,26 +1301,6 @@ export default function RAGSettingsTab() {
         </div>
       </div>
 
-      {/* API Keys Section */}
-      <div className="space-y-4">
-        <h3 className="font-medium text-gray-900 dark:text-white">
-          Provider API Keys
-        </h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {API_KEY_PROVIDERS.map((provider) => (
-            <ApiKeyInput
-              key={provider.keyName}
-              provider={provider}
-              value={apiKeys[provider.keyName] || ""}
-              onChange={(value) =>
-                setApiKeys({ ...apiKeys, [provider.keyName]: value })
-              }
-              onSave={() => saveApiKey(provider)}
-              saving={saving === provider.keyName}
-            />
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

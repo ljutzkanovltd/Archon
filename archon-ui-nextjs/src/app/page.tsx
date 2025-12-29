@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { projectsApi, tasksApi } from "@/lib/apiClient";
-import { HiOutlineFolder, HiOutlineClipboardList, HiOutlineUserGroup, HiOutlineCheckCircle, HiOutlineUser, HiOutlineCog, HiOutlineClipboardCheck } from "react-icons/hi";
+import { HiOutlineFolder, HiOutlineClipboardList, HiOutlineUserGroup, HiOutlineCheckCircle, HiOutlineUser, HiOutlineCog, HiOutlineClipboardCheck, HiOutlineClipboard, HiClock, HiEye } from "react-icons/hi";
 import { useActiveUsers } from "@/hooks";
+import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 
 interface DashboardStats {
   totalProjects: number;
@@ -111,11 +112,11 @@ export default function DashboardPage() {
             <div key={i} className="rounded-lg border-2 border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                  <div className="mt-2 h-9 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                  <div className="mt-1 h-3 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  <LoadingSkeleton className="h-4 w-24 rounded" label="Loading stat label" />
+                  <LoadingSkeleton className="mt-2 h-9 w-16 rounded" label="Loading stat value" />
+                  <LoadingSkeleton className="mt-1 h-3 w-32 rounded" label="Loading stat description" />
                 </div>
-                <div className="h-12 w-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                <LoadingSkeleton className="h-12 w-12 rounded-lg" label="Loading stat icon" />
               </div>
             </div>
           ))}
@@ -162,7 +163,11 @@ export default function DashboardPage() {
   if (stats.error) {
     return (
       <div className="p-6">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-lg border border-red-200 bg-red-50 p-6 dark:border-red-800 dark:bg-red-900/20"
+        >
           <h2 className="text-lg font-semibold text-red-800 dark:text-red-200">Error</h2>
           <p className="mt-2 text-red-600 dark:text-red-300">{stats.error}</p>
         </div>
@@ -337,7 +342,10 @@ export default function DashboardPage() {
             {/* To Do */}
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">To Do</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  <HiOutlineClipboard className="w-4 h-4" aria-hidden="true" />
+                  To Do
+                </span>
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{stats.todoTasks}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
@@ -351,7 +359,10 @@ export default function DashboardPage() {
             {/* In Progress */}
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">In Progress</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  <HiClock className="w-4 h-4" aria-hidden="true" />
+                  In Progress
+                </span>
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{stats.inProgressTasks}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
@@ -365,7 +376,10 @@ export default function DashboardPage() {
             {/* In Review */}
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">In Review</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  <HiEye className="w-4 h-4" aria-hidden="true" />
+                  In Review
+                </span>
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{stats.reviewTasks}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
@@ -379,7 +393,10 @@ export default function DashboardPage() {
             {/* Completed */}
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  <HiOutlineCheckCircle className="w-4 h-4" aria-hidden="true" />
+                  Completed
+                </span>
                 <span className="text-sm font-bold text-gray-900 dark:text-white">{stats.completedTasks}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">

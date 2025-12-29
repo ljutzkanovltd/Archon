@@ -45,3 +45,6 @@ export { useTaskCounts } from "./useTaskCounts";
 export type { TaskCounts } from "./useTaskCounts";
 
 export { useActiveUsers } from "./useActiveUsers";
+
+export { useQueryParams, useQueryParam } from "./useQueryParams";
+export type { QueryParamSchema, UpdateQueryParamsOptions } from "./useQueryParams";

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase } from "react-icons/hi";
+import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase, HiInformationCircle } from "react-icons/hi";
 import { HiBug } from "react-icons/hi2";
 import TabView, { TabItem } from "@/components/common/TabView";
 import { GeneralSettings } from "./components/GeneralSettings";
@@ -15,6 +15,10 @@ import { CrawlSettings } from "./components/CrawlSettings";
 import { DisplaySettings } from "./components/DisplaySettings";
 import { McpSettings } from "./components/McpSettings";
 import { NotificationSettings } from "./components/NotificationSettings";
+import LogFireSettingsTab from "./components/LogFireSettingsTab";
+import VersionUpdatesTab from "./components/VersionUpdatesTab";
+import MigrationsTab from "./components/MigrationsTab";
+import IDEGlobalRulesTab from "./components/IDEGlobalRulesTab";
 
 export default function SettingsPage() {
   const { isLoading, fetchSettings } = useSettingsStore();
@@ -44,22 +48,40 @@ export default function SettingsPage() {
       component: <CodeExtractionTab />,
     },
     {
-      id: "bug_report",
-      label: "Bug Report",
-      icon: HiBug,
-      component: <BugReportTab />,
-    },
-    {
-      id: "general",
-      label: "General",
-      icon: HiCog,
-      component: <GeneralSettings />,
+      id: "logfire",
+      label: "LogFire",
+      icon: HiLightningBolt,
+      component: <LogFireSettingsTab />,
     },
     {
       id: "api_keys",
       label: "API Keys",
       icon: HiKey,
       component: <ApiKeySettings />,
+    },
+    {
+      id: "version",
+      label: "Version & Updates",
+      icon: HiInformationCircle,
+      component: <VersionUpdatesTab />,
+    },
+    {
+      id: "migrations",
+      label: "Migrations",
+      icon: HiDatabase,
+      component: <MigrationsTab />,
+    },
+    {
+      id: "ide_rules",
+      label: "IDE Rules",
+      icon: HiCode,
+      component: <IDEGlobalRulesTab />,
+    },
+    {
+      id: "general",
+      label: "General",
+      icon: HiCog,
+      component: <GeneralSettings />,
     },
     {
       id: "crawl",
@@ -84,6 +106,12 @@ export default function SettingsPage() {
       label: "Notifications",
       icon: HiBell,
       component: <NotificationSettings />,
+    },
+    {
+      id: "bug_report",
+      label: "Bug Report",
+      icon: HiBug,
+      component: <BugReportTab />,
     },
   ];
 

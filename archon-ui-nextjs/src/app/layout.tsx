@@ -38,6 +38,13 @@ export default function RootLayout({
           <QueryProvider>
             <SettingsProvider>
               <SidebarProvider>
+                {/* Skip to main content link for keyboard users */}
+                <a
+                  href="#main-content"
+                  className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:p-4 focus:bg-white focus:text-brand-600 dark:focus:bg-gray-800 dark:focus:text-brand-400 focus:shadow-lg"
+                >
+                  Skip to main content
+                </a>
                 <div className="flex h-screen flex-col">
                   <Header />
                   <Suspense fallback={null}>

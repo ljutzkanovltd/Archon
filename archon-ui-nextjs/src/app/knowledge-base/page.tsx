@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { HiPlus, HiEye, HiPencil, HiTrash, HiRefresh } from "react-icons/hi";
 import { knowledgeBaseApi, tasksApi } from "@/lib/apiClient";
 import { KnowledgeSource, CrawlRequest, UploadMetadata } from "@/lib/types";
 import { KnowledgeSourceCard } from "@/components/KnowledgeBase/KnowledgeSourceCard";
@@ -8,19 +10,19 @@ import { AddSourceDialog } from "@/components/KnowledgeBase/AddSourceDialog";
 import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlingProgress } from "@/components/KnowledgeBase/CrawlingProgress";
+import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
+import { BreadCrumb } from "@/components/common/BreadCrumb";
+import EmptyState from "@/components/common/EmptyState";
 import { usePageTitle } from "@/hooks";
-import { HiPlus, HiSearch, HiLink, HiCheckCircle } from "react-icons/hi";
+import { formatDistanceToNow } from "date-fns";
 
 export default function KnowledgeBasePage() {
   usePageTitle("Knowledge Base", "Archon");
 
+  const router = useRouter();
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
-  const [filteredSources, setFilteredSources] = useState<KnowledgeSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState<"all" | "technical" | "business">("all");
-  const [selectedLevel, setSelectedLevel] = useState<"all" | "basic" | "intermediate" | "advanced">("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -36,10 +38,6 @@ export default function KnowledgeBasePage() {
     loadSources();
     loadAdditionalMetrics();
   }, []);
-
-  useEffect(() => {
-    filterSources();
-  }, [sources, searchQuery, selectedType, selectedLevel]);
 
   const loadSources = async () => {
     setIsLoading(true);
@@ -62,6 +60,7 @@ export default function KnowledgeBasePage() {
 
               return {
                 ...source,
+                id: source.source_id, // Add id for DataTable keyExtractor
                 documents_count: chunksResponse.total || 0,
                 code_examples_count: codeResponse.total || 0,
               };
@@ -69,6 +68,7 @@ export default function KnowledgeBasePage() {
               console.error(`Failed to load counts for source ${source.source_id}:`, err);
               return {
                 ...source,
+                id: source.source_id,
                 documents_count: 0,
                 code_examples_count: 0,
               };
@@ -98,23 +98,15 @@ export default function KnowledgeBasePage() {
     setMetricsLoading(true);
 
     try {
-      // Fetch tasks with source_id to count linked tasks
-      // Note: This assumes backend supports filtering by source_id existence
-      // For now, we'll get all tasks and count those with source metadata
       const tasksResponse = await tasksApi.getAll({ per_page: 1000 });
 
       if (tasksResponse.success && tasksResponse.items) {
-        // Count tasks that have source references in metadata or description
         const linkedCount = tasksResponse.items.filter(task => {
-          // Check if task has source_id or source references
-          return task.sources_count && task.sources_count > 0;
+          return (task as any).sources_count && (task as any).sources_count > 0;
         }).length;
 
         setTasksLinked(linkedCount);
       }
-
-      // Calculate completion rate (sources with >5 documents)
-      // We'll calculate this from sources data once loaded
     } catch (err) {
       console.error("Failed to load additional metrics:", err);
     } finally {
@@ -122,84 +114,14 @@ export default function KnowledgeBasePage() {
     }
   };
 
-  const filterSources = () => {
-    let filtered = [...sources];
+  // ========== HANDLERS ==========
 
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter((source) => {
-        const url = source.url || source.metadata?.original_url || "";
-        const tags = source.tags?.length > 0 ? source.tags : (source.metadata?.tags || []);
-
-        return (
-          source.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          url.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          source.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          tags.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-        );
-      });
-    }
-
-    // Filter by type
-    if (selectedType !== "all") {
-      filtered = filtered.filter((source) => {
-        const knowledgeType = source.knowledge_type || source.metadata?.knowledge_type;
-        return knowledgeType === selectedType;
-      });
-    }
-
-    // Filter by level
-    if (selectedLevel !== "all") {
-      filtered = filtered.filter((source) => {
-        return source.level === selectedLevel;
-      });
-    }
-
-    setFilteredSources(filtered);
-  };
-
-  const handleCrawl = async (data: CrawlRequest) => {
-    try {
-      const response = await knowledgeBaseApi.crawlUrl(data);
-      if (response.success) {
-        // Show success message
-        alert(
-          `Crawl started successfully! ${response.message}\nProgress ID: ${response.progressId}`
-        );
-        // Reload sources after a delay to allow the crawl to start
-        setTimeout(() => loadSources(), 2000);
-      } else {
-        throw new Error("Failed to start crawl");
-      }
-    } catch (err) {
-      throw err;
-    }
-  };
-
-  const handleUpload = async (file: File, metadata: UploadMetadata) => {
-    try {
-      const response = await knowledgeBaseApi.uploadDocument(file, metadata);
-      if (response.success) {
-        // Show success message
-        alert(
-          `Upload started for ${response.filename || file.name}! ${response.message}\nProgress ID: ${response.progressId}`
-        );
-        // Reload sources after a delay to allow the upload to process
-        setTimeout(() => loadSources(), 2000);
-      } else {
-        throw new Error("Failed to upload document");
-      }
-    } catch (err) {
-      throw err;
-    }
-  };
-
-  const handleViewSource = (source: KnowledgeSource) => {
+  const handleView = (source: KnowledgeSource) => {
     setSelectedSource(source);
     setIsInspectorOpen(true);
   };
 
-  const handleEditSource = (source: KnowledgeSource) => {
+  const handleEdit = (source: KnowledgeSource) => {
     setSourceToEdit(source);
     setIsEditDialogOpen(true);
   };
@@ -214,11 +136,11 @@ export default function KnowledgeBasePage() {
         throw new Error(response.error || "Failed to update source");
       }
     } catch (err) {
-      throw err; // Re-throw to let EditSourceDialog handle it
+      throw err;
     }
   };
 
-  const handleDeleteSource = async (source: KnowledgeSource) => {
+  const handleDelete = async (source: KnowledgeSource) => {
     if (
       !confirm(
         `Are you sure you want to delete "${source.title}"? This will remove all indexed documents and code examples.`
@@ -240,7 +162,7 @@ export default function KnowledgeBasePage() {
     }
   };
 
-  const handleRecrawlSource = async (source: KnowledgeSource) => {
+  const handleRecrawl = async (source: KnowledgeSource) => {
     if (
       !confirm(
         `Are you sure you want to recrawl "${source.title}"? This will update all indexed content.`
@@ -264,10 +186,196 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  const handleCrawl = async (data: CrawlRequest) => {
+    try {
+      const response = await knowledgeBaseApi.crawlUrl(data);
+      if (response.success) {
+        alert(
+          `Crawl started successfully! ${response.message}\nProgress ID: ${response.progressId}`
+        );
+        setTimeout(() => loadSources(), 2000);
+      } else {
+        throw new Error("Failed to start crawl");
+      }
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  const handleUpload = async (file: File, metadata: UploadMetadata) => {
+    try {
+      const response = await knowledgeBaseApi.uploadDocument(file, metadata);
+      if (response.success) {
+        alert(
+          `Upload started for ${response.filename || file.name}! ${response.message}\nProgress ID: ${response.progressId}`
+        );
+        setTimeout(() => loadSources(), 2000);
+      } else {
+        throw new Error("Failed to upload document");
+      }
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  // ========== DATATABLE CONFIGURATION ==========
+
+  const columns: DataTableColumn<KnowledgeSource>[] = [
+    {
+      key: "title",
+      label: "Source Name",
+      sortable: true,
+      render: (value, source) => (
+        <div>
+          <div className="font-medium text-gray-900 dark:text-white">
+            {value}
+          </div>
+          {source.url && (
+            <div className="text-xs text-gray-500 truncate max-w-xs">
+              {source.url}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "knowledge_type",
+      label: "Type",
+      sortable: true,
+      width: "120px",
+      render: (value) => (
+        <span className="text-sm text-gray-900 dark:text-white capitalize">
+          {value || "N/A"}
+        </span>
+      ),
+    },
+    {
+      key: "documents_count",
+      label: "Pages",
+      sortable: true,
+      width: "100px",
+      render: (value) => (
+        <span className="text-sm text-gray-900 dark:text-white">
+          {value || 0}
+        </span>
+      ),
+    },
+    {
+      key: "code_examples_count",
+      label: "Code Examples",
+      sortable: true,
+      width: "130px",
+      render: (value) => (
+        <span className="text-sm text-gray-900 dark:text-white">
+          {value || 0}
+        </span>
+      ),
+    },
+    {
+      key: "updated_at",
+      label: "Last Updated",
+      sortable: true,
+      width: "150px",
+      render: (value) => (
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          {value ? formatDistanceToNow(new Date(value), { addSuffix: true }) : "N/A"}
+        </span>
+      ),
+    },
+  ];
+
+  const tableButtons: DataTableButton[] = [
+    {
+      label: "Add Source",
+      icon: HiPlus,
+      onClick: () => setIsAddDialogOpen(true),
+      variant: "primary",
+    },
+  ];
+
+  const rowButtons = (source: KnowledgeSource): DataTableButton[] => [
+    {
+      label: "View",
+      icon: HiEye,
+      onClick: () => handleView(source),
+    },
+    {
+      label: "Edit",
+      icon: HiPencil,
+      onClick: () => handleEdit(source),
+    },
+    {
+      label: "Recrawl",
+      icon: HiRefresh,
+      onClick: () => handleRecrawl(source),
+    },
+    {
+      label: "Delete",
+      icon: HiTrash,
+      onClick: () => handleDelete(source),
+      variant: "ghost",
+    },
+  ];
+
+  // Get unique types and levels for filters
+  const typeOptions = useMemo(() => {
+    const types = [...new Set(sources.map(s => s.knowledge_type).filter(Boolean))];
+    return types.map(type => ({ value: type, label: type?.charAt(0).toUpperCase() + type?.slice(1) || "" }));
+  }, [sources]);
+
+  const levelOptions = useMemo(() => {
+    const levels = [...new Set(sources.map(s => s.level).filter(Boolean))] as string[];
+    return levels.map(level => ({ value: level, label: level.charAt(0).toUpperCase() + level.slice(1) }));
+  }, [sources]);
+
+  const filterConfigs: FilterConfig[] = [
+    {
+      field: "knowledge_type",
+      label: "Type",
+      type: "select",
+      options: typeOptions,
+    },
+    {
+      field: "level",
+      label: "Level",
+      type: "select",
+      options: levelOptions,
+    },
+  ];
+
+  // ========== RENDER ==========
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:bg-red-900/20 dark:text-red-400"
+        >
+          <p className="font-semibold">Error loading sources</p>
+          <p className="text-sm">{error}</p>
+          <button
+            onClick={loadSources}
+            className="mt-2 text-sm underline hover:no-underline"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8 dark:bg-gray-900">
-      {/* Header */}
-      <div className="mb-8">
+    <div className="p-8">
+      {/* Breadcrumb */}
+      <BreadCrumb
+        items={[{ label: "Knowledge Base", href: "/knowledge-base" }]}
+        className="mb-4"
+      />
+
+      {/* Page Header */}
+      <div className="mb-6">
         <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">
           Knowledge Base
         </h1>
@@ -276,127 +384,68 @@ export default function KnowledgeBasePage() {
         </p>
       </div>
 
-      {/* Filters & Actions */}
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Search */}
-        <div className="relative flex-1 lg:max-w-md">
-          <HiSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sources..."
-            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="flex gap-2">
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as any)}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          >
-            <option value="all">All Types</option>
-            <option value="technical">Technical</option>
-            <option value="business">Business</option>
-          </select>
-
-          <select
-            value={selectedLevel}
-            onChange={(e) => setSelectedLevel(e.target.value as any)}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          >
-            <option value="all">All Levels</option>
-            <option value="basic">Basic</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-
-          <button
-            onClick={() => setIsAddDialogOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-          >
-            <HiPlus className="h-5 w-5" />
-            Add Source
-          </button>
-        </div>
-      </div>
-
-      {/* Stats - Compact with 6 cards */}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {/* Total Sources */}
+      {/* Stats Cards */}
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Sources</div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {isLoading ? (
-              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               sources.length
             )}
           </div>
         </div>
 
-        {/* Total Documents */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Documents</div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {isLoading ? (
-              <div className="h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               sources.reduce((sum, s) => sum + (s.documents_count || 0), 0).toLocaleString()
             )}
           </div>
         </div>
 
-        {/* Code Examples */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Code Examples</div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {isLoading ? (
-              <div className="h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               sources.reduce((sum, s) => sum + (s.code_examples_count || 0), 0).toLocaleString()
             )}
           </div>
         </div>
 
-        {/* Total Words */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div className="text-xs text-gray-600 dark:text-gray-400">Total Words</div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {isLoading ? (
-              <div className="h-7 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               sources.reduce((sum, s) => sum + (s.total_words || 0), 0).toLocaleString()
             )}
           </div>
         </div>
 
-        {/* Tasks Linked - NEW */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
-            <HiLink className="h-3 w-3" />
-            Tasks Linked
-          </div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-xs text-gray-600 dark:text-gray-400">Tasks Linked</div>
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {metricsLoading ? (
-              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               tasksLinked
             )}
           </div>
         </div>
 
-        {/* Completion Rate - NEW */}
         <div className="rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
-            <HiCheckCircle className="h-3 w-3" />
-            Completion Rate
-          </div>
-          <div className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-xs text-gray-600 dark:text-gray-400">Completion Rate</div>
+          <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
             {isLoading ? (
-              <div className="h-7 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+              <div className="h-8 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
             ) : (
               `${completionRate}%`
             )}
@@ -404,46 +453,51 @@ export default function KnowledgeBasePage() {
         </div>
       </div>
 
-      {/* Active Operations - Live Progress Tracking */}
+      {/* Active Operations */}
       <CrawlingProgress className="mb-4" />
 
-      {/* Sources Grid - Compact spacing */}
-      {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
-        </div>
-      ) : error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800 dark:bg-red-900/20 dark:text-red-400">
-          <p className="font-semibold text-sm">Error loading sources</p>
-          <p className="text-xs">{error}</p>
-          <button
-            onClick={loadSources}
-            className="mt-2 text-xs underline hover:no-underline"
-          >
-            Try again
-          </button>
-        </div>
-      ) : filteredSources.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {searchQuery || selectedType !== "all" || selectedLevel !== "all"
-              ? "No sources match your filters"
-              : "No sources yet. Add your first source to get started!"}
-          </p>
+      {/* Conditional Render: Empty State or DataTable */}
+      {!isLoading && sources.length === 0 ? (
+        <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <EmptyState
+            config={{
+              type: "knowledge_base",
+              title: "Start Building Your Knowledge Base",
+              description: "Crawl documentation, upload files, or add sources to get started. Build a comprehensive knowledge repository for your projects.",
+              button: {
+                text: "Add Your First Source",
+                onClick: () => setIsAddDialogOpen(true),
+                variant: "primary" as any,
+                icon: "HiPlus" as any,
+              },
+            }}
+          />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredSources.map((source) => (
+        <DataTable
+          data={sources}
+          columns={columns}
+          tableButtons={tableButtons}
+          rowButtons={rowButtons}
+          viewMode="table"
+          customRender={(source) => (
             <KnowledgeSourceCard
-              key={source.source_id}
               source={source}
-              onView={handleViewSource}
-              onEdit={handleEditSource}
-              onDelete={handleDeleteSource}
-              onRecrawl={handleRecrawlSource}
+              onView={handleView}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onRecrawl={handleRecrawl}
             />
-          ))}
-        </div>
+          )}
+          showSearch
+          filterConfigs={filterConfigs}
+          showViewToggle={true}
+          showFilters={true}
+          showPagination
+          isLoading={isLoading}
+          emptyMessage="No sources found. Add your first source to get started!"
+          caption={`List of ${sources.length} knowledge sources`}
+        />
       )}
 
       {/* Add Source Dialog */}

@@ -150,6 +150,9 @@ OPTIONAL_SETTINGS_WITH_DEFAULTS = {
     "DISCONNECT_SCREEN_ENABLED": "true",  # Show disconnect screen when server is unavailable
     "PROJECTS_ENABLED": "false",  # Enable project management features
     "LOGFIRE_ENABLED": "false",  # Enable Pydantic Logfire integration
+    "TASKS_ENABLED": "true",  # Enable Tasks menu in sidebar
+    "KNOWLEDGE_BASE_ENABLED": "true",  # Enable Knowledge Base menu in sidebar
+    "MCP_SERVER_DASHBOARD_ENABLED": "true",  # Enable MCP Server Dashboard menu in sidebar
 }
 
 

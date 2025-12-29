@@ -46,6 +46,7 @@ export interface DataTableButton {
   onClick: () => void;
   variant?: "primary" | "secondary" | "ghost" | "danger";
   disabled?: boolean;
+  ariaLabel?: string; // Accessibility: Descriptive label for screen readers
 }
 
 // Layer 1: Props Context (Immutable)
@@ -55,6 +56,7 @@ export interface DataTablePropsContext<T = any> {
   tableButtons?: DataTableButton[];
   rowButtons?: (item: T) => DataTableButton[];
   emptyMessage?: string;
+  caption?: string; // Accessibility: Table caption for screen readers
   viewMode?: "table" | "list" | "grid" | "custom";
   customRender?: (item: T) => React.ReactNode;
   keyExtractor?: (item: T) => string;
@@ -119,6 +121,7 @@ interface DataTableProviderProps<T = any> {
   tableButtons?: DataTableButton[];
   rowButtons?: (item: T) => DataTableButton[];
   emptyMessage?: string;
+  caption?: string;
   viewMode?: "table" | "list" | "grid" | "custom";
   customRender?: (item: T) => React.ReactNode;
   keyExtractor?: (item: T) => string;
@@ -132,6 +135,7 @@ export function DataTableProvider<T = any>({
   tableButtons,
   rowButtons,
   emptyMessage = "No data available",
+  caption,
   viewMode = "table",
   customRender,
   keyExtractor = (item: any) => item.id || String(item),
@@ -233,11 +237,12 @@ export function DataTableProvider<T = any>({
       tableButtons,
       rowButtons,
       emptyMessage,
+      caption,
       viewMode,
       customRender,
       keyExtractor,
     }),
-    [columns, data, tableButtons, rowButtons, emptyMessage, viewMode, customRender, keyExtractor]
+    [columns, data, tableButtons, rowButtons, emptyMessage, caption, viewMode, customRender, keyExtractor]
   );
 
   const stateValue: DataTableStateContext = useMemo(
@@ -481,7 +486,7 @@ export function useSelection() {
  */
 export function useFilteredData<T = any>() {
   const { data, columns } = useDataTableProps<T>();
-  const { searchQuery, sort } = useDataTableState();
+  const { searchQuery, sort, filters } = useDataTableState();
 
   return useMemo(() => {
     let processedData = [...(data || [])];
@@ -502,6 +507,61 @@ export function useFilteredData<T = any>() {
           // Convert value to string and search
           const stringValue = String(value).toLowerCase();
           return stringValue.includes(query);
+        });
+      });
+    }
+
+    // Apply filters
+    if (filters && filters.length > 0) {
+      processedData = processedData.filter((item) => {
+        return filters.every((filter) => {
+          const value = (item as any)[filter.field];
+
+          // Handle null/undefined values
+          if (value === null || value === undefined) {
+            return false;
+          }
+
+          if (filter.operator === "equals") {
+            // Special handling for boolean values
+            if (typeof value === "boolean") {
+              return value === (filter.value === "true" || filter.value === true);
+            }
+            return String(value).toLowerCase() === String(filter.value).toLowerCase();
+          }
+
+          if (filter.operator === "contains") {
+            return String(value).toLowerCase().includes(String(filter.value).toLowerCase());
+          }
+
+          if (filter.operator === "startsWith") {
+            return String(value).toLowerCase().startsWith(String(filter.value).toLowerCase());
+          }
+
+          if (filter.operator === "endsWith") {
+            return String(value).toLowerCase().endsWith(String(filter.value).toLowerCase());
+          }
+
+          if (filter.operator === "in") {
+            // For multiselect filters
+            if (Array.isArray(filter.value)) {
+              return filter.value.includes(String(value));
+            }
+            return true;
+          }
+
+          if (filter.operator === "between") {
+            // For date range filters
+            if (filter.value && typeof filter.value === "object" && "from" in filter.value && "to" in filter.value) {
+              const itemDate = new Date(value).getTime();
+              const fromDate = filter.value.from ? new Date(filter.value.from).getTime() : -Infinity;
+              const toDate = filter.value.to ? new Date(filter.value.to).getTime() : Infinity;
+              return itemDate >= fromDate && itemDate <= toDate;
+            }
+            return true;
+          }
+
+          return true;
         });
       });
     }
@@ -534,5 +594,5 @@ export function useFilteredData<T = any>() {
     }
 
     return processedData;
-  }, [data, columns, searchQuery, sort]);
+  }, [data, columns, searchQuery, sort, filters]);
 }

@@ -58,11 +58,10 @@ export interface RagSettings {
   // Provider API Keys
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
-  COHERE_API_KEY?: string;
-  VOYAGE_API_KEY?: string;
-  JINA_API_KEY?: string;
   GOOGLE_API_KEY?: string;
   AZURE_OPENAI_API_KEY?: string;
+  GROK_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 }
 
 export interface AzureChatConfig {
@@ -376,10 +375,10 @@ class CredentialsService {
         ...ragSettings,
       };
 
+      // Merge all API keys unconditionally (not just those already in settings)
+      // This allows new API keys to be added even if not present in backend defaults
       apiKeysCredentials.forEach((cred) => {
-        if (cred.key in settings) {
-          (settings as any)[cred.key] = cred.value;
-        }
+        (settings as any)[cred.key] = cred.value;
       });
 
       return settings;
@@ -398,11 +397,10 @@ class CredentialsService {
     const apiKeyFields = [
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
-      "COHERE_API_KEY",
-      "VOYAGE_API_KEY",
-      "JINA_API_KEY",
       "GOOGLE_API_KEY",
       "AZURE_OPENAI_API_KEY",
+      "GROK_API_KEY",
+      "OPENROUTER_API_KEY",
     ];
 
     const strategySettings: Record<string, any> = {};
@@ -549,7 +547,7 @@ class CredentialsService {
       }
 
       // Notify listeners
-      this.notifyListeners([
+      this.notifyCredentialUpdate([
         "AZURE_OPENAI_CHAT_ENDPOINT",
         "AZURE_OPENAI_CHAT_API_VERSION",
         "AZURE_OPENAI_CHAT_DEPLOYMENT",
@@ -597,7 +595,7 @@ class CredentialsService {
       }
 
       // Notify listeners
-      this.notifyListeners([
+      this.notifyCredentialUpdate([
         "AZURE_OPENAI_EMBEDDING_ENDPOINT",
         "AZURE_OPENAI_EMBEDDING_API_VERSION",
         "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",

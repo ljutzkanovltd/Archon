@@ -2,16 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  HiMoon,
-  HiSun,
   HiDocumentText,
   HiColorSwatch,
   HiCog,
   HiFire,
   HiDesktopComputer,
+  HiClipboardList,
+  HiBookOpen,
+  HiServer,
 } from "react-icons/hi";
 import { useSettings } from "@/contexts/SettingsContext";
-import { credentialsService } from "@/lib/services/credentialsService";
 import { serverHealthService } from "@/lib/services/serverHealthService";
 
 // ============================================================================
@@ -50,6 +50,7 @@ const FeatureToggle: React.FC<FeatureToggleProps> = ({
   errorMessage,
 }) => {
   const [isToggling, setIsToggling] = useState(false);
+  const [justToggled, setJustToggled] = useState(false);
 
   const handleToggle = async () => {
     if (loading || isToggling || disabled) return;
@@ -57,6 +58,8 @@ const FeatureToggle: React.FC<FeatureToggleProps> = ({
     try {
       setIsToggling(true);
       await onToggle(!checked);
+      setJustToggled(true);
+      setTimeout(() => setJustToggled(false), 300);
     } catch (error) {
       console.error(`Failed to toggle ${title}:`, error);
     } finally {
@@ -66,9 +69,9 @@ const FeatureToggle: React.FC<FeatureToggleProps> = ({
 
   return (
     <div
-      className={`flex items-center gap-4 rounded-xl border p-4 shadow-lg backdrop-blur-sm ${borderColor} ${
+      className={`flex items-center gap-4 rounded-xl border p-4 shadow-lg backdrop-blur-sm transition-all duration-200 ${borderColor} ${
         disabled ? "opacity-50" : ""
-      }`}
+      } ${justToggled ? "scale-[1.02]" : "scale-100"}`}
     >
       <div className="flex-1 min-w-0">
         <p className="font-medium text-gray-900 dark:text-white">{title}</p>
@@ -94,12 +97,12 @@ const FeatureToggle: React.FC<FeatureToggleProps> = ({
           <span
             className={`${
               checked ? "translate-x-11" : "translate-x-1"
-            } inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform flex items-center justify-center`}
+            } inline-flex h-8 w-8 transform items-center justify-center rounded-full bg-white shadow-lg transition-transform`}
           >
             {isToggling ? (
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-brand-600" />
             ) : (
-              <span className="text-gray-600">{icon}</span>
+              <span className="flex items-center justify-center text-gray-600">{icon}</span>
             )}
           </span>
         </button>
@@ -114,8 +117,6 @@ const FeatureToggle: React.FC<FeatureToggleProps> = ({
 
 export default function FeaturesTab() {
   const {
-    darkModeEnabled,
-    setDarkModeEnabled,
     projectsEnabled,
     setProjectsEnabled,
     styleGuideEnabled,
@@ -126,6 +127,12 @@ export default function FeaturesTab() {
     setLogfireEnabled,
     disconnectScreenEnabled,
     setDisconnectScreenEnabled,
+    tasksEnabled,
+    setTasksEnabled,
+    knowledgeBaseEnabled,
+    setKnowledgeBaseEnabled,
+    mcpServerDashboardEnabled,
+    setMCPServerDashboardEnabled,
     loading: contextLoading,
   } = useSettings();
 
@@ -195,21 +202,6 @@ export default function FeaturesTab() {
   // ==========================================================================
   // Toggle Handlers
   // ==========================================================================
-
-  const handleDarkModeToggle = async (checked: boolean) => {
-    try {
-      setLoading(true);
-      await setDarkModeEnabled(checked);
-      showToast(
-        checked ? "Dark Mode Enabled" : "Light Mode Enabled",
-        "success"
-      );
-    } catch (error) {
-      showToast("Failed to update dark mode setting", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleProjectsToggle = async (checked: boolean) => {
     if (!projectsSchemaValid) return;
@@ -291,6 +283,51 @@ export default function FeaturesTab() {
     }
   };
 
+  const handleTasksToggle = async (checked: boolean) => {
+    try {
+      setLoading(true);
+      await setTasksEnabled(checked);
+      showToast(
+        checked ? "Tasks Menu Enabled" : "Tasks Menu Disabled",
+        checked ? "success" : "warning"
+      );
+    } catch (error) {
+      showToast("Failed to update tasks setting", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKnowledgeBaseToggle = async (checked: boolean) => {
+    try {
+      setLoading(true);
+      await setKnowledgeBaseEnabled(checked);
+      showToast(
+        checked ? "Knowledge Base Enabled" : "Knowledge Base Disabled",
+        checked ? "success" : "warning"
+      );
+    } catch (error) {
+      showToast("Failed to update knowledge base setting", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMCPServerDashboardToggle = async (checked: boolean) => {
+    try {
+      setLoading(true);
+      await setMCPServerDashboardEnabled(checked);
+      showToast(
+        checked ? "MCP Server Dashboard Enabled" : "MCP Server Dashboard Disabled",
+        checked ? "success" : "warning"
+      );
+    } catch (error) {
+      showToast("Failed to update MCP server dashboard setting", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ==========================================================================
   // Render
   // ==========================================================================
@@ -324,19 +361,6 @@ export default function FeaturesTab() {
 
       {/* Feature Toggles Grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* Dark Mode */}
-        <FeatureToggle
-          title="Dark Mode"
-          description="Switch between light and dark themes"
-          checked={darkModeEnabled}
-          onToggle={handleDarkModeToggle}
-          loading={loading || contextLoading}
-          icon={darkModeEnabled ? <HiMoon className="h-5 w-5" /> : <HiSun className="h-5 w-5" />}
-          iconOnBg="bg-purple-600"
-          iconOffBg="bg-gray-200"
-          borderColor="border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-purple-600/5"
-        />
-
         {/* Projects */}
         <FeatureToggle
           title="Projects"
@@ -402,6 +426,45 @@ export default function FeaturesTab() {
           iconOnBg="bg-green-600"
           iconOffBg="bg-gray-200"
           borderColor="border-green-500/20 bg-gradient-to-br from-green-500/10 to-green-600/5"
+        />
+
+        {/* Tasks */}
+        <FeatureToggle
+          title="Tasks"
+          description="Enable or disable the Tasks menu in the sidebar"
+          checked={tasksEnabled}
+          onToggle={handleTasksToggle}
+          loading={loading || contextLoading}
+          icon={<HiClipboardList className="h-5 w-5" />}
+          iconOnBg="bg-yellow-600"
+          iconOffBg="bg-gray-200"
+          borderColor="border-yellow-500/20 bg-gradient-to-br from-yellow-500/10 to-yellow-600/5"
+        />
+
+        {/* Knowledge Base */}
+        <FeatureToggle
+          title="Knowledge Base"
+          description="Enable or disable the Knowledge Base in the sidebar"
+          checked={knowledgeBaseEnabled}
+          onToggle={handleKnowledgeBaseToggle}
+          loading={loading || contextLoading}
+          icon={<HiBookOpen className="h-5 w-5" />}
+          iconOnBg="bg-indigo-600"
+          iconOffBg="bg-gray-200"
+          borderColor="border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 to-indigo-600/5"
+        />
+
+        {/* MCP Server Dashboard */}
+        <FeatureToggle
+          title="MCP Server Dashboard"
+          description="Enable or disable the MCP Server menu in the sidebar"
+          checked={mcpServerDashboardEnabled}
+          onToggle={handleMCPServerDashboardToggle}
+          loading={loading || contextLoading}
+          icon={<HiServer className="h-5 w-5" />}
+          iconOnBg="bg-teal-600"
+          iconOffBg="bg-gray-200"
+          borderColor="border-teal-500/20 bg-gradient-to-br from-teal-500/10 to-teal-600/5"
         />
       </div>
     </div>

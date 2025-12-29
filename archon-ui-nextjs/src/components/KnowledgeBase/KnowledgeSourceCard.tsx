@@ -123,11 +123,11 @@ export function KnowledgeSourceCard({
         <div className="flex items-center gap-1.5 mb-2">
           {/* Knowledge type & level badges */}
           <div className="flex flex-wrap gap-1">
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getKnowledgeTypeColor(knowledgeType)}`}>
+            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getKnowledgeTypeColor(knowledgeType)}`}>
               {knowledgeType}
             </span>
             {level && (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getLevelColor(level)}`}>
+              <span className={`rounded-full px-2 py-1 text-xs font-medium ${getLevelColor(level)}`}>
                 {level}
               </span>
             )}
@@ -137,68 +137,72 @@ export function KnowledgeSourceCard({
           <div className="flex items-center gap-1 ml-auto">
             {/* View Button */}
             {onView && (
-              <Tooltip content="View source" style="light">
+              <Tooltip content="View source" style="light" trigger="hover,focus">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onView(source);
                   }}
-                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-800/40"
-                  aria-label="View source"
+                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-800/40 focus:ring-2 focus:ring-brand-500"
+                  aria-label={`View ${source.title} source`}
                 >
-                  <Eye className="w-3 h-3" />
+                  <Eye className="w-3 h-3" aria-hidden="true" />
+                  <span className="sr-only">View {source.title} source</span>
                 </button>
               </Tooltip>
             )}
 
             {/* Edit Button */}
             {onEdit && (
-              <Tooltip content="Edit source" style="light">
+              <Tooltip content="Edit source" style="light" trigger="hover,focus">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onEdit(source);
                   }}
-                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                  aria-label="Edit source"
+                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 focus:ring-2 focus:ring-brand-500"
+                  aria-label={`Edit ${source.title} source`}
                 >
-                  <Edit className="w-3 h-3" />
+                  <Edit className="w-3 h-3" aria-hidden="true" />
+                  <span className="sr-only">Edit {source.title} source</span>
                 </button>
               </Tooltip>
             )}
 
             {/* Recrawl Button */}
             {onRecrawl && (
-              <Tooltip content="Recrawl source" style="light">
+              <Tooltip content="Recrawl source" style="light" trigger="hover,focus">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onRecrawl(source);
                   }}
-                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/40"
-                  aria-label="Recrawl source"
+                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/40 focus:ring-2 focus:ring-brand-500"
+                  aria-label={`Recrawl ${source.title} source`}
                 >
-                  <RefreshCw className="w-3 h-3" />
+                  <RefreshCw className="w-3 h-3" aria-hidden="true" />
+                  <span className="sr-only">Recrawl {source.title} source</span>
                 </button>
               </Tooltip>
             )}
 
             {/* Delete Button */}
             {onDelete && (
-              <Tooltip content="Delete source" style="light">
+              <Tooltip content="Delete source" style="light" trigger="hover,focus">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(source);
                   }}
-                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/40"
-                  aria-label="Delete source"
+                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/40 focus:ring-2 focus:ring-brand-500"
+                  aria-label={`Delete ${source.title} source`}
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3 h-3" aria-hidden="true" />
+                  <span className="sr-only">Delete {source.title} source</span>
                 </button>
               </Tooltip>
             )}
@@ -226,7 +230,7 @@ export function KnowledgeSourceCard({
         {/* Summary - improved line height and opacity */}
         {source.summary && (
           <div className="mb-2 flex-1">
-            <p className="text-gray-600 dark:text-gray-400 line-clamp-3 break-words opacity-80 text-xs leading-relaxed">
+            <p className="text-gray-600 dark:text-gray-400 line-clamp-3 break-words opacity-80 text-sm leading-relaxed">
               {source.summary}
             </p>
           </div>
@@ -247,10 +251,11 @@ export function KnowledgeSourceCard({
                   <button
                     type="button"
                     onClick={() => handleRemoveTag(tag)}
-                    className="ml-0.5 opacity-0 group-hover/tag:opacity-100 transition-opacity duration-150 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                    className="ml-0.5 opacity-0 group-hover/tag:opacity-100 focus:opacity-100 transition-opacity duration-150 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 focus:ring-1 focus:ring-red-500"
                     aria-label={`Remove ${tag}`}
                   >
-                    <X className="h-2.5 w-2.5" />
+                    <X className="h-2.5 w-2.5" aria-hidden="true" />
+                    <span className="sr-only">Remove {tag}</span>
                   </button>
                 )}
               </span>
@@ -279,10 +284,11 @@ export function KnowledgeSourceCard({
                 <button
                   type="button"
                   onClick={handleAddTag}
-                  className="w-4 h-4 rounded-full flex items-center justify-center bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                  className="w-4 h-4 rounded-full flex items-center justify-center bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/30 transition-colors focus:ring-1 focus:ring-cyan-500"
                   aria-label="Add tag"
                 >
-                  <Plus className="h-2.5 w-2.5" />
+                  <Plus className="h-2.5 w-2.5" aria-hidden="true" />
+                  <span className="sr-only">Add tag</span>
                 </button>
                 <button
                   type="button"
@@ -290,10 +296,11 @@ export function KnowledgeSourceCard({
                     setEditingTags(false);
                     setNewTag("");
                   }}
-                  className="w-4 h-4 rounded-full flex items-center justify-center bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-500/30 transition-colors"
+                  className="w-4 h-4 rounded-full flex items-center justify-center bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-500/30 transition-colors focus:ring-1 focus:ring-gray-500"
                   aria-label="Done editing"
                 >
-                  <X className="h-2.5 w-2.5" />
+                  <X className="h-2.5 w-2.5" aria-hidden="true" />
+                  <span className="sr-only">Done editing</span>
                 </button>
               </div>
             )}

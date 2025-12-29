@@ -23,7 +23,7 @@ interface DataTableListProps {
  * - Responsive design
  */
 export function DataTableList({ variant = "table" }: DataTableListProps) {
-  const { columns, rowButtons, keyExtractor } = useDataTableContext();
+  const { columns, rowButtons, keyExtractor, caption } = useDataTableContext();
   const filteredData = useFilteredData();
   const { toggleSort, getSortDirection } = useSorting();
   const { isSelected, toggleSelection, isAllSelected, toggleSelectAll } =
@@ -35,6 +35,9 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
       <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+        {caption && (
+          <caption className="sr-only">{caption}</caption>
+        )}
         <thead className="bg-gray-50 text-xs uppercase text-gray-700 dark:bg-gray-700 dark:text-gray-400">
           <tr>
             {/* Selection Column */}
@@ -142,9 +145,10 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
                           }
                           onClick={action.onClick}
                           disabled={action.disabled}
+                          aria-label={action.ariaLabel}
                         >
                           {action.icon && (
-                            <action.icon className="mr-1 h-3 w-3" />
+                            <action.icon className="mr-1 h-3 w-3" aria-hidden="true" />
                           )}
                           {action.label}
                         </Button>

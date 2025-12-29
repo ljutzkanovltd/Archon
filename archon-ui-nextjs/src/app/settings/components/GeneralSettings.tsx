@@ -35,10 +35,11 @@ export function GeneralSettings() {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+          <label htmlFor="site-name" className="block text-sm font-medium mb-2 dark:text-gray-300">
             Site Name
           </label>
           <input
+            id="site-name"
             type="text"
             value={formData.site_name}
             onChange={(e) => setFormData({ ...formData, site_name: e.target.value })}
@@ -48,10 +49,11 @@ export function GeneralSettings() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+          <label htmlFor="site-url" className="block text-sm font-medium mb-2 dark:text-gray-300">
             Site URL
           </label>
           <input
+            id="site-url"
             type="url"
             value={formData.site_url}
             onChange={(e) => setFormData({ ...formData, site_url: e.target.value })}
@@ -61,10 +63,11 @@ export function GeneralSettings() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+          <label htmlFor="admin-email" className="block text-sm font-medium mb-2 dark:text-gray-300">
             Admin Email
           </label>
           <input
+            id="admin-email"
             type="email"
             value={formData.admin_email}
             onChange={(e) => setFormData({ ...formData, admin_email: e.target.value })}

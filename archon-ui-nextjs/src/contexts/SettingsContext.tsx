@@ -27,6 +27,12 @@ interface SettingsContextType {
   setLogfireEnabled: (enabled: boolean) => Promise<void>;
   disconnectScreenEnabled: boolean;
   setDisconnectScreenEnabled: (enabled: boolean) => Promise<void>;
+  tasksEnabled: boolean;
+  setTasksEnabled: (enabled: boolean) => Promise<void>;
+  knowledgeBaseEnabled: boolean;
+  setKnowledgeBaseEnabled: (enabled: boolean) => Promise<void>;
+  mcpServerDashboardEnabled: boolean;
+  setMCPServerDashboardEnabled: (enabled: boolean) => Promise<void>;
 
   // Loading state
   loading: boolean;
@@ -71,6 +77,10 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   const [logfireEnabled, setLogfireEnabledState] = useState(false);
   const [disconnectScreenEnabled, setDisconnectScreenEnabledState] =
     useState(false);
+  const [tasksEnabled, setTasksEnabledState] = useState(true);
+  const [knowledgeBaseEnabled, setKnowledgeBaseEnabledState] = useState(true);
+  const [mcpServerDashboardEnabled, setMCPServerDashboardEnabledState] =
+    useState(true);
 
   const [loading, setLoading] = useState(true);
 
@@ -90,6 +100,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         agentWorkOrdersResponse,
         logfireResponse,
         disconnectScreenResponse,
+        tasksResponse,
+        knowledgeBaseResponse,
+        mcpServerDashboardResponse,
       ] = await Promise.all([
         credentialsService
           .getCredential("DARK_MODE_ENABLED")
@@ -108,6 +121,15 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
           .catch(() => ({ value: undefined })),
         credentialsService
           .getCredential("DISCONNECT_SCREEN_ENABLED")
+          .catch(() => ({ value: undefined })),
+        credentialsService
+          .getCredential("TASKS_ENABLED")
+          .catch(() => ({ value: undefined })),
+        credentialsService
+          .getCredential("KNOWLEDGE_BASE_ENABLED")
+          .catch(() => ({ value: undefined })),
+        credentialsService
+          .getCredential("MCP_SERVER_DASHBOARD_ENABLED")
           .catch(() => ({ value: undefined })),
       ]);
 
@@ -154,6 +176,29 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       } else {
         setDisconnectScreenEnabledState(false);
       }
+
+      // Tasks (default: true)
+      if (tasksResponse.value !== undefined) {
+        setTasksEnabledState(tasksResponse.value === "true");
+      } else {
+        setTasksEnabledState(true);
+      }
+
+      // Knowledge Base (default: true)
+      if (knowledgeBaseResponse.value !== undefined) {
+        setKnowledgeBaseEnabledState(knowledgeBaseResponse.value === "true");
+      } else {
+        setKnowledgeBaseEnabledState(true);
+      }
+
+      // MCP Server Dashboard (default: true)
+      if (mcpServerDashboardResponse.value !== undefined) {
+        setMCPServerDashboardEnabledState(
+          mcpServerDashboardResponse.value === "true"
+        );
+      } else {
+        setMCPServerDashboardEnabledState(true);
+      }
     } catch (error) {
       console.error("Failed to load settings:", error);
       // Set defaults on error
@@ -163,6 +208,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       setAgentWorkOrdersEnabledState(false);
       setLogfireEnabledState(false);
       setDisconnectScreenEnabledState(false);
+      setTasksEnabledState(true);
+      setKnowledgeBaseEnabledState(true);
+      setMCPServerDashboardEnabledState(true);
     } finally {
       setLoading(false);
     }
@@ -304,6 +352,69 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     }
   };
 
+  const setTasksEnabled = async (enabled: boolean) => {
+    try {
+      // Update local state immediately
+      setTasksEnabledState(enabled);
+
+      // Save to backend
+      await credentialsService.createCredential({
+        key: "TASKS_ENABLED",
+        value: enabled.toString(),
+        is_encrypted: false,
+        category: "features",
+        description: "Enable or disable Tasks menu in sidebar",
+      });
+    } catch (error) {
+      console.error("Failed to update tasks setting:", error);
+      // Revert on error
+      setTasksEnabledState(!enabled);
+      throw error;
+    }
+  };
+
+  const setKnowledgeBaseEnabled = async (enabled: boolean) => {
+    try {
+      // Update local state immediately
+      setKnowledgeBaseEnabledState(enabled);
+
+      // Save to backend
+      await credentialsService.createCredential({
+        key: "KNOWLEDGE_BASE_ENABLED",
+        value: enabled.toString(),
+        is_encrypted: false,
+        category: "features",
+        description: "Enable or disable Knowledge Base menu in sidebar",
+      });
+    } catch (error) {
+      console.error("Failed to update knowledge base setting:", error);
+      // Revert on error
+      setKnowledgeBaseEnabledState(!enabled);
+      throw error;
+    }
+  };
+
+  const setMCPServerDashboardEnabled = async (enabled: boolean) => {
+    try {
+      // Update local state immediately
+      setMCPServerDashboardEnabledState(enabled);
+
+      // Save to backend
+      await credentialsService.createCredential({
+        key: "MCP_SERVER_DASHBOARD_ENABLED",
+        value: enabled.toString(),
+        is_encrypted: false,
+        category: "features",
+        description: "Enable or disable MCP Server Dashboard menu in sidebar",
+      });
+    } catch (error) {
+      console.error("Failed to update MCP server dashboard setting:", error);
+      // Revert on error
+      setMCPServerDashboardEnabledState(!enabled);
+      throw error;
+    }
+  };
+
   const refreshSettings = async () => {
     await loadSettings();
   };
@@ -325,6 +436,12 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     setLogfireEnabled,
     disconnectScreenEnabled,
     setDisconnectScreenEnabled,
+    tasksEnabled,
+    setTasksEnabled,
+    knowledgeBaseEnabled,
+    setKnowledgeBaseEnabled,
+    mcpServerDashboardEnabled,
+    setMCPServerDashboardEnabled,
     loading,
     refreshSettings,
   };

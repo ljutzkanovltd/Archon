@@ -117,7 +117,7 @@ export interface CustomModalProps {
 
 // Empty State Configuration (from SportERP)
 export interface EmptyStateConfig {
-  type: "no_data" | "no_search_results";
+  type: "no_data" | "no_search_results" | "knowledge_base";
   title: string;
   description: string;
   icon?: React.ReactNode;

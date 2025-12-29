@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, Badge, Button } from "flowbite-react";
+import { Tooltip } from "flowbite-react";
 import {
   HiChevronDown,
   HiChevronUp,
@@ -24,11 +24,11 @@ interface ProjectWithTasksCardProps {
   onCreateTask?: (projectId: string) => void;
 }
 
-const statusColors = {
-  todo: "gray",
-  doing: "blue",
-  review: "yellow",
-  done: "success",
+const statusBadgeStyles = {
+  todo: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  doing: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  review: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  done: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
 } as const;
 
 export function ProjectWithTasksCard({
@@ -63,114 +63,130 @@ export function ProjectWithTasksCard({
   };
 
   return (
-    <Card className="transition-all duration-200 hover:shadow-lg">
-      {/* Project Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="mb-2 flex items-center gap-2">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-              {project.title}
-            </h3>
-            {project.archived && (
-              <Badge color="gray" size="sm">
-                Archived
-              </Badge>
-            )}
-            {project.pinned && (
-              <Badge color="info" size="sm">
-                Pinned
-              </Badge>
-            )}
-          </div>
-
-          {project.description && (
-            <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-              {project.description}
-            </p>
+    <div className="relative rounded-lg overflow-hidden bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-300 hover:border-gray-300 dark:hover:border-gray-600 p-4">
+      {/* Header with badges and actions */}
+      <div className="flex items-center gap-1.5 mb-2">
+        {/* Badges (archived, pinned) */}
+        <div className="flex flex-wrap gap-1">
+          {project.archived && (
+            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300">
+              <HiArchive className="w-3 h-3 mr-1" aria-hidden="true" />
+              Archived
+            </span>
           )}
-
-          {/* Metadata */}
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center gap-1">
-              <HiCalendar className="h-4 w-4" />
-              <span>
-                Created {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
-              </span>
-            </div>
-
-            {/* Task Summary Badges */}
-            <div className="flex items-center gap-2">
-              {tasksByStatus.todo.length > 0 && (
-                <Badge color={statusColors.todo} size="sm">
-                  {tasksByStatus.todo.length} To Do
-                </Badge>
-              )}
-              {tasksByStatus.doing.length > 0 && (
-                <Badge color={statusColors.doing} size="sm">
-                  {tasksByStatus.doing.length} Doing
-                </Badge>
-              )}
-              {tasksByStatus.review.length > 0 && (
-                <Badge color={statusColors.review} size="sm">
-                  {tasksByStatus.review.length} Review
-                </Badge>
-              )}
-              {tasksByStatus.done.length > 0 && (
-                <Badge color={statusColors.done} size="sm">
-                  {tasksByStatus.done.length} Done
-                </Badge>
-              )}
-              {projectTasks.length === 0 && (
-                <span className="text-xs text-gray-400">No tasks</span>
-              )}
-            </div>
-          </div>
+          {project.pinned && (
+            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+              Pinned
+            </span>
+          )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-start gap-2">
-          <Button
-            size="xs"
-            color="light"
-            onClick={() => onView(project)}
-          >
-            <HiEye className="mr-1 h-4 w-4" />
-            View
-          </Button>
-          <Button
-            size="xs"
-            color="light"
-            onClick={() => onEdit(project)}
-            disabled={project.archived}
-          >
-            <HiPencil className="mr-1 h-4 w-4" />
-            Edit
-          </Button>
-          <Button
-            size="xs"
-            color={project.archived ? "blue" : "light"}
-            onClick={() => onArchive(project)}
-          >
-            <HiArchive className="mr-1 h-4 w-4" />
-            {project.archived ? "Restore" : "Archive"}
-          </Button>
-          <Button
-            size="xs"
-            color="light"
-            onClick={handleToggle}
-          >
-            {isExpanded ? (
-              <>
-                <HiChevronUp className="mr-1 h-4 w-4" />
-                Hide Tasks
-              </>
-            ) : (
-              <>
-                <HiChevronDown className="mr-1 h-4 w-4" />
-                Show Tasks ({projectTasks.length})
-              </>
+        {/* Action buttons group */}
+        <div className="flex items-center gap-1.5 ml-auto">
+          {/* View Button */}
+          <Tooltip content="View project" style="light" trigger="hover,focus">
+            <button
+              type="button"
+              onClick={() => onView(project)}
+              className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-800/40 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              aria-label={`View ${project.title} details`}
+            >
+              <HiEye className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </Tooltip>
+
+          {/* Edit Button */}
+          <Tooltip content="Edit project" style="light" trigger="hover,focus">
+            <button
+              type="button"
+              onClick={() => onEdit(project)}
+              disabled={project.archived}
+              className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/40 focus:ring-2 focus:ring-brand-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={`Edit ${project.title}`}
+            >
+              <HiPencil className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </Tooltip>
+
+          {/* Archive/Restore Button */}
+          <Tooltip content={project.archived ? "Restore project" : "Archive project"} style="light" trigger="hover,focus">
+            <button
+              type="button"
+              onClick={() => onArchive(project)}
+              className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              aria-label={project.archived ? `Restore ${project.title}` : `Archive ${project.title}`}
+            >
+              <HiArchive className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </Tooltip>
+
+          {/* Toggle Tasks Button */}
+          <Tooltip content={isExpanded ? "Hide tasks" : `Show ${projectTasks.length} tasks`} style="light" trigger="hover,focus">
+            <button
+              type="button"
+              onClick={handleToggle}
+              className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-800/40 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              aria-label={isExpanded ? "Hide tasks" : `Show ${projectTasks.length} tasks`}
+            >
+              {isExpanded ? (
+                <HiChevronUp className="w-3 h-3" aria-hidden="true" />
+              ) : (
+                <HiChevronDown className="w-3 h-3" aria-hidden="true" />
+              )}
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* Title */}
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white leading-tight mb-2 line-clamp-2">
+        {project.title}
+      </h3>
+
+      {/* Description */}
+      {project.description && (
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-2 line-clamp-3">
+          {project.description}
+        </p>
+      )}
+
+      {/* Footer with metadata and task counts */}
+      <div className="mt-auto pt-2.5 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          {/* Created date */}
+          <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500">
+            <HiCalendar className="h-3 w-3" aria-hidden="true" />
+            <span>
+              {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+            </span>
+          </div>
+
+          {/* Task Summary Badges */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {tasksByStatus.todo.length > 0 && (
+              <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${statusBadgeStyles.todo}`}>
+                {tasksByStatus.todo.length} To Do
+              </span>
             )}
-          </Button>
+            {tasksByStatus.doing.length > 0 && (
+              <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${statusBadgeStyles.doing}`}>
+                {tasksByStatus.doing.length} Doing
+              </span>
+            )}
+            {tasksByStatus.review.length > 0 && (
+              <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${statusBadgeStyles.review}`}>
+                {tasksByStatus.review.length} Review
+              </span>
+            )}
+            {tasksByStatus.done.length > 0 && (
+              <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${statusBadgeStyles.done}`}>
+                {tasksByStatus.done.length} Done
+              </span>
+            )}
+            {projectTasks.length === 0 && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">No tasks</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -185,15 +201,14 @@ export function ProjectWithTasksCard({
             <>
               {/* Create Task Button */}
               <div className="mb-4 flex justify-end">
-                <Button
-                  size="sm"
-                  color="blue"
+                <button
                   onClick={() => onCreateTask?.(project.id)}
                   disabled={project.archived}
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <HiPlus className="mr-2 h-4 w-4" />
+                  <HiPlus className="mr-2 h-4 w-4" aria-hidden="true" />
                   New Task
-                </Button>
+                </button>
               </div>
 
               {/* Task Columns */}
@@ -257,19 +272,18 @@ export function ProjectWithTasksCard({
                 No tasks in this project yet
               </p>
               {!project.archived && (
-                <Button
-                  size="sm"
-                  color="blue"
+                <button
                   onClick={() => onCreateTask?.(project.id)}
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 >
-                  <HiPlus className="mr-2 h-4 w-4" />
+                  <HiPlus className="mr-2 h-4 w-4" aria-hidden="true" />
                   Create First Task
-                </Button>
+                </button>
               )}
             </div>
           )}
         </div>
       )}
-    </Card>
+    </div>
   );
 }

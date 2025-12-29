@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useSidebar } from "@/contexts/sidebar-context";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useTaskStore } from "@/store/useTaskStore";
 import {
@@ -50,7 +51,7 @@ function MenuItem({
         <div className="flex items-center gap-1">
           <Link
             href={item.href}
-            className={`flex flex-1 items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 ${
+            className={`flex flex-1 items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
               isActive ? "bg-gray-100 dark:bg-gray-700" : ""
             } ${isCollapsed ? "justify-center" : ""}`}
             title={isCollapsed ? item.label : undefined}
@@ -76,13 +77,16 @@ function MenuItem({
           {!isCollapsed && (
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
               aria-label={isOpen ? "Collapse submenu" : "Expand submenu"}
+              aria-expanded={isOpen}
+              aria-controls={`submenu-${item.label.replace(/\s+/g, '-').toLowerCase()}`}
             >
               <HiChevronDown
                 className={`h-5 w-5 transition-transform ${
                   isOpen ? "" : "-rotate-90"
                 }`}
+                aria-hidden="true"
               />
             </button>
           )}
@@ -90,7 +94,10 @@ function MenuItem({
 
         {/* Children */}
         {isOpen && !isCollapsed && item.children && (
-          <div className="ml-4 mt-1 space-y-1">
+          <div
+            id={`submenu-${item.label.replace(/\s+/g, '-').toLowerCase()}`}
+            className="ml-4 mt-1 space-y-1"
+          >
             {item.children.map((child) => {
               const childIsActive = pathname === child.href;
               const ChildIcon = child.icon;
@@ -98,7 +105,7 @@ function MenuItem({
                 <Link
                   key={child.href}
                   href={child.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
                     childIsActive
                       ? "bg-brand-100 text-brand-700 dark:bg-brand-900/20 dark:text-brand-400"
                       : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
@@ -125,7 +132,7 @@ function MenuItem({
   return (
     <Link
       href={item.href}
-      className={`flex items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 ${
+      className={`flex items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
         isActive ? "bg-gray-100 dark:bg-gray-700" : ""
       } ${isCollapsed ? "justify-center" : ""}`}
       title={isCollapsed ? item.label : undefined}
@@ -154,6 +161,12 @@ export function DesktopSidebar() {
   const { desktop } = useSidebar();
   const { projects, fetchProjects } = useProjectStore();
   const { tasks, fetchTasks } = useTaskStore();
+  const {
+    projectsEnabled,
+    tasksEnabled,
+    knowledgeBaseEnabled,
+    mcpServerDashboardEnabled,
+  } = useSettings();
 
   // Sidebar width management
   const MIN_WIDTH = 64; // Collapsed width
@@ -258,7 +271,7 @@ export function DesktopSidebar() {
   ).length;
 
   // Build menu items with projects as children
-  const menuItems: MenuItemProps[] = [
+  const allMenuItems: MenuItemProps[] = [
     {
       href: "/",
       icon: HiChartPie,
@@ -304,6 +317,15 @@ export function DesktopSidebar() {
     },
   ];
 
+  // Filter menu items based on feature toggles
+  const menuItems = allMenuItems.filter((item) => {
+    if (item.href === "/projects" && !projectsEnabled) return false;
+    if (item.href === "/tasks" && !tasksEnabled) return false;
+    if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
+    if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
+    return true; // Always show Dashboard and Settings
+  });
+
   return (
     <aside
       ref={sidebarRef}
@@ -337,8 +359,9 @@ export function DesktopSidebar() {
       {/* Toggle button */}
       <button
         onClick={desktop.toggle}
-        className="absolute bottom-4 right-0 translate-x-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-md hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+        className="absolute bottom-4 right-0 translate-x-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-md hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
         title={desktop.isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={desktop.isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         <svg
           className={`h-4 w-4 transition-transform ${
@@ -364,6 +387,12 @@ export function MobileSidebar() {
   const { mobile } = useSidebar();
   const { projects, fetchProjects } = useProjectStore();
   const { tasks, fetchTasks } = useTaskStore();
+  const {
+    projectsEnabled,
+    tasksEnabled,
+    knowledgeBaseEnabled,
+    mcpServerDashboardEnabled,
+  } = useSettings();
 
   // Fetch projects on mount
   useEffect(() => {
@@ -390,7 +419,7 @@ export function MobileSidebar() {
   ).length;
 
   // Build menu items with projects as children
-  const menuItems: MenuItemProps[] = [
+  const allMenuItems: MenuItemProps[] = [
     {
       href: "/",
       icon: HiChartPie,
@@ -436,6 +465,15 @@ export function MobileSidebar() {
       label: "Settings",
     },
   ];
+
+  // Filter menu items based on feature toggles
+  const menuItems = allMenuItems.filter((item) => {
+    if (item.href === "/projects" && !projectsEnabled) return false;
+    if (item.href === "/tasks" && !tasksEnabled) return false;
+    if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
+    if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
+    return true; // Always show Dashboard and Settings
+  });
 
   if (!mobile.isOpen) return null;
 
