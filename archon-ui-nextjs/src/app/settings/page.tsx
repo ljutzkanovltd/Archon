@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase, HiInformationCircle } from "react-icons/hi";
-import { HiBug } from "react-icons/hi2";
+import { HiBugAnt } from "react-icons/hi2";
 import TabView, { TabItem } from "@/components/common/TabView";
 import { GeneralSettings } from "./components/GeneralSettings";
 import FeaturesTab from "./components/FeaturesTab";
@@ -110,7 +110,7 @@ export default function SettingsPage() {
     {
       id: "bug_report",
       label: "Bug Report",
-      icon: HiBug,
+      icon: HiBugAnt,
       component: <BugReportTab />,
     },
   ];

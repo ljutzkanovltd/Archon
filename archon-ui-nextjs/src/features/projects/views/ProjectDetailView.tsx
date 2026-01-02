@@ -1,18 +1,39 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { HiArrowLeft, HiPencil, HiArchive } from "react-icons/hi";
+import { HiArrowLeft, HiPencil, HiArchive, HiTrash } from "react-icons/hi";
+import { ViewModeToggle, ViewMode } from "@/components/common/ViewModeToggle";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useTaskStore } from "@/store/useTaskStore";
 import { usePageTitle } from "@/hooks";
 import { useRecentProjects } from "@/hooks/useRecentProjects";
 import { BoardView } from "@/components/Projects/tasks/views/BoardView";
-import { TaskTableView } from "@/components/Projects/tasks/views/TaskTableView";
 import { TaskModal, TaskFormData } from "@/components/Tasks/TaskModal";
 import { Task } from "@/lib/types";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { ProjectHeader } from "../components";
+import { DataTable, DataTableColumn, DataTableButton } from "@/components/common/DataTable";
+import { TaskCard } from "@/components/Tasks/TaskCard";
+import { formatDistanceToNow } from "date-fns";
+
+// Use ViewMode from ViewModeToggle component (supports: "kanban" | "table" | "grid" | "list")
+
+// Status badge colors for table view
+const STATUS_COLORS: Record<Task["status"], string> = {
+  todo: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  doing: "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300",
+  review: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300",
+  done: "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300",
+};
+
+// Priority colors for table view
+const PRIORITY_COLORS: Record<Task["priority"], string> = {
+  low: "text-gray-600 dark:text-gray-400",
+  medium: "text-blue-600 dark:text-blue-400",
+  high: "text-orange-600 dark:text-orange-400",
+  urgent: "text-red-600 dark:text-red-400",
+};
 
 interface ProjectDetailViewProps {
   projectId: string;
@@ -51,10 +72,102 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
   } = taskStore;
 
   const { addRecentProject } = useRecentProjects();
-  const [viewMode, setViewMode] = useState<"board" | "table">("board");
+  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<Task | null>(null);
   const [taskModalMode, setTaskModalMode] = useState<"create" | "edit">("create");
+
+  // Define columns for DataTable (used in table view)
+  const taskColumns: DataTableColumn<Task>[] = useMemo(() => [
+    {
+      key: "title",
+      label: "Title",
+      sortable: true,
+      render: (value: string, task: Task) => (
+        <div>
+          <div className="font-medium text-gray-900 dark:text-white">{value}</div>
+          {task.feature && (
+            <div className="text-sm text-gray-500 dark:text-gray-400">{task.feature}</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (value: Task["status"]) => (
+        <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${STATUS_COLORS[value]}`}>
+          {value}
+        </span>
+      ),
+    },
+    {
+      key: "priority",
+      label: "Priority",
+      sortable: true,
+      render: (value: Task["priority"]) => (
+        <span className={`text-sm font-medium ${PRIORITY_COLORS[value]}`}>
+          {value}
+        </span>
+      ),
+    },
+    {
+      key: "assignee",
+      label: "Assignee",
+      sortable: true,
+    },
+    {
+      key: "updated_at",
+      label: "Updated",
+      sortable: true,
+      render: (value: string) => formatDistanceToNow(new Date(value), { addSuffix: true }),
+    },
+  ], []);
+
+  // Row buttons for DataTable actions
+  const getRowButtons = useCallback((task: Task): DataTableButton[] => [
+    {
+      label: "Edit",
+      icon: HiPencil,
+      onClick: () => handleEditTask(task),
+      variant: "ghost",
+      ariaLabel: `Edit ${task.title}`,
+    },
+    {
+      label: task.archived ? "Restore" : "Archive",
+      icon: HiArchive,
+      onClick: () => handleArchiveTask(task),
+      variant: "ghost",
+      ariaLabel: task.archived ? `Restore ${task.title}` : `Archive ${task.title}`,
+    },
+    {
+      label: "Delete",
+      icon: HiTrash,
+      onClick: () => handleDeleteTask(task),
+      variant: "danger",
+      ariaLabel: `Delete ${task.title}`,
+    },
+  ], []);
+
+  // Custom render for grid view - uses TaskCard with grid variant (compact)
+  const renderTaskCard = useCallback((task: Task) => (
+    <TaskCard
+      task={task}
+      variant="grid"
+      onEdit={handleEditTask}
+      onDelete={handleDeleteTask}
+      onArchive={handleArchiveTask}
+      onStatusChange={async (t, newStatus) => {
+        await taskStore.updateTask(t.id, { status: newStatus });
+        await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+      }}
+      onAssigneeChange={async (t, newAssignee) => {
+        await taskStore.updateTask(t.id, { assignee: newAssignee });
+        await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+      }}
+    />
+  ), [projectId, taskStore, fetchTasks]);
 
   // Clear selected project on unmount to prevent stale data
   useEffect(() => {
@@ -259,28 +372,14 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           Create Task
         </button>
 
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setViewMode("board")}
-            className={`rounded-l-lg px-4 py-2 text-sm font-medium ${
-              viewMode === "board"
-                ? "bg-brand-600 text-white"
-                : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            }`}
-          >
-            Board View
-          </button>
-          <button
-            onClick={() => setViewMode("table")}
-            className={`rounded-r-lg border-l border-gray-200 px-4 py-2 text-sm font-medium dark:border-gray-700 ${
-              viewMode === "table"
-                ? "bg-brand-600 text-white"
-                : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            }`}
-          >
-            Table View
-          </button>
-        </div>
+        {/* Three-mode view toggle: Kanban / Table / Grid - uses reusable ViewModeToggle */}
+        <ViewModeToggle
+          modes={["kanban", "table", "grid"]}
+          currentMode={viewMode}
+          onChange={setViewMode}
+          size="md"
+          showLabels={true}
+        />
       </div>
 
       {/* Tasks View */}
@@ -293,7 +392,8 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
         <div className="flex h-64 items-center justify-center">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
         </div>
-      ) : viewMode === "board" ? (
+      ) : viewMode === "kanban" ? (
+        // Kanban view - uses BoardView with status columns
         <BoardView
           projectId={projectId}
           tasks={tasks}
@@ -301,13 +401,35 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           onDeleteTask={handleDeleteTask}
           onArchiveTask={handleArchiveTask}
         />
+      ) : viewMode === "table" ? (
+        // Table view - uses DataTable with columns
+        <DataTable<Task>
+          data={tasks}
+          columns={taskColumns}
+          keyExtractor={(task) => task.id}
+          rowButtons={getRowButtons}
+          viewMode="table"
+          showSearch={true}
+          showPagination={true}
+          showHeader={false}
+          showViewToggle={false}
+          emptyMessage="No tasks found. Create your first task to get started!"
+          caption="Tasks in this project"
+        />
       ) : (
-        <TaskTableView
-          projectId={projectId}
-          tasks={tasks}
-          onEditTask={handleEditTask}
-          onDeleteTask={handleDeleteTask}
-          onArchiveTask={handleArchiveTask}
+        // Grid view - uses DataTable with TaskCard customRender
+        <DataTable<Task>
+          data={tasks}
+          columns={taskColumns}
+          keyExtractor={(task) => task.id}
+          customRender={renderTaskCard}
+          viewMode="grid"
+          showSearch={true}
+          showPagination={true}
+          showHeader={false}
+          showViewToggle={false}
+          emptyMessage="No tasks found. Create your first task to get started!"
+          caption="Tasks in this project"
         />
       )}
 

@@ -110,8 +110,11 @@ fi
 # Section 3: Default Configuration (Lines 71-90)
 # ==============================================================================
 
-# Deployment mode
-MODE="${MODE:-hybrid-dev}"
+# Deployment mode (simplified: local or remote)
+MODE="${MODE:-local}"
+
+# LLM mode (for remote deployment)
+LLM_MODE="${LLM_MODE:-}"
 
 # Conflict resolution mode
 CONFLICT_MODE="${CONFLICT_MODE:-interactive}"
@@ -163,12 +166,12 @@ Usage: $SCRIPT_NAME [OPTIONS]
 Start Archon coding agent infrastructure as a standalone project.
 
 OPTIONS:
-  --mode MODE                 Deployment mode: hybrid-dev (default) or local-supabase
+  --mode MODE                 Deployment mode: local or remote
+  --llm-mode MODE             LLM mode (for remote): local or remote
   --conflict-mode MODE        Handle running containers: interactive (default), skip-if-running, force-restart
   --skip-backup               Skip database backup before start
   --skip-dependency-check     Skip AI dependency validation
   --skip-health-checks        Skip post-startup health checks
-  --auto-vpn                  Automatically connect VPN if needed
   -h, --help                  Show this help message
 
 CONFLICT MODES:
@@ -177,19 +180,30 @@ CONFLICT MODES:
   force-restart      - Automatically stop and restart containers
 
 DEPLOYMENT MODES:
-  hybrid-dev         - Development mode with VPN for external services (default)
-  local-supabase     - Local-only mode without VPN
+  local              - Local Supabase (requires local-ai-packaged running)
+  remote             - Supabase Cloud (no local dependencies, interactive LLM choice)
+
+LLM MODES (for remote deployment):
+  local              - Use local LLMs (Ollama on host machine)
+  remote             - Use remote LLMs (OpenAI/Anthropic API keys required)
 
 EXAMPLES:
-  $SCRIPT_NAME                                    # Interactive startup
+  $SCRIPT_NAME                                    # Interactive startup (local mode)
+  $SCRIPT_NAME --mode remote                      # Remote Supabase (prompts for LLM choice)
+  $SCRIPT_NAME --mode remote --llm-mode local     # Remote Supabase + local Ollama
+  $SCRIPT_NAME --mode remote --llm-mode remote    # Remote Supabase + OpenAI/Anthropic
   $SCRIPT_NAME --conflict-mode force-restart      # Force restart if running
   $SCRIPT_NAME --skip-backup                      # Skip backup step
-  $SCRIPT_NAME --mode hybrid-dev --auto-vpn       # Auto-connect VPN
 
 PREREQUISITES:
-  - local-ai-packaged must be running (bridge network + AI services)
-  - Docker and Docker Compose installed
-  - User in docker, video, render groups
+  For local mode:
+    - local-ai-packaged must be running (bridge network + AI services)
+  For remote mode:
+    - Configure SUPABASE_URL, SUPABASE_SERVICE_KEY, DATABASE_URI in .env
+    - If --llm-mode remote: Set OPENAI_API_KEY or ANTHROPIC_API_KEY
+  All modes:
+    - Docker and Docker Compose installed
+    - User in docker, video, render groups
 
 EOF
 }
@@ -199,6 +213,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --mode)
             MODE="$2"
+            shift 2
+            ;;
+        --llm-mode)
+            LLM_MODE="$2"
             shift 2
             ;;
         --conflict-mode)
@@ -217,10 +235,6 @@ while [[ $# -gt 0 ]]; do
             SKIP_HEALTH_CHECKS=true
             shift
             ;;
-        --auto-vpn)
-            AUTO_VPN=true
-            shift
-            ;;
         -h|--help)
             show_help
             exit 0
@@ -233,10 +247,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate configuration
-if [[ ! "$MODE" =~ ^(hybrid-dev|local-supabase)$ ]]; then
+# Validate deployment mode (simplified: local or remote)
+if [[ ! "$MODE" =~ ^(local|remote)$ ]]; then
     log_error "Invalid mode: $MODE"
-    log_error "Valid modes: hybrid-dev, local-supabase"
+    log_error "Valid modes: local, remote"
+    exit 1
+fi
+
+# Set remote mode flag
+REMOTE_SUPABASE=false
+if [ "$MODE" = "remote" ]; then
+    REMOTE_SUPABASE=true
+    log_info "Using remote Supabase (cloud-hosted)"
+fi
+
+# Validate LLM mode if specified
+if [ -n "$LLM_MODE" ] && [[ ! "$LLM_MODE" =~ ^(local|remote)$ ]]; then
+    log_error "Invalid LLM mode: $LLM_MODE"
+    log_error "Valid LLM modes: local, remote"
     exit 1
 fi
 
@@ -246,17 +274,17 @@ if [[ ! "$CONFLICT_MODE" =~ ^(interactive|skip-if-running|force-restart)$ ]]; th
     exit 1
 fi
 
-# Set VPN requirement based on mode
-if [ "$MODE" = "hybrid-dev" ]; then
-    REQUIRE_VPN=true
-fi
+# VPN is not required for simplified modes (local uses local network, remote uses cloud)
+REQUIRE_VPN=false
 
 # Log final configuration
 log_info "Configuration:"
 log_info "  Mode: $MODE"
+if [ "$REMOTE_SUPABASE" = true ] && [ -n "$LLM_MODE" ]; then
+    log_info "  LLM Mode: $LLM_MODE"
+fi
 log_info "  Conflict Mode: $CONFLICT_MODE"
-log_info "  VPN Required: $REQUIRE_VPN"
-log_info "  Backup on Start: $([ "$SKIP_BACKUP" = true ] && echo "No" || echo "$BACKUP_ON_START")"
+log_info "  Backup on Start: $([ "$SKIP_BACKUP" = true ] && echo "No" || [ "$REMOTE_SUPABASE" = true ] && echo "Skipped (cloud)" || echo "$BACKUP_ON_START")"
 
 # ==============================================================================
 # Section 5: VPN Handling (Lines 151-210)
@@ -302,6 +330,69 @@ else
 fi
 
 # ==============================================================================
+# Section 5.5: LLM Mode Selection (for remote mode)
+# ==============================================================================
+
+# Prompt user for LLM mode if not specified via --llm-mode (only for remote mode)
+prompt_llm_mode() {
+    # Skip if LLM_MODE already set via flag or environment
+    if [ -n "${LLM_MODE:-}" ]; then
+        log_info "LLM mode: $LLM_MODE (from flag/env)"
+        return 0
+    fi
+
+    echo ""
+    log_info "Choose LLM configuration for remote mode:"
+    echo "  1) Local LLMs (Ollama on host machine)"
+    echo "  2) Remote LLMs (OpenAI/Anthropic API keys)"
+    echo ""
+    read -p "Selection [1-2]: " -r choice
+
+    case $choice in
+        1)
+            LLM_MODE="local"
+            log_info "Selected: Local LLMs (Ollama)"
+            ;;
+        2)
+            LLM_MODE="remote"
+            log_info "Selected: Remote LLMs (API keys)"
+            ;;
+        *)
+            log_error "Invalid selection: $choice"
+            log_error "Please enter 1 or 2"
+            exit 1
+            ;;
+    esac
+}
+
+# Validate LLM configuration based on selected mode (INFORMATIONAL ONLY - never blocks startup)
+validate_llm_config() {
+    if [ "$LLM_MODE" = "local" ]; then
+        log_info "Checking local LLM availability..."
+        if curl -sf http://localhost:11434/v1/models >/dev/null 2>&1; then
+            local model_count
+            model_count=$(curl -s http://localhost:11434/v1/models 2>/dev/null | grep -o '"id"' | wc -l)
+            log_success "Local LLM (Ollama) is available ($model_count models)"
+        else
+            log_warn "Local LLM not available on port 11434"
+            log_info "Archon will work - configure LLM via Settings page"
+        fi
+    else
+        log_info "Remote LLM mode selected"
+        # Check .env for informational purposes only - NOT a requirement
+        # API keys are managed via the Settings UI in Archon dashboard
+        if [ -n "${OPENAI_API_KEY:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            log_success "API keys found in .env (will be used as fallback)"
+        else
+            log_info "No API keys in .env - configure via Settings page"
+        fi
+    fi
+
+    # NEVER return error - LLM config is managed via Settings UI, not startup script
+    return 0
+}
+
+# ==============================================================================
 # Section 6: Dependency Validation (Lines 211-290)
 # ==============================================================================
 
@@ -324,45 +415,72 @@ check_ai_dependencies() {
         log_success "Disk space validated (${available_space_gb}GB available)"
     fi
 
-    # Check 2: Bridge network
-    log_info "Validating bridge network: $BRIDGE_NETWORK"
-    if ! check_bridge_network "$BRIDGE_NETWORK"; then
-        log_error "Bridge network '$BRIDGE_NETWORK' not found"
-        log_error ""
-        log_error "This network is created by local-ai-packaged and provides:"
-        log_error "  - Shared Supabase AI PostgreSQL (port 54323)"
-        log_error "  - LLM APIs (ports 11434-11437)"
-        log_error "  - Vector DB (Qdrant on port 6333)"
-        log_error "  - Knowledge Graph (Neo4j on port 7687)"
-        log_error ""
-        log_error "Resolution:"
-        log_error "  cd ../local-ai-packaged"
-        log_error "  ./start-ai.sh   # or python start_services.py --profile gpu-amd"
-        log_error ""
-        return 1
-    fi
-    log_success "Bridge network exists"
+    # Check 2-3: Local infrastructure (skip for remote mode)
+    if [ "$REMOTE_SUPABASE" = true ]; then
+        log_info "Skipping local infrastructure checks (remote mode)"
+        log_info "Using Supabase Cloud: $SUPABASE_URL"
 
-    # Check 3: Supabase AI container and PostgreSQL initialization
-    log_info "Validating Supabase AI container..."
-    if ! container_exists "$SUPABASE_CONTAINER"; then
-        log_error "Supabase AI container not found: $SUPABASE_CONTAINER"
-        log_error "Please start local-ai-packaged first"
-        return 1
-    fi
+        # Validate Supabase URL format
+        if [[ ! "$SUPABASE_URL" =~ ^https://.*\.supabase\.co ]]; then
+            log_warn "SUPABASE_URL doesn't look like Supabase Cloud"
+            log_info "Expected format: https://xxxxx.supabase.co"
+            log_info "Got: $SUPABASE_URL"
+        fi
 
-    if ! container_is_running "$SUPABASE_CONTAINER"; then
-        log_error "Supabase AI container is not running"
-        log_error "Please start local-ai-packaged first"
-        return 1
-    fi
+        # Test remote Supabase connectivity
+        log_info "Testing remote Supabase connectivity..."
+        if curl -sf --max-time 10 "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_SERVICE_KEY" >/dev/null 2>&1; then
+            log_success "Remote Supabase is reachable"
+        else
+            log_warn "Could not verify remote Supabase connectivity (may still work)"
+        fi
 
-    # Initialize PostgreSQL with robust 4-step validation
-    if ! initialize_postgres_complete "$SUPABASE_CONTAINER" 5432; then
-        log_error "PostgreSQL initialization failed"
-        return 1
+        # Prompt for LLM mode (interactive) and validate
+        prompt_llm_mode
+        if ! validate_llm_config; then
+            return 1
+        fi
+    else
+        # Local mode: Check bridge network
+        log_info "Validating bridge network: $BRIDGE_NETWORK"
+        if ! check_bridge_network "$BRIDGE_NETWORK"; then
+            log_error "Bridge network '$BRIDGE_NETWORK' not found"
+            log_error ""
+            log_error "This network is created by local-ai-packaged and provides:"
+            log_error "  - Shared Supabase AI PostgreSQL (port 54323)"
+            log_error "  - LLM APIs (ports 11434-11437)"
+            log_error "  - Vector DB (Qdrant on port 6333)"
+            log_error "  - Knowledge Graph (Neo4j on port 7687)"
+            log_error ""
+            log_error "Resolution:"
+            log_error "  cd ../local-ai-packaged"
+            log_error "  ./start-ai.sh   # or python start_services.py --profile gpu-amd"
+            log_error ""
+            return 1
+        fi
+        log_success "Bridge network exists"
+
+        # Local mode: Check Supabase AI container and PostgreSQL initialization
+        log_info "Validating Supabase AI container..."
+        if ! container_exists "$SUPABASE_CONTAINER"; then
+            log_error "Supabase AI container not found: $SUPABASE_CONTAINER"
+            log_error "Please start local-ai-packaged first"
+            return 1
+        fi
+
+        if ! container_is_running "$SUPABASE_CONTAINER"; then
+            log_error "Supabase AI container is not running"
+            log_error "Please start local-ai-packaged first"
+            return 1
+        fi
+
+        # Initialize PostgreSQL with robust 4-step validation
+        if ! initialize_postgres_complete "$SUPABASE_CONTAINER" 5432; then
+            log_error "PostgreSQL initialization failed"
+            return 1
+        fi
+        log_success "PostgreSQL fully initialized and ready"
     fi
-    log_success "PostgreSQL fully initialized and ready"
 
     # Note: Database initialization moved to separate function (initialize_archon_database)
     # This function only validates that prerequisites are available
@@ -464,7 +582,10 @@ fi
 
 log_info "Step 2.5: Database Initialization"
 
-if [ "$SKIP_DEPENDENCY_CHECK" = false ]; then
+if [ "$REMOTE_SUPABASE" = true ]; then
+    log_info "Using remote Supabase - schema managed via Supabase Dashboard or migrations"
+    log_info "Ensure Archon tables exist in your remote database"
+elif [ "$SKIP_DEPENDENCY_CHECK" = false ]; then
     if ! initialize_archon_database; then
         log_error "Database initialization failed"
         log_error "Please check Supabase connection and retry"
@@ -480,7 +601,9 @@ fi
 
 log_info "Step 3: Backup Before Start"
 
-if [ "$SKIP_BACKUP" = true ]; then
+if [ "$REMOTE_SUPABASE" = true ]; then
+    log_info "Backup skipped for remote mode (managed by Supabase Cloud)"
+elif [ "$SKIP_BACKUP" = true ]; then
     log_info "Backup skipped (--skip-backup flag)"
 elif [ "$BACKUP_ON_START" != "true" ]; then
     log_info "Backup skipped (BACKUP_ON_START=false)"
@@ -590,20 +713,35 @@ if [ "${SKIP_DOCKER_COMPOSE:-false}" = true ]; then
     log_info "Docker compose skipped (containers already running)"
 else
     log_info "Starting Docker services..."
-    log_info "Running: docker compose up -d"
+
+    # Build docker compose command based on mode
+    cd "$SCRIPT_DIR"
+    if [ "$REMOTE_SUPABASE" = true ]; then
+        log_info "Running: docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml up -d"
+        COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml up -d"
+    else
+        log_info "Running: docker compose up -d"
+        COMPOSE_CMD="docker compose up -d"
+    fi
 
     # Start services in background
-    cd "$SCRIPT_DIR"
-    if docker compose up -d; then
+    if $COMPOSE_CMD; then
         log_success "Docker compose completed"
     else
         exit_code=$?
         log_error "Docker compose failed (exit code: $exit_code)"
         log_error ""
-        log_error "Common causes:"
-        log_error "  - Bridge network not found (start local-ai-packaged first)"
-        log_error "  - Port conflicts (check with: docker ps)"
-        log_error "  - Invalid docker-compose.yml syntax"
+        if [ "$REMOTE_SUPABASE" = true ]; then
+            log_error "Common causes (remote mode):"
+            log_error "  - Port conflicts (check with: docker ps)"
+            log_error "  - Invalid docker-compose.yml syntax"
+            log_error "  - Network connectivity issues"
+        else
+            log_error "Common causes:"
+            log_error "  - Bridge network not found (start local-ai-packaged first)"
+            log_error "  - Port conflicts (check with: docker ps)"
+            log_error "  - Invalid docker-compose.yml syntax"
+        fi
         log_error ""
         log_error "Check docker compose logs:"
         log_error "  docker compose logs"

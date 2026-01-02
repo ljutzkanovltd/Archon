@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { HiExclamationCircle, HiBug, HiCamera, HiX, HiClipboardCopy, HiExternalLink } from "react-icons/hi";
+import { HiExclamationCircle, HiCamera, HiX, HiClipboard, HiExternalLink } from "react-icons/hi";
+import { HiBugAnt } from "react-icons/hi2";
 import { Toast } from "flowbite-react";
 import { healthApi } from "@/lib/apiClient";
 
@@ -676,7 +677,7 @@ ${screenshot ? "📷 Screenshot attached" : ""}
             className="flex items-center justify-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!isFormValid}
           >
-            <HiClipboardCopy className="h-5 w-5" />
+            <HiClipboard className="h-5 w-5" />
             Copy to Clipboard
           </button>
 
@@ -710,7 +711,7 @@ ${screenshot ? "📷 Screenshot attached" : ""}
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/30">
           <div className="flex items-center gap-2">
             <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center">
-              <HiBug className="w-6 h-6 text-green-600 dark:text-green-400" />
+              <HiBugAnt className="w-6 h-6 text-green-600 dark:text-green-400" />
             </div>
             <div>
               <p className="font-medium text-green-800 dark:text-green-300">

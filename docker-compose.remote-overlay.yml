@@ -1,0 +1,84 @@
+# docker-compose.remote-overlay.yml
+# Purpose: Enable remote Supabase Cloud connectivity with DNS resolution
+# Usage: docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml up -d
+#
+# This overlay file is used when running Archon in "remote" mode, which connects
+# to Supabase Cloud instead of a local PostgreSQL container.
+#
+# Key features:
+# - Adds explicit DNS servers (Google, Cloudflare) for external hostname resolution
+# - Reduces network dependencies to app-network only (no external networks required)
+# - Enables host.docker.internal for optional local LLM access (Ollama)
+
+services:
+  archon-server:
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  archon-mcp:
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  archon-agents:
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  archon-agent-work-orders:
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  archon-frontend:
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+networks:
+  # Internal network for Archon services communication
+  app-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+
+  # Override external networks - create as unused internal bridges
+  # These are required to satisfy docker-compose merge semantics with base file
+  sporterp-ai-unified:
+    external: false
+    driver: bridge
+
+  localai_default:
+    external: false
+    driver: bridge
+
+  supabase-ai_default:
+    external: false
+    driver: bridge

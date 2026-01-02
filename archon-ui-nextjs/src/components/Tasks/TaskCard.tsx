@@ -31,6 +31,7 @@ interface TaskCardProps {
   onStatusChange?: (task: Task, newStatus: Task["status"]) => void;
   onAssigneeChange?: (task: Task, newAssignee: string) => void;
   compact?: boolean;
+  variant?: "default" | "grid";
 }
 
 /**
@@ -106,6 +107,7 @@ export function TaskCard({
   onStatusChange,
   onAssigneeChange,
   compact = false,
+  variant = "default",
 }: TaskCardProps) {
   // State for expandable description
   const [isExpanded, setIsExpanded] = useState(false);
@@ -279,7 +281,44 @@ export function TaskCard({
     }
   };
 
-  // Full mode for detailed task cards
+  // Grid mode - compact card for grid view
+  if (variant === "grid") {
+    return (
+      <div
+        className={`group rounded-lg border-l-[3px] ${statusStyles.border} border border-gray-200 bg-white p-2.5 transition-all duration-200 hover:shadow-md hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 cursor-pointer`}
+        onClick={() => onEdit?.(task)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onEdit?.(task);
+          }
+        }}
+        aria-label={`Task: ${task.title}. Status: ${task.status}. Priority: ${task.priority}. Click to edit.`}
+      >
+        {/* Title - single line, truncated */}
+        <h4 className="truncate text-sm font-semibold text-gray-900 dark:text-white mb-1.5" title={task.title}>
+          {task.title}
+        </h4>
+        {/* Status + Priority badges */}
+        <div className="flex items-center gap-1.5">
+          <Badge color={statusColors[task.status]} size="xs">
+            {task.status}
+          </Badge>
+          <Badge color={priorityConfig[task.priority].color} size="xs">
+            {React.createElement(priorityConfig[task.priority].icon, {
+              className: "w-3 h-3 mr-0.5 inline",
+              "aria-hidden": "true"
+            })}
+            {task.priority.charAt(0).toUpperCase()}
+          </Badge>
+        </div>
+      </div>
+    );
+  }
+
+  // Full mode for detailed task cards (default/kanban)
   return (
     <div className={`relative group max-w-full min-h-[100px] rounded-lg overflow-hidden border-l-[3px] ${statusStyles.border} border-2 border-gray-200 dark:border-gray-700 transition-all duration-300 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-lg bg-white dark:bg-gray-800`}>
       {/* Content container - padding p-4 (16px) for SportERP consistency */}

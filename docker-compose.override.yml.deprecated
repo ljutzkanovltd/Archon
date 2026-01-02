@@ -1,0 +1,45 @@
+# Docker Compose Override for Remote Supabase Mode
+# This file removes local network dependencies when using Supabase Cloud
+
+services:
+  archon-server:
+    networks:
+      - app-network
+
+  archon-mcp:
+    networks:
+      - app-network
+
+  archon-agents:
+    networks:
+      - app-network
+
+  archon-agent-work-orders:
+    networks:
+      - app-network
+
+  archon-frontend:
+    networks:
+      - app-network
+
+networks:
+  # Override all networks - only use internal app-network
+  app-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+
+  # Make external networks optional (won't fail if not found)
+  sporterp-ai-unified:
+    external: false
+    driver: bridge
+
+  localai_default:
+    external: false
+    driver: bridge
+
+  supabase-ai_default:
+    external: false
+    driver: bridge

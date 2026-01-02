@@ -24,6 +24,40 @@
   --color-brand-600: #ed1c24;
   --color-brand-700: var(--color-brand-700, #ef0606);
   --color-brand-800: var(--color-brand-800, #d10505);
+
+  /* ============================================
+     Interactive State Design Tokens
+     ============================================
+     These tokens define a consistent hover/active
+     state hierarchy across all components.
+
+     LIGHT THEME HIERARCHY:
+     - Base:           white / gray-50
+     - Hover (subtle): hover-subtle (#f9fafb / gray-50)
+     - Hover (medium): hover-medium (#f3f4f6 / gray-100)
+     - Active/Select:  active (#f3f4f6 / gray-100)
+     - Hover on Active: hover-active (#e5e7eb / gray-200)
+     - Pressed:        pressed (#d1d5db / gray-300)
+
+     DARK THEME HIERARCHY:
+     - Base:           gray-800
+     - Hover (subtle): hover-subtle (gray-700/50)
+     - Hover (medium): hover-medium (gray-700)
+     - Active/Select:  active (gray-700)
+     - Hover on Active: hover-active (gray-600)
+     - Pressed:        pressed (gray-500)
+  */
+
+  /* Light theme interactive states */
+  --color-interactive-hover-subtle: #f9fafb;
+  --color-interactive-hover: #f3f4f6;
+  --color-interactive-active: #f3f4f6;
+  --color-interactive-hover-active: #e5e7eb;
+  --color-interactive-pressed: #d1d5db;
+
+  /* Brand-tinted hover (for elements near brand colors) */
+  --color-interactive-hover-brand: #fef2f2;
+  --color-interactive-hover-brand-text: #ef0606;
 }
 
 /*

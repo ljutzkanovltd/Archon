@@ -1,0 +1,80 @@
+# Docker Compose for Remote Supabase Mode
+# Use: docker compose -f docker-compose.remote.yml up -d
+
+name: archon
+
+services:
+  archon-server:
+    image: archon-server-archon-server:latest
+    container_name: archon-server
+    environment:
+      - DATABASE_URI=${DATABASE_URI}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - ARCHON_MCP_PORT=${ARCHON_MCP_PORT:-8051}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${ARCHON_SERVER_PORT:-8181}:${ARCHON_SERVER_PORT:-8181}"
+    volumes:
+      - /home/ljutzkanov/Documents/Projects:/app/projects:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ARCHON_SERVER_PORT:-8181}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  archon-mcp:
+    image: archon-server-archon-mcp:latest
+    container_name: archon-mcp
+    environment:
+      - DATABASE_URI=${DATABASE_URI}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - ARCHON_MCP_PORT=${ARCHON_MCP_PORT:-8051}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${ARCHON_MCP_PORT:-8051}:${ARCHON_MCP_PORT:-8051}"
+    depends_on:
+      archon-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ARCHON_MCP_PORT:-8051}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  archon-frontend:
+    image: archon-archon-frontend:latest
+    container_name: archon-ui
+    environment:
+      - HOST=${HOST:-localhost}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - VITE_ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - VITE_ALLOWED_HOSTS=${VITE_ALLOWED_HOSTS:-}
+      - VITE_SHOW_DEVTOOLS=${VITE_SHOW_DEVTOOLS:-false}
+      - PROD=${PROD:-false}
+      - DOCKER_ENV=true
+    ports:
+      - "${ARCHON_UI_PORT:-3737}:3737"
+    depends_on:
+      archon-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3737"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge

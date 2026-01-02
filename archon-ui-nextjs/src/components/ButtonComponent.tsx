@@ -21,31 +21,56 @@ const ButtonComponent = ({
   fullWidth = true,
   ...buttonProps
 }: ButtonProps) => {
+  // Note: Dynamic colors (color prop) are not supported in Tailwind JIT mode
+  // Use className prop to pass custom colors if needed
   const variantClass = {
     primary: cn(
-      color
-        ? `text-${color} bg-${color} border border-[1px] border-brand-700 hover:bg-${color} hover:text-${color} disabled:bg-gray-400`
-        : "text-white bg-brand-700 hover:bg-brand-800 hover:text-white disabled:bg-gray-400"
+      "text-white bg-brand-700 border border-brand-700",
+      "hover:bg-brand-800 hover:border-brand-800",
+      "active:bg-brand-900 active:border-brand-900",
+      "dark:bg-brand-600 dark:border-brand-600",
+      "dark:hover:bg-brand-700 dark:hover:border-brand-700",
+      "dark:active:bg-brand-800",
+      "disabled:bg-gray-400 disabled:border-gray-400 disabled:text-gray-200",
+      "transition-colors"
     ),
 
     secondary: cn(
-      "bg-white border border-[1px] border-brand-700 hover:bg-gray-100 disabled:text-gray-400! disabled:border-gray-400!",
-      color ? `text-${color} border-${color}` : "text-brand-700"
+      "bg-white border border-brand-700 text-brand-700",
+      "hover:bg-gray-100",
+      "active:bg-gray-200",
+      "dark:bg-gray-800 dark:border-brand-500 dark:text-brand-400",
+      "dark:hover:bg-gray-700",
+      "dark:active:bg-gray-600",
+      "disabled:text-gray-400 disabled:border-gray-400 disabled:bg-gray-50",
+      "transition-colors"
     ),
 
     ghost: cn(
-      "bg-white border border-[1px] border-light-700 hover:bg-gray-100",
-      color ? `text-${color}` : "text-brand-700"
+      "bg-white border border-gray-300 text-gray-700",
+      "hover:bg-gray-100 hover:border-gray-400",
+      "active:bg-gray-200",
+      "dark:bg-transparent dark:border-gray-600 dark:text-gray-300",
+      "dark:hover:bg-gray-700 dark:hover:border-gray-500",
+      "dark:active:bg-gray-600",
+      "transition-colors"
     ),
 
     danger: cn(
-      "text-white bg-red-600 hover:bg-red-700 border border-red-600 hover:border-red-700 disabled:bg-gray-400"
+      "text-white bg-red-600 border border-red-600",
+      "hover:bg-red-700 hover:border-red-700",
+      "active:bg-red-800 active:border-red-800",
+      "dark:bg-red-700 dark:border-red-700",
+      "dark:hover:bg-red-600 dark:hover:border-red-600",
+      "dark:active:bg-red-800",
+      "disabled:bg-gray-400 disabled:border-gray-400",
+      "transition-colors"
     ),
   };
 
   const buttonClass = checked
-    ? "border-green-500 text-green-500"
-    : "border-brand-700 text-brand-700";
+    ? "border-green-500 text-green-500 hover:border-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+    : "";
 
   return (
     <button

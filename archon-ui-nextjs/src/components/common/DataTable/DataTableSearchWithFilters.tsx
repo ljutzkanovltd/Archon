@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { HiSearch, HiX, HiFilter, HiViewGrid, HiViewList } from "react-icons/hi";
+import { useState, useEffect } from "react";
+import { HiSearch, HiX, HiFilter } from "react-icons/hi";
 import { Button, Label, Select } from "flowbite-react";
-import { useDataTableState, useDataTableContext } from "./context/DataTableContext";
+import { useDataTableState, useDataTableContext, ViewMode } from "./context/DataTableContext";
 import { useDebounce } from "@/hooks";
-import { useEffect } from "react";
+import { ViewModeToggle, ViewMode as ToggleViewMode } from "../ViewModeToggle";
 
 export interface FilterConfig {
   field: string;
@@ -133,32 +133,16 @@ export function DataTableSearchWithFilters({
             </Button>
           )}
 
-          {/* View Mode Toggle */}
+          {/* View Mode Toggle - uses reusable ViewModeToggle component */}
+          {/* Labels shown on desktop (sm+), hidden on mobile for space efficiency */}
           {showViewToggle && (
-            <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => setViewMode("table")}
-                className={`rounded-l-lg px-3 py-2 text-sm font-medium ${
-                  currentViewMode === "table"
-                    ? "bg-brand-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                }`}
-                aria-label="Table view"
-              >
-                <HiViewList className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode("grid")}
-                className={`rounded-r-lg border-l border-gray-200 px-3 py-2 text-sm font-medium dark:border-gray-700 ${
-                  currentViewMode === "grid"
-                    ? "bg-brand-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                }`}
-                aria-label="Grid view"
-              >
-                <HiViewGrid className="h-4 w-4" />
-              </button>
-            </div>
+            <ViewModeToggle
+              modes={["table", "grid"]}
+              currentMode={currentViewMode as ToggleViewMode}
+              onChange={(mode) => setViewMode(mode as ViewMode)}
+              size="md"
+              showLabels={true}
+            />
           )}
         </div>
       </div>

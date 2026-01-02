@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox } from "flowbite-react";
+import { Checkbox } from "flowbite-react";
 import { HiChevronUp, HiChevronDown } from "react-icons/hi";
 import {
   useDataTableContext,
@@ -8,6 +8,7 @@ import {
   useSelection,
   useFilteredData,
 } from "./context/DataTableContext";
+import RowMenu, { RowMenuAction } from "../RowMenu";
 
 interface DataTableListProps {
   variant?: "table" | "list";
@@ -56,7 +57,7 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
               <th
                 key={column.key}
                 scope="col"
-                className={`px-6 py-3 ${column.sortable ? "cursor-pointer select-none" : ""}`}
+                className={`px-6 py-3 transition-colors ${column.sortable ? "cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-600" : ""}`}
                 onClick={() => column.sortable && toggleSort(column.key)}
                 style={{ width: column.width }}
               >
@@ -101,11 +102,11 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
             return (
               <tr
                 key={itemKey}
-                className={
+                className={`transition-colors ${
                   isSelected(itemKey)
-                    ? "bg-brand-50 dark:bg-brand-900/20"
+                    ? "bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/30"
                     : "bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                }
+                }`}
               >
                 {/* Selection Cell */}
                 {hasSelection && (
@@ -128,31 +129,21 @@ export function DataTableList({ variant = "table" }: DataTableListProps) {
                   );
                 })}
 
-                {/* Actions Cell */}
+                {/* Actions Cell - 3-dots dropdown menu (aligned with sporterp-apps pattern) */}
                 {hasActions && (
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      {actions.map((action, index) => (
-                        <Button
-                          key={index}
-                          size="xs"
-                          color={
-                            action.variant === "primary"
-                              ? "blue"
-                              : action.variant === "danger"
-                                ? "failure"
-                                : "light"
-                          }
-                          onClick={action.onClick}
-                          disabled={action.disabled}
-                          aria-label={action.ariaLabel}
-                        >
-                          {action.icon && (
-                            <action.icon className="mr-1 h-3 w-3" aria-hidden="true" />
-                          )}
-                          {action.label}
-                        </Button>
-                      ))}
+                  <td className="px-6 py-4">
+                    <div className="flex justify-end">
+                      <RowMenu
+                        actions={actions.map((action) => ({
+                          label: action.label,
+                          icon: action.icon,
+                          onClick: action.onClick,
+                          variant: action.variant === "danger" ? "danger" : "default",
+                          disabled: action.disabled,
+                          ariaLabel: action.ariaLabel,
+                        } as RowMenuAction))}
+                        direction="bottom-end"
+                      />
                     </div>
                   </td>
                 )}

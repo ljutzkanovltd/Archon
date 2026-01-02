@@ -51,8 +51,10 @@ function MenuItem({
         <div className="flex items-center gap-1">
           <Link
             href={item.href}
-            className={`flex flex-1 items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
-              isActive ? "bg-gray-100 dark:bg-gray-700" : ""
+            className={`flex flex-1 items-center gap-3 rounded-lg p-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors ${
+              isActive
+                ? "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600"
+                : "hover:bg-gray-100 dark:hover:bg-gray-700"
             } ${isCollapsed ? "justify-center" : ""}`}
             title={isCollapsed ? item.label : undefined}
           >
@@ -107,7 +109,7 @@ function MenuItem({
                   href={child.href}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
                     childIsActive
-                      ? "bg-brand-100 text-brand-700 dark:bg-brand-900/20 dark:text-brand-400"
+                      ? "bg-brand-100 hover:bg-brand-200 text-brand-700 dark:bg-brand-900/20 dark:hover:bg-brand-900/30 dark:text-brand-400"
                       : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                   }`}
                 >
@@ -132,8 +134,10 @@ function MenuItem({
   return (
     <Link
       href={item.href}
-      className={`flex items-center gap-3 rounded-lg p-2 text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${
-        isActive ? "bg-gray-100 dark:bg-gray-700" : ""
+      className={`flex items-center gap-3 rounded-lg p-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors ${
+        isActive
+          ? "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600"
+          : "hover:bg-gray-100 dark:hover:bg-gray-700"
       } ${isCollapsed ? "justify-center" : ""}`}
       title={isCollapsed ? item.label : undefined}
     >

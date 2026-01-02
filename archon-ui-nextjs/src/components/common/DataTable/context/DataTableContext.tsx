@@ -49,6 +49,9 @@ export interface DataTableButton {
   ariaLabel?: string; // Accessibility: Descriptive label for screen readers
 }
 
+// View mode type - centralized for consistency
+export type ViewMode = "table" | "list" | "grid" | "kanban" | "custom";
+
 // Layer 1: Props Context (Immutable)
 export interface DataTablePropsContext<T = any> {
   columns: DataTableColumn<T>[];
@@ -57,9 +60,13 @@ export interface DataTablePropsContext<T = any> {
   rowButtons?: (item: T) => DataTableButton[];
   emptyMessage?: string;
   caption?: string; // Accessibility: Table caption for screen readers
-  viewMode?: "table" | "list" | "grid" | "custom";
+  viewMode?: ViewMode;
   customRender?: (item: T) => React.ReactNode;
   keyExtractor?: (item: T) => string;
+  // Kanban-specific props
+  kanbanGroupBy?: string; // Field to group by (e.g., "status")
+  kanbanColumns?: { key: string; label: string; color?: string }[];
+  onKanbanDrop?: (itemId: string, newValue: string) => void;
 }
 
 // Layer 2: State Context (Mutable)
@@ -91,8 +98,8 @@ export interface DataTableStateContext {
   setSearchQuery: (query: string) => void;
 
   // View Mode
-  currentViewMode: "table" | "list" | "grid" | "custom";
-  setViewMode: (mode: "table" | "list" | "grid" | "custom") => void;
+  currentViewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 // Layer 3: Combined Context
@@ -122,10 +129,14 @@ interface DataTableProviderProps<T = any> {
   rowButtons?: (item: T) => DataTableButton[];
   emptyMessage?: string;
   caption?: string;
-  viewMode?: "table" | "list" | "grid" | "custom";
+  viewMode?: ViewMode;
   customRender?: (item: T) => React.ReactNode;
   keyExtractor?: (item: T) => string;
   initialPagination?: Partial<PaginationConfig>;
+  // Kanban-specific props
+  kanbanGroupBy?: string;
+  kanbanColumns?: { key: string; label: string; color?: string }[];
+  onKanbanDrop?: (itemId: string, newValue: string) => void;
 }
 
 export function DataTableProvider<T = any>({
@@ -140,6 +151,9 @@ export function DataTableProvider<T = any>({
   customRender,
   keyExtractor = (item: any) => item.id || String(item),
   initialPagination,
+  kanbanGroupBy,
+  kanbanColumns,
+  onKanbanDrop,
 }: DataTableProviderProps<T>) {
   // ========== STATE MANAGEMENT ==========
 
@@ -224,9 +238,7 @@ export function DataTableProvider<T = any>({
   const [searchQuery, setSearchQuery] = useState("");
 
   // View Mode
-  const [currentViewMode, setViewMode] = useState<
-    "table" | "list" | "grid" | "custom"
-  >(viewMode);
+  const [currentViewMode, setViewMode] = useState<ViewMode>(viewMode);
 
   // ========== CONTEXT VALUES ==========
 
@@ -241,8 +253,11 @@ export function DataTableProvider<T = any>({
       viewMode,
       customRender,
       keyExtractor,
+      kanbanGroupBy,
+      kanbanColumns,
+      onKanbanDrop,
     }),
-    [columns, data, tableButtons, rowButtons, emptyMessage, caption, viewMode, customRender, keyExtractor]
+    [columns, data, tableButtons, rowButtons, emptyMessage, caption, viewMode, customRender, keyExtractor, kanbanGroupBy, kanbanColumns, onKanbanDrop]
   );
 
   const stateValue: DataTableStateContext = useMemo(

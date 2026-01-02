@@ -245,3 +245,6 @@ export {
 
 export type { DataTableColumn, DataTableButton } from "./context/DataTableContext";
 export type { FilterConfig } from "./DataTableSearchWithFilters";
+
+// Default export for backward compatibility
+export default DataTable;

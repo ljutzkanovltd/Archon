@@ -5,9 +5,9 @@ import {
   HiDatabase,
   HiRefresh,
   HiCheckCircle,
-  HiExclamationTriangle,
+  HiExclamation,
   HiX,
-  HiClipboardCopy,
+  HiClipboard,
   HiExternalLink,
 } from "react-icons/hi";
 
@@ -229,7 +229,7 @@ const PendingMigrationsModal: React.FC<PendingMigrationsModalProps> = ({
                             </>
                           ) : (
                             <>
-                              <HiClipboardCopy className="w-4 h-4" />
+                              <HiClipboard className="w-4 h-4" />
                               Copy SQL
                             </>
                           )}
@@ -368,7 +368,7 @@ export default function MigrationsTab() {
                 {status?.pending_count ?? 0}
               </span>
               {status && status.pending_count > 0 && (
-                <HiExclamationTriangle className="w-4 h-4 text-yellow-500" />
+                <HiExclamation className="w-4 h-4 text-yellow-500" />
               )}
             </div>
           </div>
@@ -383,17 +383,17 @@ export default function MigrationsTab() {
                 </>
               ) : error ? (
                 <>
-                  <HiExclamationTriangle className="w-4 h-4 text-red-500" />
+                  <HiExclamation className="w-4 h-4 text-red-500" />
                   <span className="text-red-500 text-sm">Error loading</span>
                 </>
               ) : status?.bootstrap_required ? (
                 <>
-                  <HiExclamationTriangle className="w-4 h-4 text-yellow-500" />
+                  <HiExclamation className="w-4 h-4 text-yellow-500" />
                   <span className="text-yellow-500 text-sm">Setup required</span>
                 </>
               ) : status?.has_pending ? (
                 <>
-                  <HiExclamationTriangle className="w-4 h-4 text-yellow-500" />
+                  <HiExclamation className="w-4 h-4 text-yellow-500" />
                   <span className="text-yellow-500 text-sm">Migrations pending</span>
                 </>
               ) : (

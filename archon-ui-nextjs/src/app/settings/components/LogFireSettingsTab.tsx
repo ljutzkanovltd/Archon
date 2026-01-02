@@ -4,13 +4,12 @@ import React, { useState, useEffect } from "react";
 import {
   HiKey,
   HiEye,
-  HiEyeOff,
-  HiSave,
-  HiRefresh,
+  HiEyeSlash,
+  HiCloudArrowUp,
   HiCheckCircle,
   HiXCircle,
   HiArrowPath,
-  HiExternalLink,
+  HiArrowTopRightOnSquare,
 } from "react-icons/hi2";
 import { credentialsService } from "@/lib/services/credentialsService";
 
@@ -234,7 +233,7 @@ export default function LogFireSettingsTab() {
           onClick={loadSettings}
           className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         >
-          <HiRefresh className="h-4 w-4" />
+          <HiArrowPath className="h-4 w-4" />
           Refresh
         </button>
       </div>
@@ -305,7 +304,7 @@ export default function LogFireSettingsTab() {
                   title={showApiKey ? "Hide API key" : "Show API key"}
                 >
                   {showApiKey ? (
-                    <HiEyeOff className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                    <HiEyeSlash className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                   ) : (
                     <HiEye className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                   )}
@@ -377,7 +376,7 @@ export default function LogFireSettingsTab() {
                 </>
               ) : (
                 <>
-                  <HiSave className="h-4 w-4" />
+                  <HiCloudArrowUp className="h-4 w-4" />
                   Save Settings
                 </>
               )}
@@ -398,7 +397,7 @@ export default function LogFireSettingsTab() {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
           >
-            <HiExternalLink className="h-4 w-4" />
+            <HiArrowTopRightOnSquare className="h-4 w-4" />
             Pydantic LogFire Documentation
           </a>
           <a
@@ -407,7 +406,7 @@ export default function LogFireSettingsTab() {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
           >
-            <HiExternalLink className="h-4 w-4" />
+            <HiArrowTopRightOnSquare className="h-4 w-4" />
             Getting Started Guide
           </a>
           <a
@@ -416,7 +415,7 @@ export default function LogFireSettingsTab() {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
           >
-            <HiExternalLink className="h-4 w-4" />
+            <HiArrowTopRightOnSquare className="h-4 w-4" />
             API Key Setup Guide
           </a>
         </div>
