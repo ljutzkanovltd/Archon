@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState, useMemo, useCallback } from "react";
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from "react";
+import { MultiSortConfig } from "@/store/useDataTablePreferencesStore";
 
 /**
  * DataTable Context System - Three-Layer Architecture
@@ -38,6 +39,13 @@ export interface DataTableColumn<T = any> {
   filterable?: boolean;
   width?: string;
   render?: (value: any, item: T) => React.ReactNode;
+
+  // NEW: Column resize/reorder options (all optional for backward compatibility)
+  minWidth?: number;       // Minimum column width in pixels (default: 50)
+  maxWidth?: number;       // Maximum column width in pixels (default: 500)
+  resizable?: boolean;     // Allow column resizing (default: true)
+  reorderable?: boolean;   // Allow column reordering (default: true)
+  hidden?: boolean;        // Hide column by default (default: false)
 }
 
 export interface DataTableButton {
@@ -81,9 +89,22 @@ export interface DataTableStateContext {
   removeFilter: (field: string) => void;
   clearFilters: () => void;
 
-  // Sorting
+  // Sorting (legacy single-sort for backward compatibility)
   sort: SortConfig | null;
   setSort: (config: SortConfig | null) => void;
+
+  // Multi-Sort (NEW: TanStack Table aligned)
+  multiSort: MultiSortConfig[];
+  setMultiSort: (config: MultiSortConfig[]) => void;
+
+  // Column Order (NEW: for column reordering)
+  columnOrder: string[];
+  setColumnOrder: (order: string[]) => void;
+
+  // Column Widths (NEW: for column resizing)
+  columnWidths: Record<string, number>;
+  setColumnWidth: (key: string, width: number) => void;
+  resetColumnWidths: () => void;
 
   // Selection
   selectedIds: Set<string>;
@@ -187,8 +208,31 @@ export function DataTableProvider<T = any>({
     setFilters([]);
   }, []);
 
-  // Sorting
+  // Sorting (legacy single-sort)
   const [sort, setSort] = useState<SortConfig | null>(null);
+
+  // Multi-Sort (NEW)
+  const [multiSort, setMultiSort] = useState<MultiSortConfig[]>([]);
+
+  // Column Order (NEW) - defaults to column keys from props
+  const [columnOrder, setColumnOrderState] = useState<string[]>(() =>
+    columns.map((col) => col.key)
+  );
+
+  const setColumnOrder = useCallback((order: string[]) => {
+    setColumnOrderState(order);
+  }, []);
+
+  // Column Widths (NEW)
+  const [columnWidths, setColumnWidthsState] = useState<Record<string, number>>({});
+
+  const setColumnWidth = useCallback((key: string, width: number) => {
+    setColumnWidthsState((prev) => ({ ...prev, [key]: width }));
+  }, []);
+
+  const resetColumnWidths = useCallback(() => {
+    setColumnWidthsState({});
+  }, []);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -270,6 +314,17 @@ export function DataTableProvider<T = any>({
       clearFilters,
       sort,
       setSort,
+      // NEW: Multi-sort state
+      multiSort,
+      setMultiSort,
+      // NEW: Column order state
+      columnOrder,
+      setColumnOrder,
+      // NEW: Column widths state
+      columnWidths,
+      setColumnWidth,
+      resetColumnWidths,
+      // Selection
       selectedIds,
       toggleSelection,
       toggleSelectAll,
@@ -289,6 +344,12 @@ export function DataTableProvider<T = any>({
       removeFilter,
       clearFilters,
       sort,
+      multiSort,
+      columnOrder,
+      setColumnOrder,
+      columnWidths,
+      setColumnWidth,
+      resetColumnWidths,
       selectedIds,
       toggleSelection,
       toggleSelectAll,
@@ -610,4 +671,174 @@ export function useFilteredData<T = any>() {
 
     return processedData;
   }, [data, columns, searchQuery, sort, filters]);
+}
+
+// ============================================================================
+// NEW HOOKS: Multi-Sort, Column Order, Column Widths
+// ============================================================================
+
+/**
+ * Multi-Sort hook (NEW)
+ * Enables multi-column sorting with priority management
+ */
+export function useMultiSorting() {
+  const { multiSort, setMultiSort } = useDataTableState();
+  const { columns } = useDataTableProps();
+
+  const addSortColumn = useCallback(
+    (field: string, direction: "asc" | "desc" = "asc") => {
+      const existing = multiSort.find((s) => s.field === field);
+
+      if (existing) {
+        // Toggle direction or remove if cycling through
+        if (existing.direction === "asc") {
+          setMultiSort(
+            multiSort.map((s) =>
+              s.field === field ? { ...s, direction: "desc" as const } : s
+            )
+          );
+        } else {
+          // Remove this sort
+          setMultiSort(
+            multiSort
+              .filter((s) => s.field !== field)
+              .map((s, i) => ({ ...s, priority: i + 1 }))
+          );
+        }
+      } else {
+        // Add new sort column (max 3)
+        if (multiSort.length >= 3) {
+          setMultiSort([
+            ...multiSort.slice(1).map((s) => ({ ...s, priority: s.priority - 1 })),
+            { field, direction, priority: 3 },
+          ]);
+        } else {
+          setMultiSort([...multiSort, { field, direction, priority: multiSort.length + 1 }]);
+        }
+      }
+    },
+    [multiSort, setMultiSort]
+  );
+
+  const removeSortColumn = useCallback(
+    (field: string) => {
+      setMultiSort(
+        multiSort
+          .filter((s) => s.field !== field)
+          .map((s, i) => ({ ...s, priority: i + 1 }))
+      );
+    },
+    [multiSort, setMultiSort]
+  );
+
+  const clearSort = useCallback(() => {
+    setMultiSort([]);
+  }, [setMultiSort]);
+
+  const getSortPriority = useCallback(
+    (field: string) => multiSort.find((s) => s.field === field)?.priority || null,
+    [multiSort]
+  );
+
+  const getSortDirection = useCallback(
+    (field: string) =>
+      multiSort.find((s) => s.field === field)?.direction || null,
+    [multiSort]
+  );
+
+  const isSorted = useCallback(
+    (field: string) => multiSort.some((s) => s.field === field),
+    [multiSort]
+  );
+
+  return {
+    multiSort,
+    setMultiSort,
+    addSortColumn,
+    removeSortColumn,
+    clearSort,
+    getSortPriority,
+    getSortDirection,
+    isSorted,
+    hasMultiSort: multiSort.length > 1,
+  };
+}
+
+/**
+ * Column Order hook (NEW)
+ * Manages column reordering state
+ */
+export function useColumnOrder() {
+  const { columnOrder, setColumnOrder } = useDataTableState();
+  const { columns } = useDataTableProps();
+
+  const moveColumn = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const newOrder = [...columnOrder];
+      const [moved] = newOrder.splice(fromIndex, 1);
+      newOrder.splice(toIndex, 0, moved);
+      setColumnOrder(newOrder);
+    },
+    [columnOrder, setColumnOrder]
+  );
+
+  const resetColumnOrder = useCallback(() => {
+    setColumnOrder(columns.map((col) => col.key));
+  }, [columns, setColumnOrder]);
+
+  // Get columns in current order
+  const orderedColumns = useMemo(() => {
+    if (columnOrder.length === 0) return columns;
+
+    const orderMap = new Map(columnOrder.map((key, index) => [key, index]));
+    return [...columns].sort((a, b) => {
+      const aIndex = orderMap.get(a.key) ?? Infinity;
+      const bIndex = orderMap.get(b.key) ?? Infinity;
+      return aIndex - bIndex;
+    });
+  }, [columns, columnOrder]);
+
+  return {
+    columnOrder,
+    setColumnOrder,
+    moveColumn,
+    resetColumnOrder,
+    orderedColumns,
+  };
+}
+
+/**
+ * Column Widths hook (NEW)
+ * Manages column resizing state
+ */
+export function useColumnWidths() {
+  const { columnWidths, setColumnWidth, resetColumnWidths } = useDataTableState();
+  const { columns } = useDataTableProps();
+
+  const getColumnWidth = useCallback(
+    (columnKey: string, defaultWidth: number = 150) => {
+      return columnWidths[columnKey] || defaultWidth;
+    },
+    [columnWidths]
+  );
+
+  const setWidth = useCallback(
+    (columnKey: string, width: number) => {
+      // Find column config for min/max constraints
+      const column = columns.find((c) => c.key === columnKey);
+      const minWidth = column?.minWidth || 50;
+      const maxWidth = column?.maxWidth || 500;
+
+      const clampedWidth = Math.max(minWidth, Math.min(maxWidth, width));
+      setColumnWidth(columnKey, clampedWidth);
+    },
+    [columns, setColumnWidth]
+  );
+
+  return {
+    columnWidths,
+    getColumnWidth,
+    setWidth,
+    resetColumnWidths,
+  };
 }

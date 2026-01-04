@@ -408,6 +408,9 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           columns={taskColumns}
           keyExtractor={(task) => task.id}
           rowButtons={getRowButtons}
+          tableId={`archon-project-tasks-${projectId}`}
+          enableMultiSort={true}
+          showPrimaryAction={true}
           viewMode="table"
           showSearch={true}
           showPagination={true}
@@ -423,6 +426,7 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           columns={taskColumns}
           keyExtractor={(task) => task.id}
           customRender={renderTaskCard}
+          tableId={`archon-project-tasks-grid-${projectId}`}
           viewMode="grid"
           showSearch={true}
           showPagination={true}

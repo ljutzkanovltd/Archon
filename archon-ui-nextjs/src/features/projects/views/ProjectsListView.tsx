@@ -213,6 +213,9 @@ export function ProjectsListView() {
         columns={columns}
         tableButtons={tableButtons}
         rowButtons={rowButtons}
+        tableId="archon-projects-list"
+        enableMultiSort={true}
+        showPrimaryAction={true}
         viewMode="table"
         customRender={(project) => (
           <ProjectWithTasksCard

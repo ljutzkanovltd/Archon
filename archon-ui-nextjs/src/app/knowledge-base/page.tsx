@@ -48,33 +48,48 @@ export default function KnowledgeBasePage() {
       if (response.success) {
         const sourcesData = response.sources || [];
 
-        // Fetch counts for each source (documents and code examples)
-        const sourcesWithCounts = await Promise.all(
-          sourcesData.map(async (source: KnowledgeSource) => {
-            try {
-              // Fetch with limit=1 to get just the total count efficiently
-              const [chunksResponse, codeResponse] = await Promise.all([
-                knowledgeBaseApi.listPages({ source_id: source.source_id, limit: 1 }),
-                knowledgeBaseApi.searchCodeExamples({ source_id: source.source_id, match_count: 1 }),
-              ]);
+        // Extract all source IDs for bulk counts query
+        const sourceIds = sourcesData.map((s: KnowledgeSource) => s.source_id);
 
-              return {
-                ...source,
-                id: source.source_id, // Add id for DataTable keyExtractor
-                documents_count: chunksResponse.total || 0,
-                code_examples_count: codeResponse.total || 0,
-              };
-            } catch (err) {
-              console.error(`Failed to load counts for source ${source.source_id}:`, err);
-              return {
-                ...source,
-                id: source.source_id,
-                documents_count: 0,
-                code_examples_count: 0,
-              };
+        // Fetch all counts in a single request (replaces N*2 individual requests)
+        let countsMap: Record<string, { documents_count: number; code_examples_count: number }> = {};
+
+        if (sourceIds.length > 0) {
+          try {
+            const countsResponse = await knowledgeBaseApi.getBulkCounts(sourceIds);
+            if (countsResponse.success) {
+              countsMap = countsResponse.counts;
             }
-          })
-        );
+          } catch (err) {
+            console.error("Failed to load bulk counts, falling back to individual fetches:", err);
+            // Fallback to individual fetches if bulk counts fails (backwards compatibility)
+            await Promise.all(
+              sourcesData.map(async (source: KnowledgeSource) => {
+                try {
+                  const [chunksResponse, codeResponse] = await Promise.all([
+                    knowledgeBaseApi.listPages({ source_id: source.source_id, limit: 1 }),
+                    knowledgeBaseApi.searchCodeExamples({ source_id: source.source_id, match_count: 1 }),
+                  ]);
+                  countsMap[source.source_id] = {
+                    documents_count: chunksResponse.total || 0,
+                    code_examples_count: codeResponse.total || 0,
+                  };
+                } catch (innerErr) {
+                  console.error(`Failed to load counts for source ${source.source_id}:`, innerErr);
+                  countsMap[source.source_id] = { documents_count: 0, code_examples_count: 0 };
+                }
+              })
+            );
+          }
+        }
+
+        // Merge counts into sources
+        const sourcesWithCounts = sourcesData.map((source: KnowledgeSource) => ({
+          ...source,
+          id: source.source_id, // Add id for DataTable keyExtractor
+          documents_count: countsMap[source.source_id]?.documents_count || 0,
+          code_examples_count: countsMap[source.source_id]?.code_examples_count || 0,
+        }));
 
         setSources(sourcesWithCounts);
 
@@ -479,6 +494,9 @@ export default function KnowledgeBasePage() {
           columns={columns}
           tableButtons={tableButtons}
           rowButtons={rowButtons}
+          tableId="archon-knowledge-sources"
+          enableMultiSort={true}
+          showPrimaryAction={true}
           viewMode="table"
           customRender={(source) => (
             <KnowledgeSourceCard

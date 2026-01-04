@@ -61,6 +61,46 @@ global.fetch = vi.fn();
 vi.mock('react-icons/hi', () => ({
   HiExclamationCircle: () => null,
   HiBug: () => null,
+  // DataTable SortIndicator icons
+  HiChevronUp: () => null,
+  HiChevronDown: () => null,
+  HiX: () => null,
+  // DataTable DraggableColumn icons
+  HiOutlineDotsVertical: () => null,
+  // DataTable RowActions icons
+  HiDotsHorizontal: () => null,
+  HiDotsVertical: () => null,
+  // ViewModeToggle icons
+  HiViewList: () => null,
+  HiViewGrid: () => null,
+  HiViewColumns: () => null,
+  // Search/Filter icons
+  HiSearch: () => null,
+  HiFilter: () => null,
+  HiRefresh: () => null,
+  // Navigation icons
+  HiChevronLeft: () => null,
+  HiChevronRight: () => null,
+  HiChevronDoubleLeft: () => null,
+  HiChevronDoubleRight: () => null,
+  // General icons
+  HiPlus: () => null,
+  HiMinus: () => null,
+  HiTrash: () => null,
+  HiPencil: () => null,
+  HiEye: () => null,
+  HiDownload: () => null,
+  HiUpload: () => null,
+  HiCog: () => null,
+  HiMenu: () => null,
+  HiMenuAlt2: () => null,
+  HiCheck: () => null,
+  HiArchive: () => null,
+  // Additional icons that might be needed
+  HiOutlineX: () => null,
+  HiOutlineSearch: () => null,
+  HiOutlineFilter: () => null,
+  HiOutlineRefresh: () => null,
 }));
 
 beforeAll(() => {

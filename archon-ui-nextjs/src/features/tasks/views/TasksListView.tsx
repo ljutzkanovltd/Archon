@@ -392,6 +392,9 @@ export function TasksListView() {
         columns={columns}
         tableButtons={tableButtons}
         rowButtons={rowButtons}
+        tableId="archon-tasks-list"
+        enableMultiSort={true}
+        showPrimaryAction={true}
         viewMode="table"
         customRender={(task) => (
           <TaskCard

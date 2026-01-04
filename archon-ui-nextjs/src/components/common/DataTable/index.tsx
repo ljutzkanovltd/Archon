@@ -14,6 +14,25 @@ import { DataTableSearchWithFilters, FilterConfig } from "./DataTableSearchWithF
 import { DataTableFilters } from "./DataTableFilters";
 import { DataTablePagination } from "./DataTablePagination";
 import { DataTableHeader } from "./DataTableHeader";
+import { useTablePreferences } from "@/store/useDataTablePreferencesStore";
+
+/**
+ * Props for DataTableContent internal component
+ * Includes all feature flags for the enhanced table capabilities
+ */
+interface DataTableContentProps<T = any> {
+  data: T[];
+  isLoading: boolean;
+  emptyMessage: string;
+  customRender?: (item: T) => React.ReactNode;
+  keyExtractor?: (item: T) => string;
+  // NEW: Enhanced feature props
+  enableColumnResize?: boolean;
+  enableColumnReorder?: boolean;
+  enableMultiSort?: boolean;
+  showPrimaryAction?: boolean;
+  columnResizeMode?: "onChange" | "onEnd";
+}
 
 /**
  * Internal component that renders the view mode content
@@ -25,13 +44,13 @@ function DataTableContent<T = any>({
   emptyMessage,
   customRender,
   keyExtractor,
-}: {
-  data: T[];
-  isLoading: boolean;
-  emptyMessage: string;
-  customRender?: (item: T) => React.ReactNode;
-  keyExtractor?: (item: T) => string;
-}) {
+  // NEW: Enhanced feature props with defaults
+  enableColumnResize = true,
+  enableColumnReorder = false,
+  enableMultiSort = true,
+  showPrimaryAction = true,
+  columnResizeMode = "onChange",
+}: DataTableContentProps<T>) {
   const { currentViewMode } = useDataTableState();
 
   // Loading State
@@ -68,11 +87,29 @@ function DataTableContent<T = any>({
   }
 
   // Data Display - View Mode Dependent (uses currentViewMode from context)
+  // Pass enhanced feature props to DataTableList
   return (
     <>
-      {currentViewMode === "table" && <DataTableList />}
+      {currentViewMode === "table" && (
+        <DataTableList
+          enableResize={enableColumnResize}
+          enableReorder={enableColumnReorder}
+          enableMultiSort={enableMultiSort}
+          showPrimaryAction={showPrimaryAction}
+          resizeMode={columnResizeMode}
+        />
+      )}
       {currentViewMode === "grid" && <DataTableGrid />}
-      {currentViewMode === "list" && <DataTableList variant="list" />}
+      {currentViewMode === "list" && (
+        <DataTableList
+          variant="list"
+          enableResize={enableColumnResize}
+          enableReorder={enableColumnReorder}
+          enableMultiSort={enableMultiSort}
+          showPrimaryAction={showPrimaryAction}
+          resizeMode={columnResizeMode}
+        />
+      )}
       {currentViewMode === "custom" && customRender && (
         <div className="space-y-2">
           {(data || []).map((item) => (
@@ -155,6 +192,20 @@ export interface DataTableProps<T = any> {
 
   // Loading State
   isLoading?: boolean;
+
+  // NEW: Enhanced table features (TanStack Table aligned)
+  /** Unique table ID for persisting column preferences (required for persistence) */
+  tableId?: string;
+  /** Enable column resizing (default: true) */
+  enableColumnResize?: boolean;
+  /** Enable column reordering via drag-and-drop (default: false - requires DnD setup) */
+  enableColumnReorder?: boolean;
+  /** Enable multi-column sorting (default: true) */
+  enableMultiSort?: boolean;
+  /** Show first action as primary button, rest in overflow menu (default: true) */
+  showPrimaryAction?: boolean;
+  /** Resize mode: 'onChange' for real-time, 'onEnd' for on release (default: 'onChange') */
+  columnResizeMode?: "onChange" | "onEnd";
 }
 
 export function DataTable<T = any>({
@@ -178,7 +229,17 @@ export function DataTable<T = any>({
   initialPerPage = 10,
   totalItems,
   isLoading = false,
+  // NEW: Enhanced table features
+  tableId,
+  enableColumnResize = true,
+  enableColumnReorder = false,
+  enableMultiSort = true,
+  showPrimaryAction = true,
+  columnResizeMode = "onChange",
 }: DataTableProps<T>) {
+  // Load persisted preferences if tableId is provided
+  const preferences = tableId ? useTablePreferences(tableId) : null;
+
   return (
     <DataTableProvider
       data={data}
@@ -196,38 +257,138 @@ export function DataTable<T = any>({
         total: totalItems || (data || []).length,
       }}
     >
-      <div className={`space-y-4 ${className}`}>
-        {/* Header with Title, Description, and Table Buttons */}
-        {showHeader && <DataTableHeader />}
-
-        {/* Search Bar with Filters */}
-        {showSearch && filterConfigs.length > 0 ? (
-          <DataTableSearchWithFilters
-            filterConfigs={filterConfigs}
-            showViewToggle={showViewToggle}
-          />
-        ) : showSearch ? (
-          <DataTableSearch />
-        ) : null}
-
-        {/* Active Filters Display */}
-        {showFilters && <DataTableFilters />}
-
-        {/* Data Display - Delegates to DataTableContent which uses currentViewMode from context */}
-        <DataTableContent
-          data={data}
-          isLoading={isLoading}
-          emptyMessage={emptyMessage}
-          customRender={customRender}
-          keyExtractor={keyExtractor}
-        />
-
-        {/* Pagination */}
-        {showPagination && !isLoading && (data || []).length > 0 && (
-          <DataTablePagination />
-        )}
-      </div>
+      {/* Wrapper that loads preferences on mount if tableId is provided */}
+      <DataTableWithPreferences
+        tableId={tableId}
+        preferences={preferences}
+        data={data}
+        isLoading={isLoading}
+        emptyMessage={emptyMessage}
+        customRender={customRender}
+        keyExtractor={keyExtractor}
+        enableColumnResize={enableColumnResize}
+        enableColumnReorder={enableColumnReorder}
+        enableMultiSort={enableMultiSort}
+        showPrimaryAction={showPrimaryAction}
+        columnResizeMode={columnResizeMode}
+        showHeader={showHeader}
+        showSearch={showSearch}
+        filterConfigs={filterConfigs}
+        showViewToggle={showViewToggle}
+        showFilters={showFilters}
+        showPagination={showPagination}
+        className={className}
+      />
     </DataTableProvider>
+  );
+}
+
+/**
+ * Internal component that handles preference loading and applies them to the context
+ * This must be inside DataTableProvider to access context hooks
+ */
+interface DataTableWithPreferencesProps<T = any> {
+  tableId?: string;
+  preferences: ReturnType<typeof useTablePreferences> | null;
+  data: T[];
+  isLoading: boolean;
+  emptyMessage: string;
+  customRender?: (item: T) => React.ReactNode;
+  keyExtractor?: (item: T) => string;
+  enableColumnResize: boolean;
+  enableColumnReorder: boolean;
+  enableMultiSort: boolean;
+  showPrimaryAction: boolean;
+  columnResizeMode: "onChange" | "onEnd";
+  showHeader: boolean;
+  showSearch: boolean;
+  filterConfigs: FilterConfig[];
+  showViewToggle: boolean;
+  showFilters: boolean;
+  showPagination: boolean;
+  className: string;
+}
+
+function DataTableWithPreferences<T = any>({
+  tableId,
+  preferences,
+  data,
+  isLoading,
+  emptyMessage,
+  customRender,
+  keyExtractor,
+  enableColumnResize,
+  enableColumnReorder,
+  enableMultiSort,
+  showPrimaryAction,
+  columnResizeMode,
+  showHeader,
+  showSearch,
+  filterConfigs,
+  showViewToggle,
+  showFilters,
+  showPagination,
+  className,
+}: DataTableWithPreferencesProps<T>) {
+  const { setColumnOrder, setColumnWidth, setMultiSort } = useDataTableState();
+
+  // Load persisted preferences on mount (only if tableId provided)
+  React.useEffect(() => {
+    if (!tableId || !preferences) return;
+
+    // Apply persisted column order
+    if (preferences.columnOrder.length > 0) {
+      setColumnOrder(preferences.columnOrder);
+    }
+
+    // Apply persisted column widths
+    Object.entries(preferences.columnWidths).forEach(([key, width]) => {
+      setColumnWidth(key, width);
+    });
+
+    // Apply persisted sort config
+    if (preferences.sortConfig.length > 0) {
+      setMultiSort(preferences.sortConfig);
+    }
+  }, [tableId]); // Only run on mount
+
+  return (
+    <div className={`space-y-4 ${className}`}>
+      {/* Header with Title, Description, and Table Buttons */}
+      {showHeader && <DataTableHeader />}
+
+      {/* Search Bar with Filters */}
+      {showSearch && filterConfigs.length > 0 ? (
+        <DataTableSearchWithFilters
+          filterConfigs={filterConfigs}
+          showViewToggle={showViewToggle}
+        />
+      ) : showSearch ? (
+        <DataTableSearch />
+      ) : null}
+
+      {/* Active Filters Display */}
+      {showFilters && <DataTableFilters />}
+
+      {/* Data Display - Delegates to DataTableContent which uses currentViewMode from context */}
+      <DataTableContent
+        data={data}
+        isLoading={isLoading}
+        emptyMessage={emptyMessage}
+        customRender={customRender}
+        keyExtractor={keyExtractor}
+        enableColumnResize={enableColumnResize}
+        enableColumnReorder={enableColumnReorder}
+        enableMultiSort={enableMultiSort}
+        showPrimaryAction={showPrimaryAction}
+        columnResizeMode={columnResizeMode}
+      />
+
+      {/* Pagination */}
+      {showPagination && !isLoading && (data || []).length > 0 && (
+        <DataTablePagination />
+      )}
+    </div>
   );
 }
 
@@ -241,10 +402,31 @@ export {
   useSorting,
   useSelection,
   useFilteredData,
+  // NEW: Enhanced hooks for column management
+  useMultiSorting,
+  useColumnOrder,
+  useColumnWidths,
 } from "./context/DataTableContext";
 
-export type { DataTableColumn, DataTableButton } from "./context/DataTableContext";
+export type { DataTableColumn, DataTableButton, ViewMode } from "./context/DataTableContext";
 export type { FilterConfig } from "./DataTableSearchWithFilters";
+
+// NEW: Re-export hooks from dedicated files for direct import
+export * from "./hooks";
+
+// NEW: Re-export components for advanced usage
+export { SortIndicator, MultiSortBadge, RowActions } from "./components";
+export type { SortIndicatorProps, MultiSortBadgeProps, RowActionsProps } from "./components";
+
+// NEW: Re-export preference store for external persistence management
+export {
+  useDataTablePreferencesStore,
+  useTablePreferences,
+  useColumnWidths as usePersistedColumnWidths,
+  useColumnOrder as usePersistedColumnOrder,
+  useSortConfig as usePersistedSortConfig,
+} from "@/store/useDataTablePreferencesStore";
+export type { MultiSortConfig, TablePreferences } from "@/store/useDataTablePreferencesStore";
 
 // Default export for backward compatibility
 export default DataTable;

@@ -438,6 +438,9 @@ export function KnowledgeDetailView({ sourceId }: KnowledgeDetailViewProps) {
             data={pages}
             columns={columns}
             rowButtons={rowButtons}
+            tableId={`archon-knowledge-pages-${source.source_id}`}
+            enableMultiSort={true}
+            showPrimaryAction={true}
             viewMode="table"
             showSearch
             showViewToggle
