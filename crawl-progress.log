@@ -1,0 +1,68 @@
+[2026-01-07 16:12:52] [INFO] ==================================================
+[2026-01-07 16:12:52] [INFO] Archon Auto-Crawler Started
+[2026-01-07 16:12:52] [INFO] Total sources to queue: 16
+[2026-01-07 16:12:52] [INFO] Max concurrent crawls: 3
+[2026-01-07 16:12:52] [INFO] Check interval: 30s
+[2026-01-07 16:12:52] [INFO] ==================================================
+[2026-01-07 16:12:52] [INFO] Monitoring 3 existing crawls
+[2026-01-07 16:12:53] [INFO] Already indexed: 8 sources
+[2026-01-07 16:12:55] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:12:55] [INFO] Progress: https://zod.dev/llms.txt - 10% (40/311 pages) [crawling]
+[2026-01-07 16:12:55] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:12:55] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:13:25] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:13:25] [INFO] Progress: https://zod.dev/llms.txt - 10% (40/311 pages) [crawling]
+[2026-01-07 16:13:26] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:13:26] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:13:56] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:13:57] [INFO] Progress: https://zod.dev/llms.txt - 10% (40/311 pages) [crawling]
+[2026-01-07 16:13:57] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:13:57] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:14:27] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:14:27] [INFO] Progress: https://zod.dev/llms.txt - 10% (45/311 pages) [crawling]
+[2026-01-07 16:14:29] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:14:29] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:15:00] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:15:00] [INFO] Progress: https://zod.dev/llms.txt - 10% (50/311 pages) [crawling]
+[2026-01-07 16:15:00] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:15:00] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:15:31] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:15:31] [INFO] Progress: https://zod.dev/llms.txt - 10% (50/311 pages) [crawling]
+[2026-01-07 16:15:31] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:15:31] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:16:04] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:16:05] [INFO] Progress: https://zod.dev/llms.txt - 10% (60/311 pages) [crawling]
+[2026-01-07 16:16:05] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:16:05] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:16:35] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:16:35] [INFO] Progress: https://zod.dev/llms.txt - 10% (60/311 pages) [crawling]
+[2026-01-07 16:16:35] [INFO] Progress: https://docs.stripe.com - 11% (95/486 pages) [crawling]
+[2026-01-07 16:16:35] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:17:07] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:17:07] [INFO] Progress: https://zod.dev/llms.txt - 10% (60/311 pages) [crawling]
+[2026-01-07 16:17:07] [INFO] Progress: https://docs.stripe.com - 11% (105/486 pages) [crawling]
+[2026-01-07 16:17:07] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:17:38] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:17:38] [INFO] Progress: https://zod.dev/llms.txt - 10% (60/311 pages) [crawling]
+[2026-01-07 16:17:38] [INFO] Progress: https://docs.stripe.com - 11% (115/486 pages) [crawling]
+[2026-01-07 16:17:38] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:18:16] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:18:19] [INFO] Progress: https://zod.dev/llms.txt - 10% (70/311 pages) [crawling]
+[2026-01-07 16:18:19] [INFO] Progress: https://docs.stripe.com - 11% (120/486 pages) [crawling]
+[2026-01-07 16:18:19] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:18:50] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:18:50] [INFO] Progress: https://zod.dev/llms.txt - 10% (70/311 pages) [crawling]
+[2026-01-07 16:18:50] [INFO] Progress: https://docs.stripe.com - 11% (135/486 pages) [crawling]
+[2026-01-07 16:18:50] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:19:22] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:19:22] [INFO] Progress: https://zod.dev/llms.txt - 10% (70/311 pages) [crawling]
+[2026-01-07 16:19:22] [INFO] Progress: https://docs.stripe.com - 11% (145/486 pages) [crawling]
+[2026-01-07 16:19:22] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:19:52] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:19:52] [INFO] Progress: https://zod.dev/llms.txt - 10% (70/311 pages) [crawling]
+[2026-01-07 16:19:52] [INFO] Progress: https://docs.stripe.com - 11% (150/486 pages) [crawling]
+[2026-01-07 16:19:52] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
+[2026-01-07 16:20:24] [INFO] Progress: https://supabase.com/llms.txt - 11% (5/8 pages) [crawling]
+[2026-01-07 16:20:24] [INFO] Progress: https://zod.dev/llms.txt - 10% (75/311 pages) [crawling]
+[2026-01-07 16:20:24] [INFO] Progress: https://docs.stripe.com - 11% (155/486 pages) [crawling]
+[2026-01-07 16:20:24] [INFO] Status: Active=3, Queued=16, Completed=0, Failed=0
