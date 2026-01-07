@@ -67,7 +67,7 @@ const RowActions: FC<RowActionsProps> = memo(({
             "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1",
             size === "sm" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm",
             action.variant === "primary"
-              ? "bg-brand-600 text-white hover:bg-brand-700"
+              ? "bg-brand-700 text-white hover:bg-brand-800 hover:text-white"
               : action.variant === "danger"
                 ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
                 : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700",
@@ -128,7 +128,7 @@ const RowActions: FC<RowActionsProps> = memo(({
           "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1",
           size === "sm" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm",
           primaryAction.variant === "primary"
-            ? "bg-brand-600 text-white hover:bg-brand-700"
+            ? "bg-brand-700 text-white hover:bg-brand-800 hover:text-white"
             : primaryAction.variant === "danger"
               ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
               : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700",

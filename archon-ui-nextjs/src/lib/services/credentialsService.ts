@@ -68,12 +68,16 @@ export interface AzureChatConfig {
   AZURE_OPENAI_CHAT_ENDPOINT: string;
   AZURE_OPENAI_CHAT_API_VERSION: string;
   AZURE_OPENAI_CHAT_DEPLOYMENT: string;
+  AZURE_OPENAI_API_KEY: string;
+  AZURE_OPENAI_API_KEY_SET?: boolean;  // Indicates if key is configured (from backend)
 }
 
 export interface AzureEmbeddingConfig {
   AZURE_OPENAI_EMBEDDING_ENDPOINT: string;
   AZURE_OPENAI_EMBEDDING_API_VERSION: string;
   AZURE_OPENAI_EMBEDDING_DEPLOYMENT: string;
+  AZURE_OPENAI_API_KEY: string;
+  AZURE_OPENAI_API_KEY_SET?: boolean;  // Indicates if key is configured (from backend)
 }
 
 export interface TestProviderRequest {
@@ -527,6 +531,8 @@ class CredentialsService {
         AZURE_OPENAI_CHAT_ENDPOINT: "",
         AZURE_OPENAI_CHAT_API_VERSION: "2024-02-01",
         AZURE_OPENAI_CHAT_DEPLOYMENT: "",
+        AZURE_OPENAI_API_KEY: "",
+        AZURE_OPENAI_API_KEY_SET: false,
       };
     }
   }
@@ -575,6 +581,8 @@ class CredentialsService {
         AZURE_OPENAI_EMBEDDING_ENDPOINT: "",
         AZURE_OPENAI_EMBEDDING_API_VERSION: "2024-02-01",
         AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "",
+        AZURE_OPENAI_API_KEY: "",
+        AZURE_OPENAI_API_KEY_SET: false,
       };
     }
   }

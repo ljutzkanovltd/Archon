@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import { HiCheck } from "react-icons/hi";
 
 export function CrawlSettings() {
   const { settings, updateSettings } = useSettingsStore();
@@ -16,16 +15,21 @@ export function CrawlSettings() {
     user_agent: "Archon Knowledge Base Crawler/1.0",
   });
   const [isSaving, setIsSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
       await updateSettings({ section: "crawl", data: formData });
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      showToast("Crawl settings saved successfully", "success");
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      console.error("Failed to save settings:", error);
+      showToast("Failed to save crawl settings", "error");
     } finally {
       setIsSaving(false);
     }
@@ -170,22 +174,28 @@ export function CrawlSettings() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-4">
+      <div className="mt-6">
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+          className="px-6 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg disabled:opacity-50 transition-colors"
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </button>
-
-        {showSuccess && (
-          <span className="flex items-center gap-2 text-green-600 dark:text-green-400">
-            <HiCheck className="w-5 h-5" />
-            Settings saved successfully!
-          </span>
-        )}
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed right-4 top-4 z-50 rounded-lg px-4 py-3 shadow-lg ${
+            toast.type === "success"
+              ? "bg-green-500 text-white"
+              : "bg-red-500 text-white"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

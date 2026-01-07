@@ -109,6 +109,9 @@ class ProjectService:
                         "docs": project.get("docs", []),
                         "features": project.get("features", []),
                         "data": project.get("data", []),
+                        "archived": project.get("archived", False),
+                        "archived_at": project.get("archived_at"),
+                        "archived_by": project.get("archived_by"),
                     })
             else:
                 # Lightweight response for MCP - fetch all data but only return metadata + stats
@@ -137,6 +140,9 @@ class ProjectService:
                         "updated_at": project["updated_at"],
                         "pinned": project.get("pinned", False),
                         "description": project.get("description", ""),
+                        "archived": project.get("archived", False),
+                        "archived_at": project.get("archived_at"),
+                        "archived_by": project.get("archived_by"),
                         "stats": {
                             "docs_count": docs_count,
                             "features_count": features_count,

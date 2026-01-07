@@ -286,17 +286,19 @@ export function DesktopSidebar() {
       icon: HiFolder,
       label: "Projects",
       badge: projects?.length > 0 ? String(projects.length) : undefined,
-      children: (projects || []).map((project) => ({
-        href: `/projects/${project.id}`,
-        icon: HiFolder,
-        label: project.title,
-        badge: project.archived
-          ? "Archived"
-          : <ProjectTaskBadge
-              projectId={project.id}
-              isCollapsed={desktop.isCollapsed}
-            />,
-      })),
+      children: (projects || [])
+        .filter((project) => project && project.id)
+        .map((project) => ({
+          href: `/projects/${project.id}`,
+          icon: HiFolder,
+          label: project.title,
+          badge: project.archived
+            ? "Archived"
+            : <ProjectTaskBadge
+                projectId={project.id}
+                isCollapsed={desktop.isCollapsed}
+              />,
+        })),
     },
     {
       href: "/tasks",
@@ -434,18 +436,20 @@ export function MobileSidebar() {
       icon: HiFolder,
       label: "Projects",
       badge: projects?.length > 0 ? String(projects.length) : undefined,
-      children: (projects || []).map((project) => ({
-        href: `/projects/${project.id}`,
-        icon: HiFolder,
-        label: project.title,
-        badge: project.archived
-          ? "Archived"
-          : <ProjectTaskBadge
-              projectId={project.id}
-              isCollapsed={false}
-              isMobile={true}
-            />,
-      })),
+      children: (projects || [])
+        .filter((project) => project && project.id)
+        .map((project) => ({
+          href: `/projects/${project.id}`,
+          icon: HiFolder,
+          label: project.title,
+          badge: project.archived
+            ? "Archived"
+            : <ProjectTaskBadge
+                projectId={project.id}
+                isCollapsed={false}
+                isMobile={true}
+              />,
+        })),
     },
     {
       href: "/tasks",

@@ -204,7 +204,7 @@ export function ProjectWithTasksCard({
                 <button
                   onClick={() => onCreateTask?.(project.id)}
                   disabled={project.archived}
-                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-700 hover:bg-brand-800 hover:text-white text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <HiPlus className="mr-2 h-4 w-4" aria-hidden="true" />
                   New Task
@@ -274,7 +274,7 @@ export function ProjectWithTasksCard({
               {!project.archived && (
                 <button
                   onClick={() => onCreateTask?.(project.id)}
-                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-brand-700 hover:bg-brand-800 hover:text-white text-white transition-colors duration-200 focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 >
                   <HiPlus className="mr-2 h-4 w-4" aria-hidden="true" />
                   Create First Task

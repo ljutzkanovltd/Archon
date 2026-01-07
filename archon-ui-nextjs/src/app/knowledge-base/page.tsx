@@ -3,11 +3,12 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { HiPlus, HiEye, HiPencil, HiTrash, HiRefresh } from "react-icons/hi";
-import { knowledgeBaseApi, tasksApi } from "@/lib/apiClient";
+import { knowledgeBaseApi, tasksApi, RecrawlOptions } from "@/lib/apiClient";
 import { KnowledgeSource, CrawlRequest, UploadMetadata } from "@/lib/types";
 import { KnowledgeSourceCard } from "@/components/KnowledgeBase/KnowledgeSourceCard";
 import { AddSourceDialog } from "@/components/KnowledgeBase/AddSourceDialog";
 import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
+import { RecrawlOptionsModal } from "@/components/KnowledgeBase/RecrawlOptionsModal";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlingProgress } from "@/components/KnowledgeBase/CrawlingProgress";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
@@ -28,6 +29,7 @@ export default function KnowledgeBasePage() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [sourceToEdit, setSourceToEdit] = useState<KnowledgeSource | null>(null);
+  const [recrawlSource, setRecrawlSource] = useState<KnowledgeSource | null>(null);
 
   // Additional metrics state
   const [tasksLinked, setTasksLinked] = useState<number>(0);
@@ -177,17 +179,21 @@ export default function KnowledgeBasePage() {
     }
   };
 
-  const handleRecrawl = async (source: KnowledgeSource) => {
-    if (
-      !confirm(
-        `Are you sure you want to recrawl "${source.title}"? This will update all indexed content.`
-      )
-    ) {
-      return;
-    }
+  /**
+   * Opens the recrawl options modal for a source.
+   */
+  const handleRecrawl = (source: KnowledgeSource) => {
+    setRecrawlSource(source);
+  };
+
+  /**
+   * Performs the actual recrawl with user-selected options.
+   */
+  const handleRecrawlConfirm = async (options: RecrawlOptions) => {
+    if (!recrawlSource) return;
 
     try {
-      const response = await knowledgeBaseApi.recrawl(source.source_id);
+      const response = await knowledgeBaseApi.recrawl(recrawlSource.source_id, options);
       if (response.success) {
         alert(
           `Recrawl started successfully! Operation ID: ${response.data?.operation_id}`
@@ -197,7 +203,7 @@ export default function KnowledgeBasePage() {
         throw new Error(response.error || "Failed to start recrawl");
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to start recrawl");
+      throw err; // Let modal handle the error display
     }
   };
 
@@ -545,6 +551,14 @@ export default function KnowledgeBasePage() {
           setIsInspectorOpen(false);
           setSelectedSource(null);
         }}
+      />
+
+      {/* Recrawl Options Modal */}
+      <RecrawlOptionsModal
+        isOpen={recrawlSource !== null}
+        source={recrawlSource}
+        onClose={() => setRecrawlSource(null)}
+        onConfirm={handleRecrawlConfirm}
       />
     </div>
   );

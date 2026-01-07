@@ -114,7 +114,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <div className="flex gap-3">
                 <button
                   onClick={this.handleReset}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors duration-200"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg transition-colors duration-200"
                 >
                   <HiArrowPath className="w-5 h-5" />
                   Try Again

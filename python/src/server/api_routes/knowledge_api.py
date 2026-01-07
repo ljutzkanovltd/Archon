@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 # Basic validation - simplified inline version
@@ -195,6 +195,18 @@ class RagQueryRequest(BaseModel):
     source: str | None = None
     match_count: int = 5
     return_mode: str = "chunks"  # "chunks" or "pages"
+
+
+class RefreshRequest(BaseModel):
+    """Optional parameters for recrawling a knowledge source.
+
+    All fields are optional - when not provided, stored metadata values are used.
+    This allows clients to override specific crawl settings during recrawl.
+    """
+    max_depth: int | None = None  # 1-5, if None use stored metadata
+    knowledge_type: str | None = None  # 'technical' or 'business', if None use stored
+    extract_code_examples: bool | None = None  # if None use stored or default True
+    tags: list[str] | None = None  # if None use stored metadata
 
 
 @router.get("/crawl-progress/{progress_id}")
@@ -377,6 +389,87 @@ async def delete_knowledge_item(source_id: str):
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+@router.get("/knowledge-items/bulk-counts")
+async def get_bulk_source_counts(
+    source_ids: str = Query(
+        ...,
+        description="Comma-separated list of source IDs to get counts for",
+        examples=["src1,src2,src3"]
+    )
+):
+    """
+    Get document and code example counts for multiple sources in a single request.
+
+    This endpoint replaces N*2 individual requests with a single efficient query,
+    significantly improving performance when loading the knowledge base page.
+
+    Args:
+        source_ids: Comma-separated list of source IDs (e.g., "src1,src2,src3")
+
+    Returns:
+        Dictionary with counts for each source_id
+    """
+    try:
+        # Parse and validate source_ids
+        ids = [s.strip() for s in source_ids.split(",") if s.strip()]
+
+        if not ids:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "No valid source_ids provided"}
+            )
+
+        if len(ids) > 100:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Maximum 100 source_ids allowed per request"}
+            )
+
+        safe_logfire_info(f"Fetching bulk counts | count={len(ids)}")
+
+        supabase = get_supabase_client()
+
+        # Call the SQL function for efficient bulk counting
+        result = supabase.rpc("get_bulk_source_counts", {"source_ids": ids}).execute()
+
+        if hasattr(result, "error") and result.error is not None:
+            safe_logfire_error(f"Bulk counts query failed | error={result.error}")
+            raise HTTPException(
+                status_code=500,
+                detail={"error": f"Database query failed: {result.error}"}
+            )
+
+        # Transform to a dictionary keyed by source_id for easy lookup
+        counts_map = {}
+        for row in result.data or []:
+            counts_map[row["source_id"]] = {
+                "documents_count": row["documents_count"],
+                "code_examples_count": row["code_examples_count"]
+            }
+
+        # Ensure all requested source_ids are in the response (with 0 counts if missing)
+        for source_id in ids:
+            if source_id not in counts_map:
+                counts_map[source_id] = {
+                    "documents_count": 0,
+                    "code_examples_count": 0
+                }
+
+        safe_logfire_info(f"Fetched bulk counts | sources={len(counts_map)}")
+
+        return {
+            "success": True,
+            "counts": counts_map,
+            "total_sources": len(counts_map)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to fetch bulk counts | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
 @router.get("/knowledge-items/{source_id}/chunks")
 async def get_knowledge_item_chunks(
     source_id: str,
@@ -409,17 +502,34 @@ async def get_knowledge_item_chunks(
 
         supabase = get_supabase_client()
 
-        # First get total count
-        count_query = supabase.from_("archon_crawled_pages").select(
-            "id", count="exact", head=True
-        )
-        count_query = count_query.eq("source_id", source_id)
+        # Get total count with graceful fallback for timeout-prone databases
+        # Use count="planned" instead of "exact" for faster estimation
+        # Falls back to -1 (unknown) if count query times out
+        total = -1  # Default to unknown
+        try:
+            count_query = supabase.from_("archon_crawled_pages").select(
+                "id", count="planned", head=True
+            )
+            count_query = count_query.eq("source_id", source_id)
 
-        if domain_filter:
-            count_query = count_query.ilike("url", f"%{domain_filter}%")
+            if domain_filter:
+                count_query = count_query.ilike("url", f"%{domain_filter}%")
 
-        count_result = count_query.execute()
-        total = count_result.count if hasattr(count_result, "count") else 0
+            count_result = count_query.execute()
+
+            # Check for error in count query
+            if hasattr(count_result, "error") and count_result.error is not None:
+                safe_logfire_info(
+                    f"Count query failed (using fallback) | source_id={source_id} | error={count_result.error}"
+                )
+                # Don't raise - continue with unknown total
+            else:
+                total = count_result.count if hasattr(count_result, "count") else -1
+        except Exception as count_error:
+            # Log but don't fail - count is nice-to-have, not essential
+            safe_logfire_info(
+                f"Count query timed out (using fallback) | source_id={source_id} | error={str(count_error)}"
+            )
 
         # Build the main query with pagination
         query = supabase.from_("archon_crawled_pages").select(
@@ -516,15 +626,22 @@ async def get_knowledge_item_chunks(
             f"Fetched {len(chunks)} chunks for {source_id} | total={total}"
         )
 
+        # Calculate has_more: if total is unknown (-1), infer from result count
+        if total >= 0:
+            has_more = offset + limit < total
+        else:
+            # Unknown total - assume more if we got a full page
+            has_more = len(chunks) >= limit
+
         return {
             "success": True,
             "source_id": source_id,
             "domain_filter": domain_filter,
             "chunks": chunks,
-            "total": total,
+            "total": total,  # -1 indicates unknown
             "limit": limit,
             "offset": offset,
-            "has_more": offset + limit < total,
+            "has_more": has_more,
         }
 
     except HTTPException:
@@ -572,6 +689,17 @@ async def get_knowledge_item_code_examples(
             .eq("source_id", source_id)
             .execute()
         )
+
+        # Check for error in count query before accessing .count
+        if hasattr(count_result, "error") and count_result.error is not None:
+            safe_logfire_error(
+                f"Count query failed (code examples) | source_id={source_id} | error={count_result.error}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={"error": f"Count query failed: {count_result.error}"}
+            )
+
         total = count_result.count if hasattr(count_result, "count") else 0
 
         # Get paginated code examples
@@ -627,16 +755,39 @@ async def get_knowledge_item_code_examples(
 
 
 @router.post("/knowledge-items/{source_id}/refresh")
-async def refresh_knowledge_item(source_id: str):
-    """Refresh a knowledge item by re-crawling its URL with the same metadata."""
-    
+async def refresh_knowledge_item(source_id: str, request: RefreshRequest | None = None):
+    """Refresh a knowledge item by re-crawling its URL.
+
+    Accepts optional parameters to override stored metadata during recrawl.
+    If no body is provided or fields are None, stored metadata values are used.
+    """
+
     # Validate API key before starting expensive refresh operation
-    logger.info("🔍 About to validate API key for refresh...")
-    provider_config = await credential_service.get_active_provider("embedding")
-    provider = provider_config.get("provider", "openai")
-    await _validate_provider_api_key(provider)
-    logger.info("✅ API key validation completed successfully for refresh")
-    
+    try:
+        logger.info(f"🔍 Validating API key for refresh | source_id={source_id}")
+        provider_config = await credential_service.get_active_provider("embedding")
+        provider = provider_config.get("provider", "openai")
+
+        if not provider:
+            safe_logfire_error(f"Refresh failed: No embedding provider configured | source_id={source_id}")
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "No embedding provider configured. Please configure an embedding provider in Settings."}
+            )
+
+        await _validate_provider_api_key(provider)
+        logger.info(f"✅ API key validation completed | source_id={source_id} | provider={provider}")
+
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Refresh failed: API key validation error | source_id={source_id} | error={str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Embedding provider validation failed: {str(e)}. Please check your API key in Settings."}
+        )
+
     try:
         safe_logfire_info(f"Starting knowledge item refresh | source_id={source_id}")
 
@@ -645,23 +796,64 @@ async def refresh_knowledge_item(source_id: str):
         existing_item = await service.get_item(source_id)
 
         if not existing_item:
+            safe_logfire_error(f"Refresh failed: Knowledge item not found | source_id={source_id}")
             raise HTTPException(
-                status_code=404, detail={"error": f"Knowledge item {source_id} not found"}
+                status_code=404,
+                detail={"error": f"Knowledge item '{source_id}' not found. It may have been deleted."}
             )
 
         # Extract metadata
         metadata = existing_item.get("metadata", {})
+        title = existing_item.get("title", source_id)
 
         # Extract the URL from the existing item
         # First try to get the original URL from metadata, fallback to url field
         url = metadata.get("original_url") or existing_item.get("url")
         if not url:
-            raise HTTPException(
-                status_code=400, detail={"error": "Knowledge item does not have a URL to refresh"}
+            safe_logfire_error(
+                f"Refresh failed: No URL found | source_id={source_id} | title={title} | "
+                f"metadata_keys={list(metadata.keys())}"
             )
-        knowledge_type = metadata.get("knowledge_type", "technical")
-        tags = metadata.get("tags", [])
-        max_depth = metadata.get("max_depth", 2)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Knowledge item '{title}' does not have a URL to refresh. "
+                    "This may be a file upload or manually created item that cannot be recrawled."
+                }
+            )
+        # Use request parameters if provided, otherwise fall back to stored metadata
+        stored_knowledge_type = metadata.get("knowledge_type", "technical")
+        stored_tags = metadata.get("tags", [])
+        stored_max_depth = metadata.get("max_depth", 2)
+        stored_extract_code = metadata.get("extract_code_examples", True)
+
+        # Override with request values when provided
+        knowledge_type = (
+            request.knowledge_type
+            if request and request.knowledge_type is not None
+            else stored_knowledge_type
+        )
+        tags = (
+            request.tags
+            if request and request.tags is not None
+            else stored_tags
+        )
+        max_depth = (
+            request.max_depth
+            if request and request.max_depth is not None
+            else stored_max_depth
+        )
+        extract_code_examples = (
+            request.extract_code_examples
+            if request and request.extract_code_examples is not None
+            else stored_extract_code
+        )
+
+        safe_logfire_info(
+            f"Refresh parameters | source_id={source_id} | max_depth={max_depth} | "
+            f"knowledge_type={knowledge_type} | extract_code={extract_code_examples} | "
+            f"using_request_overrides={request is not None}"
+        )
 
         # Generate unique progress ID
         progress_id = str(uuid.uuid4())
@@ -683,11 +875,18 @@ async def refresh_knowledge_item(source_id: str):
         try:
             crawler = await get_crawler()
             if crawler is None:
-                raise Exception("Crawler not available - initialization may have failed")
+                raise Exception("Crawler service not available")
         except Exception as e:
-            safe_logfire_error(f"Failed to get crawler | error={str(e)}")
+            safe_logfire_error(
+                f"Refresh failed: Crawler initialization error | source_id={source_id} | "
+                f"url={url} | error={str(e)}"
+            )
             raise HTTPException(
-                status_code=500, detail={"error": f"Failed to initialize crawler: {str(e)}"}
+                status_code=500,
+                detail={
+                    "error": f"Failed to initialize crawler: {str(e)}. "
+                    "The crawling service may be unavailable. Please try again later."
+                }
             )
 
         # Use the same crawl orchestration as regular crawl
@@ -702,7 +901,7 @@ async def refresh_knowledge_item(source_id: str):
             "knowledge_type": knowledge_type,
             "tags": tags,
             "max_depth": max_depth,
-            "extract_code_examples": True,
+            "extract_code_examples": extract_code_examples,
             "generate_summary": True,
         }
 

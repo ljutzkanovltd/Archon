@@ -306,7 +306,7 @@ export function McpConfigSection({ config, status, className = "" }: McpConfigSe
           <div className="flex items-center gap-3">
             <button
               onClick={handleCursorOneClick}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-medium shadow-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg font-medium shadow-lg transition-colors"
             >
               <HiExternalLink className="w-4 h-4" />
               One-Click Install for Cursor

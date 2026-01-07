@@ -174,7 +174,7 @@ export default function McpInspectorPage() {
               className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 ${
                 isConnected
                   ? "bg-red-600 hover:bg-red-700 text-white"
-                  : "bg-brand-600 hover:bg-brand-700 text-white"
+                  : "bg-brand-700 hover:bg-brand-800 hover:text-white text-white"
               }`}
             >
               {isConnected ? "Disconnect" : "Connect"}
@@ -243,7 +243,7 @@ export default function McpInspectorPage() {
             <button
               onClick={handleExecute}
               disabled={!selectedTool || isExecuting}
-              className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isExecuting ? (
                 <>

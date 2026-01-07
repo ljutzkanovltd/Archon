@@ -151,7 +151,7 @@ const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
         <button
           onClick={onSave}
           disabled={saving}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? (
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -481,7 +481,7 @@ export function ApiKeySettings() {
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+          className="px-6 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg disabled:opacity-50 transition-colors"
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </button>

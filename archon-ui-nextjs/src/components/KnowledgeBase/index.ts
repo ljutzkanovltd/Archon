@@ -11,6 +11,7 @@ export { default as KnowledgeGridView } from "./KnowledgeGridView";
 export { KnowledgeSourceCard } from "./KnowledgeSourceCard";
 export { AddSourceDialog } from "./AddSourceDialog";
 export { EditSourceDialog } from "./EditSourceDialog";
+export { RecrawlOptionsModal } from "./RecrawlOptionsModal";
 export { SourceInspector } from "./SourceInspector";
 export { CrawlingProgress } from "./CrawlingProgress";
 

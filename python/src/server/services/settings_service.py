@@ -48,6 +48,12 @@ DEFAULT_SETTINGS = {
         "user_agent": "ArchonBot/1.0",
         "timeout": 30,
         "max_retries": 3,
+        # Frontend CrawlSettings.tsx fields
+        "default_max_depth": 3,
+        "default_crawl_type": "technical",
+        "extract_code_examples": True,
+        "rate_limit_delay_ms": 1000,
+        "max_concurrent_crawls": 3,
     },
     "display": {
         "theme": "system",
@@ -90,7 +96,7 @@ SETTINGS_KEY_MAPPING = {
     "api_keys.supabase_url": {"key": "SUPABASE_URL", "category": "api_keys", "encrypted": False},
     "api_keys.supabase_service_key": {"key": "SUPABASE_SERVICE_KEY", "category": "api_keys", "encrypted": True},
 
-    # Crawl settings
+    # Crawl settings (backend defaults)
     "crawl.max_depth": {"key": "CRAWL_MAX_DEPTH", "category": "crawl", "encrypted": False},
     "crawl.rate_limit": {"key": "CRAWL_RATE_LIMIT", "category": "crawl", "encrypted": False},
     "crawl.follow_external_links": {"key": "CRAWL_FOLLOW_EXTERNAL", "category": "crawl", "encrypted": False},
@@ -98,6 +104,12 @@ SETTINGS_KEY_MAPPING = {
     "crawl.user_agent": {"key": "CRAWL_USER_AGENT", "category": "crawl", "encrypted": False},
     "crawl.timeout": {"key": "CRAWL_TIMEOUT", "category": "crawl", "encrypted": False},
     "crawl.max_retries": {"key": "CRAWL_MAX_RETRIES", "category": "crawl", "encrypted": False},
+    # Crawl settings (frontend CrawlSettings.tsx fields)
+    "crawl.default_max_depth": {"key": "CRAWL_DEFAULT_MAX_DEPTH", "category": "crawl", "encrypted": False},
+    "crawl.default_crawl_type": {"key": "CRAWL_DEFAULT_CRAWL_TYPE", "category": "crawl", "encrypted": False},
+    "crawl.extract_code_examples": {"key": "CRAWL_EXTRACT_CODE_EXAMPLES", "category": "crawl", "encrypted": False},
+    "crawl.rate_limit_delay_ms": {"key": "CRAWL_RATE_LIMIT_DELAY_MS", "category": "crawl", "encrypted": False},
+    "crawl.max_concurrent_crawls": {"key": "CRAWL_MAX_CONCURRENT_CRAWLS", "category": "crawl", "encrypted": False},
 
     # Display settings
     "display.theme": {"key": "DISPLAY_THEME", "category": "display", "encrypted": False},

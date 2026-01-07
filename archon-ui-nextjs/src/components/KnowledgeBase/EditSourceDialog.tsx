@@ -299,7 +299,7 @@ export function EditSourceDialog({
             type="submit"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isSubmitting && (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">

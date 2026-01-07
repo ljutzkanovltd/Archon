@@ -48,7 +48,7 @@ const TabView: FC<TabViewProps> = ({ tabsList, className = "" }) => {
                   flex items-center gap-2 px-4 py-2 rounded-lg transition-colors whitespace-nowrap
                   ${
                     isActive
-                      ? "bg-brand-600 text-white font-semibold hover:bg-brand-700"
+                      ? "bg-brand-700 text-white font-semibold hover:bg-brand-800 hover:text-white"
                       : "text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
                   }
                 `}

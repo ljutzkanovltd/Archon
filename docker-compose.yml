@@ -258,6 +258,34 @@ services:
       archon-server:
         condition: service_healthy
 
+  # Next.js Frontend
+  archon-frontend-nextjs:
+    build: ./archon-ui-nextjs
+    container_name: archon-ui-nextjs
+    ports:
+      - "${ARCHON_UI_NEXTJS_PORT:-3738}:3738"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://${HOST:-localhost}:${ARCHON_SERVER_PORT:-8181}
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3738"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ./archon-ui-nextjs/src:/app/src
+      - ./archon-ui-nextjs/public:/app/public
+    depends_on:
+      archon-server:
+        condition: service_healthy
+
 networks:
   # Internal network for Archon services
   app-network:

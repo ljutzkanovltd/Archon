@@ -483,6 +483,41 @@ async def reset_settings(request: SettingsResetRequest = None):
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+@router.get("/crawl-defaults")
+async def get_crawl_defaults():
+    """
+    Get default crawl settings for modals (RecrawlOptionsModal, AddSourceDialog).
+
+    Returns the user-configured defaults from the Crawl Settings page.
+    These are used as initial values when opening crawl/recrawl dialogs.
+    """
+    try:
+        logfire.info("Getting crawl defaults for modal")
+
+        # Get crawl settings from the settings service
+        all_settings = await settings_service.get_all_settings()
+        crawl_settings = all_settings.get("crawl", {})
+
+        # Return the defaults that modals need
+        defaults = {
+            "max_depth": crawl_settings.get("default_max_depth", 3),
+            "crawl_type": crawl_settings.get("default_crawl_type", "technical"),
+            "extract_code_examples": crawl_settings.get("extract_code_examples", True),
+            "respect_robots_txt": crawl_settings.get("respect_robots_txt", True),
+            "rate_limit_delay_ms": crawl_settings.get("rate_limit_delay_ms", 1000),
+            "max_concurrent_crawls": crawl_settings.get("max_concurrent_crawls", 3),
+            "user_agent": crawl_settings.get("user_agent", "Archon Knowledge Base Crawler/1.0"),
+        }
+
+        logfire.info(f"Crawl defaults retrieved | max_depth={defaults['max_depth']} | crawl_type={defaults['crawl_type']}")
+
+        return defaults
+
+    except Exception as e:
+        logfire.error(f"Error getting crawl defaults | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
 @router.post("/settings/test-api-key")
 async def test_api_key(request: ApiKeyTestRequest):
     """Test an API key for validity."""
@@ -681,24 +716,35 @@ async def update_code_extraction_settings(settings: dict[str, Any]):
 # Azure OpenAI Configuration Endpoints
 @router.get("/azure-chat-config")
 async def get_azure_chat_config():
-    """Get Azure OpenAI chat configuration."""
+    """Get Azure OpenAI chat configuration including API key."""
     try:
         logfire.info("Getting Azure OpenAI chat configuration")
 
         # Get Azure chat credentials with category "azure_config"
         azure_credentials = await credential_service.get_credentials_by_category("azure_config")
 
+        # Get API key from api_keys category (it's shared between chat and embedding)
+        api_keys = await credential_service.get_credentials_by_category("api_keys")
+        api_key = api_keys.get("AZURE_OPENAI_API_KEY", "")
+
         # Default Azure chat config
         config = {
             "AZURE_OPENAI_CHAT_ENDPOINT": "",
             "AZURE_OPENAI_CHAT_API_VERSION": "2024-02-01",
             "AZURE_OPENAI_CHAT_DEPLOYMENT": "",
+            "AZURE_OPENAI_API_KEY": "",
+            "AZURE_OPENAI_API_KEY_SET": False,  # Indicates if key is configured
         }
 
         # Update with saved values
-        for key in config.keys():
+        for key in ["AZURE_OPENAI_CHAT_ENDPOINT", "AZURE_OPENAI_CHAT_API_VERSION", "AZURE_OPENAI_CHAT_DEPLOYMENT"]:
             if key in azure_credentials:
                 config[key] = azure_credentials[key]
+
+        # Add masked API key if set
+        if api_key:
+            config["AZURE_OPENAI_API_KEY"] = "••••••••" + api_key[-4:] if len(api_key) > 4 else "••••••••"
+            config["AZURE_OPENAI_API_KEY_SET"] = True
 
         logfire.info("Azure chat configuration retrieved successfully")
         return config
@@ -710,7 +756,7 @@ async def get_azure_chat_config():
 
 @router.put("/azure-chat-config")
 async def update_azure_chat_config(config: dict[str, str]):
-    """Update Azure OpenAI chat configuration."""
+    """Update Azure OpenAI chat configuration including API key."""
     try:
         logfire.info(f"Updating Azure chat configuration | keys={len(config)}")
 
@@ -725,6 +771,19 @@ async def update_azure_chat_config(config: dict[str, str]):
                     description=f"Azure chat config: {key}"
                 )
 
+        # Handle API key separately - encrypted storage in api_keys category
+        # Only update if a non-masked value is provided
+        api_key = config.get("AZURE_OPENAI_API_KEY", "")
+        if api_key and not api_key.startswith("••••"):
+            await credential_service.set_credential(
+                key="AZURE_OPENAI_API_KEY",
+                value=api_key,
+                is_encrypted=True,
+                category="api_keys",
+                description="Azure OpenAI API Key"
+            )
+            logfire.info("Azure API key updated")
+
         logfire.info(f"Azure chat configuration updated successfully | updated={len(config)}")
         return {"success": True, "message": "Azure chat configuration updated successfully"}
 
@@ -735,24 +794,35 @@ async def update_azure_chat_config(config: dict[str, str]):
 
 @router.get("/azure-embedding-config")
 async def get_azure_embedding_config():
-    """Get Azure OpenAI embedding configuration."""
+    """Get Azure OpenAI embedding configuration including API key."""
     try:
         logfire.info("Getting Azure OpenAI embedding configuration")
 
         # Get Azure embedding credentials with category "azure_config"
         azure_credentials = await credential_service.get_credentials_by_category("azure_config")
 
+        # Get API key from api_keys category (it's shared between chat and embedding)
+        api_keys = await credential_service.get_credentials_by_category("api_keys")
+        api_key = api_keys.get("AZURE_OPENAI_API_KEY", "")
+
         # Default Azure embedding config
         config = {
             "AZURE_OPENAI_EMBEDDING_ENDPOINT": "",
             "AZURE_OPENAI_EMBEDDING_API_VERSION": "2024-02-01",
             "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "",
+            "AZURE_OPENAI_API_KEY": "",
+            "AZURE_OPENAI_API_KEY_SET": False,  # Indicates if key is configured
         }
 
         # Update with saved values
-        for key in config.keys():
+        for key in ["AZURE_OPENAI_EMBEDDING_ENDPOINT", "AZURE_OPENAI_EMBEDDING_API_VERSION", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"]:
             if key in azure_credentials:
                 config[key] = azure_credentials[key]
+
+        # Add masked API key if set
+        if api_key:
+            config["AZURE_OPENAI_API_KEY"] = "••••••••" + api_key[-4:] if len(api_key) > 4 else "••••••••"
+            config["AZURE_OPENAI_API_KEY_SET"] = True
 
         logfire.info("Azure embedding configuration retrieved successfully")
         return config
@@ -764,7 +834,7 @@ async def get_azure_embedding_config():
 
 @router.put("/azure-embedding-config")
 async def update_azure_embedding_config(config: dict[str, str]):
-    """Update Azure OpenAI embedding configuration."""
+    """Update Azure OpenAI embedding configuration including API key."""
     try:
         logfire.info(f"Updating Azure embedding configuration | keys={len(config)}")
 
@@ -778,6 +848,19 @@ async def update_azure_embedding_config(config: dict[str, str]):
                     category="azure_config",
                     description=f"Azure embedding config: {key}"
                 )
+
+        # Handle API key separately - encrypted storage in api_keys category
+        # Only update if a non-masked value is provided
+        api_key = config.get("AZURE_OPENAI_API_KEY", "")
+        if api_key and not api_key.startswith("••••"):
+            await credential_service.set_credential(
+                key="AZURE_OPENAI_API_KEY",
+                value=api_key,
+                is_encrypted=True,
+                category="api_keys",
+                description="Azure OpenAI API Key"
+            )
+            logfire.info("Azure API key updated")
 
         logfire.info(f"Azure embedding configuration updated successfully | updated={len(config)}")
         return {"success": True, "message": "Azure embedding configuration updated successfully"}

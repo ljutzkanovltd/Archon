@@ -235,7 +235,7 @@ export function TaskModal({
             type="button"
             onClick={handleSubmit}
             disabled={isSaving || !formData.title.trim()}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-4 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-700 dark:focus:ring-brand-800"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-4 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-800 hover:text-white dark:focus:ring-brand-800"
           >
             <HiCheck className="h-5 w-5" />
             {isSaving ? "Saving..." : mode === "create" ? "Create Task" : "Save Changes"}

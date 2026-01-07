@@ -427,7 +427,7 @@ find_tasks(filter_by="project", filter_value="proj-123")
         {/* Copy Button */}
         <button
           onClick={handleCopyToClipboard}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 hover:text-white rounded-lg transition-colors disabled:opacity-50"
         >
           {copied ? (
             <>

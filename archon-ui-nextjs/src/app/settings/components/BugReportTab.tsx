@@ -684,7 +684,7 @@ ${screenshot ? "📷 Screenshot attached" : ""}
           <button
             type="submit"
             disabled={!isFormValid || submitting || submitted}
-            className="flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-lg bg-brand-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? (
               <>

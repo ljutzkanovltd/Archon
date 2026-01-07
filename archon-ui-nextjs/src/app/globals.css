@@ -22,8 +22,10 @@
   --color-brand-400: #e7656a;
   --color-brand-500: #e0474d;
   --color-brand-600: #ed1c24;
-  --color-brand-700: var(--color-brand-700, #ef0606);
-  --color-brand-800: var(--color-brand-800, #d10505);
+  /* Brand color scale - proper red progression for buttons */
+  --color-brand-700: #c41920;
+  --color-brand-800: #a3151a;
+  --color-brand-900: #821114;
 
   /* ============================================
      Interactive State Design Tokens

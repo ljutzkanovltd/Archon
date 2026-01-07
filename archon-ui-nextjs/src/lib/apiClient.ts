@@ -423,6 +423,17 @@ export const documentsApi = {
 
 // ==================== KNOWLEDGE BASE ENDPOINTS ====================
 
+/**
+ * Options for recrawling a knowledge source.
+ * All fields are optional - when not provided, backend uses stored metadata.
+ */
+export interface RecrawlOptions {
+  max_depth?: number;  // 1-5, override stored value
+  knowledge_type?: 'technical' | 'business';  // override stored value
+  extract_code_examples?: boolean;  // override stored value
+  tags?: string[];  // override stored value
+}
+
 export const knowledgeBaseApi = {
   /**
    * Get all knowledge sources with summaries
@@ -492,6 +503,24 @@ export const knowledgeBaseApi = {
   },
 
   /**
+   * Get document and code example counts for multiple sources in a single request.
+   * Replaces N*2 individual requests with 1 efficient query.
+   */
+  getBulkCounts: async (sourceIds: string[]): Promise<{
+    success: boolean;
+    counts: Record<string, { documents_count: number; code_examples_count: number }>;
+    total_sources: number;
+  }> => {
+    if (sourceIds.length === 0) {
+      return { success: true, counts: {}, total_sources: 0 };
+    }
+    const response = await apiClient.get("/api/knowledge-items/bulk-counts", {
+      params: { source_ids: sourceIds.join(",") }
+    });
+    return response.data;
+  },
+
+  /**
    * Crawl website URL and add to knowledge base
    */
   crawlUrl: async (data: CrawlRequest): Promise<ProgressResponse> => {
@@ -550,10 +579,18 @@ export const knowledgeBaseApi = {
   },
 
   /**
-   * Trigger recrawl of knowledge source
+   * Trigger recrawl of knowledge source with optional parameter overrides.
+   * @param sourceId - The source ID to recrawl
+   * @param options - Optional parameters to override stored metadata
    */
-  recrawl: async (sourceId: string): Promise<ApiResponse<{ operation_id: string }>> => {
-    const response = await apiClient.post(`/api/rag/sources/${sourceId}/recrawl`);
+  recrawl: async (
+    sourceId: string,
+    options?: RecrawlOptions
+  ): Promise<ApiResponse<{ operation_id: string }>> => {
+    const response = await apiClient.post(
+      `/api/knowledge-items/${sourceId}/refresh`,
+      options || {}
+    );
     return response.data;
   },
 };

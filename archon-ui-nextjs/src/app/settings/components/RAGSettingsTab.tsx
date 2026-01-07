@@ -502,6 +502,34 @@ const AzureConfigPanel: React.FC<AzureConfigPanelProps> = ({
           />
         </div>
 
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            API Key {config.AZURE_OPENAI_API_KEY_SET && (
+              <span className="ml-2 text-xs text-green-600 dark:text-green-400">✓ Configured</span>
+            )}
+          </label>
+          <div className="relative">
+            <input
+              type="password"
+              value={config.AZURE_OPENAI_API_KEY}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  AZURE_OPENAI_API_KEY: e.target.value,
+                } as any)
+              }
+              placeholder={config.AZURE_OPENAI_API_KEY_SET ? "Enter new key to update" : "Enter your Azure OpenAI API key"}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-10 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <HiKey className="h-4 w-4 text-gray-400" />
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            API key is shared between Chat and Embedding. Updating in either mode will update both.
+          </p>
+        </div>
+
         {/* Test Result Display */}
         {testResult && (
           <div
@@ -552,7 +580,7 @@ const AzureConfigPanel: React.FC<AzureConfigPanelProps> = ({
           <button
             onClick={onSave}
             disabled={saving || testing}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? (
               <>
@@ -599,6 +627,8 @@ export default function RAGSettingsTab() {
     AZURE_OPENAI_CHAT_ENDPOINT: "",
     AZURE_OPENAI_CHAT_API_VERSION: "2024-02-01",
     AZURE_OPENAI_CHAT_DEPLOYMENT: "",
+    AZURE_OPENAI_API_KEY: "",
+    AZURE_OPENAI_API_KEY_SET: false,
   });
 
   const [azureEmbeddingConfig, setAzureEmbeddingConfig] =
@@ -606,6 +636,8 @@ export default function RAGSettingsTab() {
       AZURE_OPENAI_EMBEDDING_ENDPOINT: "",
       AZURE_OPENAI_EMBEDDING_API_VERSION: "2024-02-01",
       AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "",
+      AZURE_OPENAI_API_KEY: "",
+      AZURE_OPENAI_API_KEY_SET: false,
     });
 
   const [loading, setLoading] = useState(true);
@@ -830,21 +862,36 @@ export default function RAGSettingsTab() {
 
       const endpoint =
         activeSelection === "chat"
-          ? config.AZURE_OPENAI_CHAT_ENDPOINT
+          ? (config as AzureChatConfig).AZURE_OPENAI_CHAT_ENDPOINT
           : (config as AzureEmbeddingConfig).AZURE_OPENAI_EMBEDDING_ENDPOINT;
 
       const deployment =
         activeSelection === "chat"
-          ? config.AZURE_OPENAI_CHAT_DEPLOYMENT
+          ? (config as AzureChatConfig).AZURE_OPENAI_CHAT_DEPLOYMENT
           : (config as AzureEmbeddingConfig).AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
 
       const apiVersion =
         activeSelection === "chat"
-          ? config.AZURE_OPENAI_CHAT_API_VERSION
+          ? (config as AzureChatConfig).AZURE_OPENAI_CHAT_API_VERSION
           : (config as AzureEmbeddingConfig).AZURE_OPENAI_EMBEDDING_API_VERSION;
 
-      // Get Azure API key from settings
-      const apiKey = settings.AZURE_OPENAI_API_KEY || "";
+      // Get Azure API key from config (user input or masked from backend)
+      // If user entered a new key (non-masked), use it; otherwise use the existing key from settings
+      let apiKey = config.AZURE_OPENAI_API_KEY || "";
+
+      // If the key is masked (starts with dots), and we have an existing key in settings, we need to inform user
+      if (apiKey.startsWith("••••") || !apiKey) {
+        // Fall back to settings API key for backward compatibility
+        apiKey = settings.AZURE_OPENAI_API_KEY || "";
+        if (!apiKey) {
+          setTestResult({
+            ok: false,
+            message: "Please enter an API key in the Azure configuration panel above.",
+          });
+          setTesting(false);
+          return;
+        }
+      }
 
       const result = await credentialsService.testProviderConnection(
         "azure-openai",
@@ -1042,7 +1089,7 @@ export default function RAGSettingsTab() {
             <button
               onClick={saveStrategySettings}
               disabled={saving === "strategy"}
-              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving === "strategy" ? (
                 <>
@@ -1131,7 +1178,7 @@ export default function RAGSettingsTab() {
             <button
               onClick={saveCrawlingSettings}
               disabled={saving === "crawling"}
-              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving === "crawling" ? (
                 <>
@@ -1225,7 +1272,7 @@ export default function RAGSettingsTab() {
             <button
               onClick={saveStorageSettings}
               disabled={saving === "storage"}
-              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving === "storage" ? (
                 <>
@@ -1283,7 +1330,7 @@ export default function RAGSettingsTab() {
             <button
               onClick={saveAdvancedSettings}
               disabled={saving === "advanced"}
-              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving === "advanced" ? (
                 <>

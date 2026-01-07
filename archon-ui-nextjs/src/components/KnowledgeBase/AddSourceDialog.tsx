@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { HiX, HiGlobeAlt, HiUpload } from "react-icons/hi";
+import { useState, useEffect } from "react";
+import { HiX, HiGlobeAlt, HiUpload, HiCog } from "react-icons/hi";
 import { CrawlRequest, UploadMetadata } from "@/lib/types";
+
+interface CrawlDefaults {
+  max_depth: number;
+  crawl_type: "technical" | "business";
+  extract_code_examples: boolean;
+}
 
 interface AddSourceDialogProps {
   isOpen: boolean;
@@ -29,6 +35,35 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Crawl settings state (loaded from /api/crawl-defaults)
+  const [crawlDepth, setCrawlDepth] = useState(3);
+  const [extractCodeExamples, setExtractCodeExamples] = useState(true);
+  const [isLoadingDefaults, setIsLoadingDefaults] = useState(false);
+
+  // Load crawl defaults when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingDefaults(true);
+      fetch("/api/crawl-defaults")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to load settings");
+          return res.json();
+        })
+        .then((defaults: CrawlDefaults) => {
+          setCrawlDepth(defaults.max_depth || 3);
+          setCrawlType(defaults.crawl_type || "technical");
+          setExtractCodeExamples(defaults.extract_code_examples ?? true);
+        })
+        .catch((err) => {
+          console.error("Failed to load crawl defaults:", err);
+          // Use sensible defaults on error
+          setCrawlDepth(3);
+          setExtractCodeExamples(true);
+        })
+        .finally(() => setIsLoadingDefaults(false));
+    }
+  }, [isOpen]);
+
   const resetForm = () => {
     setCrawlUrl("");
     setCrawlType("technical");
@@ -39,6 +74,9 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
     setUploadTags([]);
     setUploadTagInput("");
     setError(null);
+    // Reset crawl settings to defaults
+    setCrawlDepth(3);
+    setExtractCodeExamples(true);
   };
 
   const handleCrawlSubmit = async (e: React.FormEvent) => {
@@ -65,8 +103,8 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
         url: crawlUrl,
         knowledge_type: crawlType,
         tags: crawlTags,
-        max_depth: 2,
-        extract_code_examples: true,
+        max_depth: crawlDepth,
+        extract_code_examples: extractCodeExamples,
       });
       resetForm();
       onClose();
@@ -91,7 +129,7 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
       await onUpload(selectedFile, {
         knowledge_type: uploadType,
         tags: uploadTags,
-        extract_code_examples: true,
+        extract_code_examples: extractCodeExamples,
       });
       resetForm();
       onClose();
@@ -291,6 +329,67 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
               )}
             </div>
 
+            {/* Crawl Settings - loaded from /api/crawl-defaults */}
+            {isLoadingDefaults ? (
+              <div className="mb-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                <HiCog className="h-4 w-4 animate-spin" />
+                Loading crawl settings...
+              </div>
+            ) : (
+              <>
+                {/* Max Depth Slider */}
+                <div className="mb-4">
+                  <label className="mb-2 flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>Max Crawl Depth</span>
+                    <span className="rounded bg-cyan-100 px-2 py-0.5 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+                      {crawlDepth}
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={crawlDepth}
+                    onChange={(e) => setCrawlDepth(Number(e.target.value))}
+                    disabled={isSubmitting}
+                    className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200 accent-cyan-500 dark:bg-gray-700"
+                  />
+                  <div className="mt-1 flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <span>1 (shallow)</span>
+                    <span>5 (deep)</span>
+                  </div>
+                </div>
+
+                {/* Extract Code Examples Toggle */}
+                <div className="mb-4">
+                  <label className="flex cursor-pointer items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Extract Code Examples
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setExtractCodeExamples(!extractCodeExamples)}
+                      disabled={isSubmitting}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        extractCodeExamples
+                          ? "bg-cyan-500"
+                          : "bg-gray-300 dark:bg-gray-600"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                          extractCodeExamples ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </label>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Automatically extract and index code snippets from crawled pages
+                  </p>
+                </div>
+              </>
+            )}
+
             {/* Action Buttons */}
             <div className="flex justify-end gap-2">
               <button
@@ -442,6 +541,34 @@ export function AddSourceDialog({ isOpen, onClose, onCrawl, onUpload }: AddSourc
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Extract Code Examples Toggle */}
+            <div className="mb-4">
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Extract Code Examples
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExtractCodeExamples(!extractCodeExamples)}
+                  disabled={isSubmitting}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    extractCodeExamples
+                      ? "bg-purple-500"
+                      : "bg-gray-300 dark:bg-gray-600"
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      extractCodeExamples ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Automatically extract and index code snippets from the document
+              </p>
             </div>
 
             {/* Action Buttons */}

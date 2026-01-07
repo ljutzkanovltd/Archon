@@ -135,14 +135,26 @@ HEALTH_CHECK_TIMEOUT=60
 REQUIRE_VPN=false
 AUTO_VPN="${AUTO_VPN:-false}"
 
-# Container patterns
-ARCHON_CONTAINER_PATTERNS=(
+# Optional services configuration
+SKIP_OPTIONAL_SERVICES=false
+SKIP_NEXTJS=false
+
+# Core containers (always started)
+CORE_CONTAINER_PATTERNS=(
     "archon-server"
     "archon-mcp"
     "archon-ui"
+    "archon-ui-nextjs"
+)
+
+# Optional containers (can be skipped with --skip-optional)
+OPTIONAL_CONTAINER_PATTERNS=(
     "archon-agents"
     "archon-agent-work-orders"
 )
+
+# Build final container list (populated after argument parsing)
+ARCHON_CONTAINER_PATTERNS=()
 
 # Network configuration
 BRIDGE_NETWORK="sporterp-ai-unified"
@@ -152,6 +164,7 @@ SUPABASE_CONTAINER="supabase-ai-db"
 ARCHON_SERVER_PORT="${ARCHON_SERVER_PORT:-8181}"
 ARCHON_MCP_PORT="${ARCHON_MCP_PORT:-8051}"
 ARCHON_UI_PORT="${ARCHON_UI_PORT:-3737}"
+ARCHON_UI_NEXTJS_PORT="${ARCHON_UI_NEXTJS_PORT:-3738}"
 
 log_info "Default configuration loaded"
 
@@ -172,6 +185,8 @@ OPTIONS:
   --skip-backup               Skip database backup before start
   --skip-dependency-check     Skip AI dependency validation
   --skip-health-checks        Skip post-startup health checks
+  --skip-optional             Skip optional services (archon-agents, archon-agent-work-orders)
+  --skip-nextjs               Skip Next.js frontend (for local development on port 3738)
   -h, --help                  Show this help message
 
 CONFLICT MODES:
@@ -235,6 +250,14 @@ while [[ $# -gt 0 ]]; do
             SKIP_HEALTH_CHECKS=true
             shift
             ;;
+        --skip-optional)
+            SKIP_OPTIONAL_SERVICES=true
+            shift
+            ;;
+        --skip-nextjs)
+            SKIP_NEXTJS=true
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -246,6 +269,28 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Build container patterns based on flags
+# Start with core containers
+ARCHON_CONTAINER_PATTERNS=("${CORE_CONTAINER_PATTERNS[@]}")
+
+# Remove archon-ui-nextjs if --skip-nextjs flag is set
+if [ "$SKIP_NEXTJS" = true ]; then
+    ARCHON_CONTAINER_PATTERNS=()
+    for container in "${CORE_CONTAINER_PATTERNS[@]}"; do
+        if [ "$container" != "archon-ui-nextjs" ]; then
+            ARCHON_CONTAINER_PATTERNS+=("$container")
+        fi
+    done
+    log_info "Skipping Next.js frontend (--skip-nextjs flag) - run locally with: cd archon-ui-nextjs && npm run dev"
+fi
+
+# Add optional containers unless --skip-optional flag is set
+if [ "$SKIP_OPTIONAL_SERVICES" = true ]; then
+    log_info "Skipping optional services (--skip-optional flag)"
+else
+    ARCHON_CONTAINER_PATTERNS+=("${OPTIONAL_CONTAINER_PATTERNS[@]}")
+fi
 
 # Validate deployment mode (simplified: local or remote)
 if [[ ! "$MODE" =~ ^(local|remote)$ ]]; then
@@ -894,9 +939,14 @@ log_success "Archon infrastructure started successfully!"
 echo "========================================"
 echo ""
 log_info "Service URLs:"
-log_info "  - Server:   http://localhost:$ARCHON_SERVER_PORT"
-log_info "  - MCP:      http://localhost:$ARCHON_MCP_PORT"
-log_info "  - Frontend: http://localhost:$ARCHON_UI_PORT"
+log_info "  - Server:          http://localhost:$ARCHON_SERVER_PORT"
+log_info "  - MCP:             http://localhost:$ARCHON_MCP_PORT"
+log_info "  - Frontend (Vite): http://localhost:$ARCHON_UI_PORT"
+if [ "$SKIP_NEXTJS" = true ]; then
+    log_info "  - Frontend (Next): SKIPPED - run locally: cd archon-ui-nextjs && npm run dev"
+else
+    log_info "  - Frontend (Next): http://localhost:$ARCHON_UI_NEXTJS_PORT"
+fi
 echo ""
 log_info "Useful commands:"
 log_info "  - View logs:    docker compose logs -f"

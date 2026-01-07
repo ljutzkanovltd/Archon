@@ -145,7 +145,7 @@ export function NotificationSettings() {
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+          className="px-6 py-2 bg-brand-700 hover:bg-brand-800 hover:text-white text-white rounded-lg disabled:opacity-50 transition-colors"
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </button>

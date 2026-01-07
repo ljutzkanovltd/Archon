@@ -79,21 +79,26 @@ class CreateTaskRequest(BaseModel):
 async def list_projects(
     response: Response,
     include_content: bool = True,
+    include_archived: bool = False,
     if_none_match: str | None = Header(None)
 ):
     """
     List all projects.
-    
+
     Args:
         include_content: If True (default), returns full project content.
                         If False, returns lightweight metadata with statistics.
+        include_archived: If True, includes archived projects. Default: False.
     """
     try:
-        logfire.debug(f"Listing all projects | include_content={include_content}")
+        logfire.debug(f"Listing all projects | include_content={include_content} | include_archived={include_archived}")
 
         # Use ProjectService to get projects with include_content parameter
         project_service = ProjectService()
-        success, result = project_service.list_projects(include_content=include_content)
+        success, result = project_service.list_projects(
+            include_content=include_content,
+            include_archived=include_archived
+        )
 
         if not success:
             raise HTTPException(status_code=500, detail=result)
