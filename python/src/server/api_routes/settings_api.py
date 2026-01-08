@@ -612,13 +612,26 @@ async def update_rag_settings(settings: dict[str, Any]):
         logfire.info(f"Updating RAG settings | keys={len(settings)}")
 
         # Save each RAG setting as a credential with category "rag_strategy"
+        failed_keys = []
         for key, value in settings.items():
-            await credential_service.set_credential(
+            success = await credential_service.set_credential(
                 key=key,
                 value=str(value),
                 is_encrypted=False,
                 category="rag_strategy",
                 description=f"RAG setting: {key}"
+            )
+            if not success:
+                failed_keys.append(key)
+                logfire.error(f"Failed to save RAG setting | key={key}")
+
+        # If any keys failed to save, raise an error
+        if failed_keys:
+            error_msg = f"Failed to save settings: {', '.join(failed_keys)}"
+            logfire.error(f"RAG settings update failed | failed_keys={failed_keys}")
+            raise HTTPException(
+                status_code=500,
+                detail={"error": error_msg, "failed_keys": failed_keys}
             )
 
         logfire.info(f"RAG settings updated successfully | updated={len(settings)}")
@@ -761,28 +774,45 @@ async def update_azure_chat_config(config: dict[str, str]):
         logfire.info(f"Updating Azure chat configuration | keys={len(config)}")
 
         # Save each Azure chat config as a credential with category "azure_config"
+        failed_keys = []
         for key, value in config.items():
             if key.startswith("AZURE_OPENAI_CHAT_"):
-                await credential_service.set_credential(
+                success = await credential_service.set_credential(
                     key=key,
                     value=value,
                     is_encrypted=False,
                     category="azure_config",
                     description=f"Azure chat config: {key}"
                 )
+                if not success:
+                    failed_keys.append(key)
+                    logfire.error(f"Failed to save Azure chat config | key={key}")
 
         # Handle API key separately - encrypted storage in api_keys category
         # Only update if a non-masked value is provided
         api_key = config.get("AZURE_OPENAI_API_KEY", "")
         if api_key and not api_key.startswith("••••"):
-            await credential_service.set_credential(
+            success = await credential_service.set_credential(
                 key="AZURE_OPENAI_API_KEY",
                 value=api_key,
                 is_encrypted=True,
                 category="api_keys",
                 description="Azure OpenAI API Key"
             )
-            logfire.info("Azure API key updated")
+            if success:
+                logfire.info("Azure API key updated")
+            else:
+                failed_keys.append("AZURE_OPENAI_API_KEY")
+                logfire.error("Failed to save Azure API key")
+
+        # If any keys failed to save, raise an error
+        if failed_keys:
+            error_msg = f"Failed to save Azure chat config: {', '.join(failed_keys)}"
+            logfire.error(f"Azure chat config update failed | failed_keys={failed_keys}")
+            raise HTTPException(
+                status_code=500,
+                detail={"error": error_msg, "failed_keys": failed_keys}
+            )
 
         logfire.info(f"Azure chat configuration updated successfully | updated={len(config)}")
         return {"success": True, "message": "Azure chat configuration updated successfully"}
@@ -839,28 +869,45 @@ async def update_azure_embedding_config(config: dict[str, str]):
         logfire.info(f"Updating Azure embedding configuration | keys={len(config)}")
 
         # Save each Azure embedding config as a credential with category "azure_config"
+        failed_keys = []
         for key, value in config.items():
             if key.startswith("AZURE_OPENAI_EMBEDDING_"):
-                await credential_service.set_credential(
+                success = await credential_service.set_credential(
                     key=key,
                     value=value,
                     is_encrypted=False,
                     category="azure_config",
                     description=f"Azure embedding config: {key}"
                 )
+                if not success:
+                    failed_keys.append(key)
+                    logfire.error(f"Failed to save Azure embedding config | key={key}")
 
         # Handle API key separately - encrypted storage in api_keys category
         # Only update if a non-masked value is provided
         api_key = config.get("AZURE_OPENAI_API_KEY", "")
         if api_key and not api_key.startswith("••••"):
-            await credential_service.set_credential(
+            success = await credential_service.set_credential(
                 key="AZURE_OPENAI_API_KEY",
                 value=api_key,
                 is_encrypted=True,
                 category="api_keys",
                 description="Azure OpenAI API Key"
             )
-            logfire.info("Azure API key updated")
+            if success:
+                logfire.info("Azure API key updated")
+            else:
+                failed_keys.append("AZURE_OPENAI_API_KEY")
+                logfire.error("Failed to save Azure API key")
+
+        # If any keys failed to save, raise an error
+        if failed_keys:
+            error_msg = f"Failed to save Azure embedding config: {', '.join(failed_keys)}"
+            logfire.error(f"Azure embedding config update failed | failed_keys={failed_keys}")
+            raise HTTPException(
+                status_code=500,
+                detail={"error": error_msg, "failed_keys": failed_keys}
+            )
 
         logfire.info(f"Azure embedding configuration updated successfully | updated={len(config)}")
         return {"success": True, "message": "Azure embedding configuration updated successfully"}

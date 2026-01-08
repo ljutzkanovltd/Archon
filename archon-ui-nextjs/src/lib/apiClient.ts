@@ -35,12 +35,14 @@ export interface ApiError {
 }
 
 // Create Axios instance
-// CRITICAL: Must use absolute URL for API calls to backend server
+// DUAL-MODE SUPPORT:
+// - Browser context: Use relative URLs ("") - Next.js proxy will forward to backend
+// - Server context (SSR): Use absolute URL for Docker internal network
 const API_BASE_URL = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181")
-  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181");
+  ? "" // Browser: relative paths work with Next.js proxy (local dev) or same-origin (Docker)
+  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"); // SSR: absolute URL
 
-console.log('[API Client] Base URL:', API_BASE_URL); // Debug log
+console.log('[API Client] Base URL:', API_BASE_URL, '(context:', typeof window !== 'undefined' ? 'browser' : 'server', ')'); // Debug log
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -653,6 +655,22 @@ export const progressApi = {
    */
   stop: async (progressId: string): Promise<StopOperationResponse> => {
     const response = await apiClient.post(`/api/knowledge-items/stop/${progressId}`);
+    return response.data;
+  },
+
+  /**
+   * Pause an ongoing crawl operation
+   */
+  pause: async (progressId: string): Promise<{success: boolean; message: string; progressId: string}> => {
+    const response = await apiClient.post(`/api/knowledge-items/pause/${progressId}`);
+    return response.data;
+  },
+
+  /**
+   * Resume a paused crawl operation
+   */
+  resume: async (progressId: string): Promise<{success: boolean; message: string; progressId: string}> => {
+    const response = await apiClient.post(`/api/knowledge-items/resume/${progressId}`);
     return response.data;
   },
 };

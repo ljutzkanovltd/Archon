@@ -265,7 +265,8 @@ services:
     ports:
       - "${ARCHON_UI_NEXTJS_PORT:-3738}:3738"
     environment:
-      - NEXT_PUBLIC_API_URL=http://${HOST:-localhost}:${ARCHON_SERVER_PORT:-8181}
+      # IMPORTANT: Use 'archon-server' not 'localhost' for Docker container-to-container communication
+      - NEXT_PUBLIC_API_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1
     networks:
@@ -300,13 +301,11 @@ networks:
   # Provides access to: Supabase AI (port 54323), LLM APIs (11434-11437), Qdrant, Neo4j
   sporterp-ai-unified:
     external: true
-    name: sporterp-ai-unified
 
   # External network for local-ai services (LLM APIs, n8n, Flowise, etc.)
   # Managed by local-ai-packaged
   localai_default:
     external: true
-    name: localai_default
 
   # External network for Supabase database access
   # Required for DATABASE_URI hostname resolution (supabase-ai-db:5432)
@@ -314,4 +313,3 @@ networks:
   # This is the default network where supabase-ai-db container resides
   supabase-ai_default:
     external: true
-    name: supabase-ai_default

@@ -67,6 +67,20 @@ class CredentialService:
                 # Initialize with standard Supabase client - no need for custom headers
                 self._supabase = create_client(url, key)
 
+                # Verify we're using service role key for proper permissions
+                if hasattr(self._supabase, 'auth') and hasattr(self._supabase.auth, 'headers'):
+                    auth_header = self._supabase.auth.headers.get('Authorization', '')
+                    if 'Bearer' in auth_header:
+                        # Service role keys are JWTs that start with eyJ
+                        if 'eyJ' in auth_header:
+                            logger.info("✓ Supabase client initialized with service role key")
+                        else:
+                            logger.warning("⚠️ Supabase client may not be using service role key")
+                    else:
+                        logger.warning("⚠️ No Authorization header found in Supabase client")
+                else:
+                    logger.debug("Could not verify Supabase authentication headers")
+
                 # Extract project ID from URL for logging purposes only
                 match = re.match(r"https://([^.]+)\.supabase\.co", url)
                 if match:
@@ -230,10 +244,21 @@ class CredentialService:
 
             # Upsert to database with proper conflict handling
             # Since we validate service key at startup, permission errors here indicate actual database issues
-            supabase.table("archon_settings").upsert(
+            result = supabase.table("archon_settings").upsert(
                 data,
                 on_conflict="key",  # Specify the unique column for conflict resolution
             ).execute()
+
+            # CRITICAL: Check if database write actually succeeded
+            if hasattr(result, 'error') and result.error:
+                error_msg = f"Database upsert failed for key '{key}': {result.error}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+
+            if not result.data:
+                error_msg = f"Database upsert returned no data for key '{key}' - write may have failed"
+                logger.error(error_msg)
+                raise Exception(error_msg)
 
             # Invalidate RAG settings cache if this is a rag_strategy setting
             if category == "rag_strategy":
@@ -739,6 +764,68 @@ class CredentialService:
             )
 
         return deployment.strip()
+
+    async def test_database_write(self) -> dict[str, Any]:
+        """
+        Test if we can write to archon_settings table.
+
+        Useful for debugging database permission issues.
+        Creates a test record, verifies it was created, then cleans up.
+
+        Returns:
+            dict with 'success' (bool) and 'message' or 'error' (str)
+        """
+        try:
+            supabase = self._get_supabase_client()
+
+            # Generate unique test key
+            test_key = f"_test_write_{int(time.time() * 1000)}"
+            test_data = {
+                "key": test_key,
+                "value": "test_value",
+                "encrypted_value": None,
+                "is_encrypted": False,
+                "category": "test",
+                "description": "Test write operation - will be deleted"
+            }
+
+            # Try to insert
+            logger.info(f"Testing database write with key: {test_key}")
+            result = supabase.table("archon_settings").insert(test_data).execute()
+
+            # Check for errors
+            if hasattr(result, 'error') and result.error:
+                return {
+                    "success": False,
+                    "error": f"Database insert failed: {result.error}"
+                }
+
+            if not result.data:
+                return {
+                    "success": False,
+                    "error": "Database insert returned no data"
+                }
+
+            logger.info(f"Test write successful, cleaning up test key: {test_key}")
+
+            # Clean up test record
+            delete_result = supabase.table("archon_settings").delete().eq("key", test_key).execute()
+
+            if hasattr(delete_result, 'error') and delete_result.error:
+                logger.warning(f"Test cleanup failed (record may remain): {delete_result.error}")
+
+            return {
+                "success": True,
+                "message": "Database write test passed - can write and delete records",
+                "test_key": test_key
+            }
+
+        except Exception as e:
+            logger.error(f"Database write test failed with exception: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
 
 # Global instance
