@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HiX, HiStop, HiRefresh } from "react-icons/hi";
+import { HiX, HiStop, HiRefresh, HiPause, HiPlay } from "react-icons/hi";
 import { AnimatePresence, motion } from "framer-motion";
 import { Progress, ProgressStatus } from "@/lib/types";
 import { progressApi } from "@/lib/apiClient";
@@ -22,6 +22,7 @@ export function CrawlingProgress({ className = "" }: CrawlingProgressProps) {
   const activeOperations = operations.filter((op: Progress) =>
     !["completed", "error", "failed", "cancelled"].includes(op.status)
   );
+  const hasPausedOperations = operations.some((op: Progress) => op.status === "paused");
 
   const handleStop = async (progressId: string) => {
     try {
@@ -31,6 +32,28 @@ export function CrawlingProgress({ className = "" }: CrawlingProgressProps) {
     } catch (error) {
       console.error("Failed to stop operation:", error);
       alert("Failed to stop operation. Please try again.");
+    }
+  };
+
+  const handlePause = async (progressId: string) => {
+    try {
+      await progressApi.pause(progressId);
+      // Refetch to update UI
+      refetch();
+    } catch (error) {
+      console.error("Failed to pause operation:", error);
+      alert("Failed to pause operation. Please try again.");
+    }
+  };
+
+  const handleResume = async (progressId: string) => {
+    try {
+      await progressApi.resume(progressId);
+      // Refetch to update UI
+      refetch();
+    } catch (error) {
+      console.error("Failed to resume operation:", error);
+      alert("Failed to resume operation. Please try again.");
     }
   };
 
@@ -94,6 +117,8 @@ export function CrawlingProgress({ className = "" }: CrawlingProgressProps) {
               <OperationCard
                 operation={operation}
                 onStop={handleStop}
+                onPause={handlePause}
+                onResume={handleResume}
               />
             </motion.div>
           ))}
@@ -113,10 +138,14 @@ export function CrawlingProgress({ className = "" }: CrawlingProgressProps) {
 interface OperationCardProps {
   operation: Progress;
   onStop: (progressId: string) => void;
+  onPause: (progressId: string) => void;
+  onResume: (progressId: string) => void;
 }
 
-function OperationCard({ operation, onStop }: OperationCardProps) {
+function OperationCard({ operation, onStop, onPause, onResume }: OperationCardProps) {
   const [isStopping, setIsStopping] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
 
   // Never-go-backwards logic: track previous progress values
   const [prevProgress, setPrevProgress] = useState<number>(0);
@@ -152,6 +181,24 @@ function OperationCard({ operation, onStop }: OperationCardProps) {
     }
   };
 
+  const handlePause = async () => {
+    setIsPausing(true);
+    try {
+      await onPause(operation.id);
+    } finally {
+      setIsPausing(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setIsResuming(true);
+    try {
+      await onResume(operation.id);
+    } finally {
+      setIsResuming(false);
+    }
+  };
+
   // Get status badge color
   const getStatusColor = (status: ProgressStatus) => {
     switch (status) {
@@ -163,6 +210,8 @@ function OperationCard({ operation, onStop }: OperationCardProps) {
       case "storing":
       case "document_storage":
         return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+      case "paused":
+        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
       case "completed":
         return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
       case "error":
@@ -225,15 +274,40 @@ function OperationCard({ operation, onStop }: OperationCardProps) {
             </span>
           </div>
         </div>
-        <button
-          onClick={handleStop}
-          disabled={isStopping}
-          className="ml-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
-          title="Stop operation"
-        >
-          <HiStop className="h-4 w-4" />
-          {isStopping ? "Stopping..." : "Stop"}
-        </button>
+        <div className="ml-4 flex items-center gap-2">
+          {operation.status === "paused" ? (
+            <button
+              onClick={handleResume}
+              disabled={isResuming}
+              className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30"
+              title="Resume operation"
+            >
+              <HiPlay className="h-4 w-4" />
+              {isResuming ? "Resuming..." : "Resume"}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handlePause}
+                disabled={isPausing}
+                className="flex items-center gap-2 rounded-lg bg-yellow-50 px-3 py-1.5 text-sm font-medium text-yellow-700 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/30"
+                title="Pause operation"
+              >
+                <HiPause className="h-4 w-4" />
+                {isPausing ? "Pausing..." : "Pause"}
+              </button>
+              <button
+                onClick={handleStop}
+                disabled={isStopping}
+                className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                title="Stop operation"
+              >
+                <HiStop className="h-4 w-4" />
+                {isStopping ? "Stopping..." : "Stop"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Progress Bar */}

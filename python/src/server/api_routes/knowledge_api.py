@@ -1528,7 +1528,16 @@ async def stop_crawl_task(progress_id: str):
         # Step 3: Remove from active orchestrations registry
         await unregister_orchestration(progress_id)
 
-        # Step 4: Update progress tracker to reflect cancellation (only if we found and cancelled something)
+        # Step 4: Clean up any saved pause state
+        try:
+            from ..services.crawling.state_manager import CrawlStateManager
+            state_manager = CrawlStateManager(get_supabase_client())
+            await state_manager.delete_state(progress_id)
+        except Exception as e:
+            # Best effort - don't fail if state cleanup fails
+            logger.warning(f"Failed to clean up pause state | progress_id={progress_id} | error={e}")
+
+        # Step 5: Update progress tracker to reflect cancellation (only if we found and cancelled something)
         if found:
             try:
                 from ..utils.progress.progress_tracker import ProgressTracker
@@ -1561,5 +1570,170 @@ async def stop_crawl_task(progress_id: str):
     except Exception as e:
         safe_logfire_error(
             f"Failed to stop crawl task | error={str(e)} | progress_id={progress_id}"
+        )
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/knowledge-items/pause/{progress_id}")
+async def pause_crawl_task(progress_id: str):
+    """Pause a running crawl task, saving state for later resume."""
+    try:
+        from ..services.crawling import get_active_orchestration
+        from ..utils.progress.progress_tracker import ProgressTracker
+
+        safe_logfire_info(f"Pause crawl requested | progress_id={progress_id}")
+
+        # Step 1: Check if crawl task exists
+        orchestration = await get_active_orchestration(progress_id)
+        if not orchestration and progress_id not in active_crawl_tasks:
+            raise HTTPException(status_code=404, detail={"error": "No active task for given progress_id"})
+
+        # Step 2: Set pause flag on orchestration service
+        if orchestration:
+            orchestration.request_pause()
+            safe_logfire_info(f"Pause flag set on orchestration | progress_id={progress_id}")
+
+        # Step 3: Update progress tracker to show pausing status
+        try:
+            current_state = ProgressTracker.get_progress(progress_id)
+            current_progress = current_state.get("progress", 0) if current_state else 0
+
+            tracker = ProgressTracker(progress_id, operation_type="crawl")
+            await tracker.update(
+                status="pausing",
+                progress=current_progress,
+                log="Pausing crawl, saving state..."
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update progress tracker during pause | error={e}")
+
+        # Note: Actual state saving happens in crawling service when it detects pause flag
+        # The crawl will gracefully exit and save state to archon_crawl_state table
+
+        safe_logfire_info(f"Crawl pause initiated | progress_id={progress_id}")
+        return {
+            "success": True,
+            "message": "Crawl pause initiated. State will be saved automatically.",
+            "progressId": progress_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(
+            f"Failed to pause crawl task | error={str(e)} | progress_id={progress_id}"
+        )
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/knowledge-items/resume/{progress_id}")
+async def resume_crawl_task(progress_id: str):
+    """Resume a paused crawl from saved state."""
+    try:
+        from ..services.crawling.state_manager import CrawlStateManager
+        from ..utils.progress.progress_tracker import ProgressTracker
+
+        safe_logfire_info(f"Resume crawl requested | progress_id={progress_id}")
+
+        # Step 1: Load saved state
+        supabase_client = get_supabase_client()
+        state_manager = CrawlStateManager(supabase_client)
+        saved_state = await state_manager.load_state(progress_id)
+
+        if not saved_state:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "No saved state found for this progress_id. Crawl may have completed or been cancelled."}
+            )
+
+        if saved_state["status"] != "paused":
+            raise HTTPException(
+                status_code=400,
+                detail={"error": f"Crawl is not paused (current status: {saved_state['status']})"}
+            )
+
+        # Step 2: Update status to resumed
+        await state_manager.update_status(progress_id, "resumed", resumed_at=datetime.utcnow())
+
+        # Step 3: Restore original request and add resume flag
+        original_request = saved_state["original_request"]
+        original_request["_resume_state"] = {
+            "crawl_results": saved_state["crawl_results"],
+            "pending_urls": saved_state["pending_urls"],
+            "visited_urls": list(saved_state["visited_urls"]),
+            "current_depth": saved_state["current_depth"],
+            "pages_crawled": saved_state["pages_crawled"],
+        }
+
+        # Step 4: Create new crawl task with restored state
+        # Acquire semaphore for concurrent crawl limiting
+        acquired = await crawl_semaphore.acquire()
+        if not acquired:
+            raise HTTPException(
+                status_code=503,
+                detail={"error": f"Server at capacity ({CONCURRENT_CRAWL_LIMIT} concurrent crawls). Please try again later."}
+            )
+
+        try:
+            # Initialize progress tracker for resumed crawl
+            tracker = ProgressTracker(progress_id, operation_type="crawl")
+            await tracker.start({
+                "status": "resuming",
+                "progress": saved_state["progress_percent"],
+                "log": f"Resuming crawl from {saved_state['pages_crawled']}/{saved_state['total_pages']} pages",
+                "pages_crawled": saved_state["pages_crawled"],
+                "total_pages": saved_state["total_pages"],
+            })
+
+            # Create crawling service with restored state
+            crawling_service = CrawlingService(
+                crawler=get_crawler(),
+                supabase_client=supabase_client,
+                progress_id=progress_id,
+            )
+
+            # Start resumed crawl as background task
+            async def run_resumed_crawl():
+                try:
+                    result = await crawling_service.orchestrate_crawl(original_request)
+                    safe_logfire_info(f"Resumed crawl completed | progress_id={progress_id} | result={result}")
+
+                    # Clean up saved state after successful completion
+                    await state_manager.delete_state(progress_id)
+
+                except Exception as e:
+                    safe_logfire_error(f"Resumed crawl failed | progress_id={progress_id} | error={e}")
+                    await tracker.update(
+                        status="failed",
+                        progress=saved_state["progress_percent"],
+                        log=f"Resumed crawl failed: {str(e)}"
+                    )
+                finally:
+                    crawl_semaphore.release()
+                    if progress_id in active_crawl_tasks:
+                        del active_crawl_tasks[progress_id]
+
+            # Start task and track it
+            task = asyncio.create_task(run_resumed_crawl())
+            active_crawl_tasks[progress_id] = task
+
+        except Exception:
+            crawl_semaphore.release()
+            raise
+
+        safe_logfire_info(f"Crawl resumed successfully | progress_id={progress_id}")
+        return {
+            "success": True,
+            "message": "Crawl resumed successfully",
+            "progressId": progress_id,
+            "pages_crawled": saved_state["pages_crawled"],
+            "total_pages": saved_state["total_pages"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(
+            f"Failed to resume crawl task | error={str(e)} | progress_id={progress_id}"
         )
         raise HTTPException(status_code=500, detail={"error": str(e)})

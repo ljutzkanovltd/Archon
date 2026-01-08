@@ -23,6 +23,7 @@ from ..credential_service import credential_service
 from .discovery_service import DiscoveryService
 from .document_storage_operations import DocumentStorageOperations
 from .helpers.site_config import SiteConfig
+from .state_manager import CrawlStateManager
 
 # Import helpers
 from .helpers.url_handler import URLHandler
@@ -139,6 +140,18 @@ class CrawlingService:
         self.progress_mapper = ProgressMapper()
         # Cancellation support
         self._cancelled = False
+        # Pause support
+        self._paused = False
+        self.state_manager = CrawlStateManager(self.supabase_client)
+        # Track crawl state for pause/resume
+        self._crawl_state = {
+            "crawl_results": [],
+            "pending_urls": [],
+            "visited_urls": set(),
+            "current_depth": 0,
+            "max_depth": 0,
+            "original_request": {},
+        }
 
     def set_progress_id(self, progress_id: str):
         """Set the progress ID for HTTP polling updates."""
@@ -161,6 +174,59 @@ class CrawlingService:
         """Check if cancelled and raise an exception if so."""
         if self._cancelled:
             raise asyncio.CancelledError("Crawl operation was cancelled by user")
+
+    def request_pause(self):
+        """Request pause of the crawl operation."""
+        self._paused = True
+        safe_logfire_info(f"Crawl pause requested | progress_id={self.progress_id}")
+
+    def is_paused(self) -> bool:
+        """Check if the crawl operation has been paused."""
+        return self._paused
+
+    async def _check_pause(self):
+        """Check if paused and save state if so."""
+        if self._paused:
+            await self._save_pause_state()
+            # Create custom exception for pause
+            class PausedException(Exception):
+                """Exception raised when crawl is paused."""
+                pass
+            raise PausedException("Crawl operation was paused by user")
+
+    async def _save_pause_state(self):
+        """Save current crawl state for later resume."""
+        if not self.progress_id:
+            safe_logfire_error("Cannot save pause state without progress_id")
+            return
+
+        try:
+            # Get current progress for saving
+            current_progress = self.progress_mapper.get_current_progress()
+
+            # Save state to database
+            await self.state_manager.save_state(
+                progress_id=self.progress_id,
+                crawl_type=self._crawl_state.get("crawl_type", "normal"),
+                crawl_results=self._crawl_state.get("crawl_results", []),
+                pending_urls=self._crawl_state.get("pending_urls", []),
+                visited_urls=self._crawl_state.get("visited_urls", set()),
+                current_depth=self._crawl_state.get("current_depth", 0),
+                max_depth=self._crawl_state.get("max_depth", 1),
+                pages_crawled=len(self._crawl_state.get("crawl_results", [])),
+                total_pages=self._crawl_state.get("total_pages", 0),
+                progress_percent=current_progress,
+                original_request=self._crawl_state.get("original_request", {}),
+                source_id=self._crawl_state.get("source_id"),
+            )
+
+            safe_logfire_info(
+                f"Crawl state saved successfully | progress_id={self.progress_id} | "
+                f"pages_crawled={len(self._crawl_state.get('crawl_results', []))} | "
+                f"pending_urls={len(self._crawl_state.get('pending_urls', []))}"
+            )
+        except Exception as e:
+            safe_logfire_error(f"Failed to save pause state | progress_id={self.progress_id} | error={e}")
 
     async def _create_crawl_progress_callback(
         self, base_status: str
@@ -346,6 +412,30 @@ class CrawlingService:
             url = str(request.get("url", ""))
             safe_logfire_info(f"Starting async crawl orchestration | url={url} | task_id={task_id}")
 
+            # Check if this is a resume operation
+            resume_state = request.get("_resume_state")
+            if resume_state:
+                safe_logfire_info(f"Resuming crawl from saved state | progress_id={self.progress_id}")
+                # Restore crawl state
+                self._crawl_state = {
+                    "crawl_results": resume_state.get("crawl_results", []),
+                    "pending_urls": resume_state.get("pending_urls", []),
+                    "visited_urls": set(resume_state.get("visited_urls", [])),
+                    "current_depth": resume_state.get("current_depth", 0),
+                    "pages_crawled": resume_state.get("pages_crawled", 0),
+                    "original_request": request,
+                }
+                # Update progress mapper to resume from saved progress
+                if self.progress_tracker:
+                    await self.progress_tracker.update(
+                        status="resuming",
+                        progress=resume_state.get("progress_percent", 0),
+                        log=f"Resuming crawl from {resume_state.get('pages_crawled', 0)} pages"
+                    )
+            else:
+                # Store original request for potential pause
+                self._crawl_state["original_request"] = request
+
             # Start the progress tracker if available
             if self.progress_tracker:
                 await self.progress_tracker.start({
@@ -385,6 +475,8 @@ class CrawlingService:
 
             # Check for cancellation before proceeding
             self._check_cancellation()
+            # Check for pause before proceeding
+            await self._check_pause()
 
             # Discovery phase - find the single best related file
             discovered_urls = []
@@ -494,8 +586,17 @@ class CrawlingService:
                     crawl_type=crawl_type
                 )
 
+            # Update crawl state for potential pause
+            self._crawl_state.update({
+                "crawl_results": crawl_results,
+                "crawl_type": crawl_type,
+                "max_depth": request.get("max_depth", 1),
+            })
+
             # Check for cancellation after crawling
             self._check_cancellation()
+            # Check for pause after crawling
+            await self._check_pause()
 
             # Send heartbeat after potentially long crawl operation
             await send_heartbeat_if_needed()
@@ -508,6 +609,8 @@ class CrawlingService:
 
             # Check for cancellation before document processing
             self._check_cancellation()
+            # Check for pause before document processing
+            await self._check_pause()
 
             # Calculate total work units for accurate progress tracking
             total_pages = len(crawl_results)
@@ -574,8 +677,16 @@ class CrawlingService:
                     f"Updated progress tracker with source_id | progress_id={self.progress_id} | source_id={storage_results['source_id']}"
                 )
 
+            # Update crawl state with document storage results
+            self._crawl_state.update({
+                "source_id": storage_results.get("source_id"),
+                "total_pages": total_pages,
+            })
+
             # Check for cancellation after document storage
             self._check_cancellation()
+            # Check for pause after document storage
+            await self._check_pause()
 
             # Send heartbeat after document storage
             await send_heartbeat_if_needed()
@@ -596,6 +707,8 @@ class CrawlingService:
             if request.get("extract_code_examples", True) and actual_chunks_stored > 0:
                 # Check for cancellation before starting code extraction
                 self._check_cancellation()
+                # Check for pause before starting code extraction
+                await self._check_pause()
 
                 await update_mapped_progress("code_extraction", 0, "Starting code extraction...")
 
@@ -665,6 +778,8 @@ class CrawlingService:
 
                 # Check for cancellation after code extraction
                 self._check_cancellation()
+                # Check for pause after code extraction
+                await self._check_pause()
 
                 # Send heartbeat after code extraction
                 await send_heartbeat_if_needed()
@@ -726,6 +841,33 @@ class CrawlingService:
                     f"Unregistered orchestration service on cancellation | progress_id={self.progress_id}"
                 )
         except Exception as e:
+            # Check if this is a pause exception
+            if e.__class__.__name__ == "PausedException":
+                safe_logfire_info(f"Crawl operation paused | progress_id={self.progress_id}")
+                # Use ProgressMapper to get proper progress value for paused state
+                paused_progress = self.progress_mapper.get_current_progress()
+                await self._handle_progress_update(
+                    task_id,
+                    {
+                        "status": "paused",
+                        "progress": paused_progress,
+                        "log": "Crawl operation was paused by user. State has been saved.",
+                    },
+                )
+                # Mark as paused in progress tracker
+                if self.progress_tracker:
+                    await self.progress_tracker.update(
+                        status="paused",
+                        progress=paused_progress,
+                        log="Crawl paused successfully. Use Resume to continue from this point."
+                    )
+                # Unregister on pause
+                if self.progress_id:
+                    await unregister_orchestration(self.progress_id)
+                    safe_logfire_info(
+                        f"Unregistered orchestration service on pause | progress_id={self.progress_id}"
+                    )
+                return  # Exit gracefully without marking as error
             # Log full stack trace for debugging
             logger.error("Async crawl orchestration failed", exc_info=True)
             safe_logfire_error(f"Async crawl orchestration failed | error={str(e)}")
