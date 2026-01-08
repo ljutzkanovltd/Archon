@@ -39,3 +39,4 @@ config/*.local
 
 # Task tracking (temporary)
 docs/tasks/
+crawl-progress.log
