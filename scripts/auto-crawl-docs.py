@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 # Configuration
 API_BASE = "http://localhost:8181"
-MAX_CONCURRENT = 3
+MAX_CONCURRENT = 2  # Reduced from 3 to lower DB pressure
 CHECK_INTERVAL = 30  # seconds between progress checks
 
 # Documentation sources to crawl (in priority order)
@@ -165,13 +165,10 @@ def main():
     log_info(f"Check interval: {CHECK_INTERVAL}s")
     log_info("=" * 50)
 
-    # Add currently running crawls
-    active_crawls = {
-        "d4035f13-65ed-42f7-9029-c4a8b2d0c3bd": "https://supabase.com/llms.txt",
-        "147a1478-14f8-40de-be69-ca78eda0938f": "https://zod.dev/llms.txt",
-        "b6f9bf82-696a-435c-a5be-9b0d03f1795a": "https://docs.stripe.com",
-    }
-    log_info(f"Monitoring {len(active_crawls)} existing crawls")
+    # Start fresh - no active crawls (previous progress IDs invalid after restart)
+    # Already indexed sources will be skipped via get_indexed_sources()
+    active_crawls = {}
+    log_info("Starting fresh (will skip already indexed sources)")
 
     # Get already indexed sources
     indexed_urls = get_indexed_sources()

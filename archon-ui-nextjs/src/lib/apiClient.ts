@@ -566,7 +566,7 @@ export const knowledgeBaseApi = {
    * Update knowledge source metadata
    */
   updateSource: async (sourceId: string, data: import("./types").SourceUpdateRequest): Promise<ApiResponse<import("./types").KnowledgeSource>> => {
-    const response = await apiClient.patch(`/api/rag/sources/${sourceId}`, data);
+    const response = await apiClient.put(`/api/knowledge-items/${sourceId}`, data);
     return response.data;
   },
 
@@ -574,7 +574,7 @@ export const knowledgeBaseApi = {
    * Delete knowledge source
    */
   deleteSource: async (sourceId: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete(`/api/rag/sources/${sourceId}`);
+    const response = await apiClient.delete(`/api/knowledge-items/${sourceId}`);
     return response.data;
   },
 
