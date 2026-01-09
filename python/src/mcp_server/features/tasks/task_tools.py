@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
 
+from src.mcp_server.utils import track_tool_execution
 from src.mcp_server.utils.error_handling import MCPErrorFormatter
 from src.mcp_server.utils.timeout_config import get_default_timeout
 from src.server.config.service_discovery import get_api_url
@@ -52,6 +53,7 @@ def register_task_tools(mcp: FastMCP):
     """Register consolidated task management tools with the MCP server."""
 
     @mcp.tool()
+    @track_tool_execution
     async def find_tasks(
         ctx: Context,
         query: str | None = None,  # Add search capability
@@ -197,6 +199,7 @@ def register_task_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "list tasks")
 
     @mcp.tool()
+    @track_tool_execution
     async def manage_task(
         ctx: Context,
         action: str,  # "create" | "update" | "delete"
@@ -373,6 +376,7 @@ def register_task_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, f"{action} task")
 
     @mcp.tool()
+    @track_tool_execution
     async def get_task_history(
         ctx: Context,
         task_id: str,
@@ -435,6 +439,7 @@ def register_task_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "get task history")
 
     @mcp.tool()
+    @track_tool_execution
     async def get_completion_stats(
         ctx: Context,
         project_id: str | None = None,
@@ -498,6 +503,7 @@ def register_task_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "get completion stats")
 
     @mcp.tool()
+    @track_tool_execution
     async def get_task_versions(
         ctx: Context,
         task_id: str,

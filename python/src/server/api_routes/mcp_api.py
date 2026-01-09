@@ -274,6 +274,12 @@ async def get_mcp_clients(
                     "connected_at": session["connected_at"],
                     "last_activity": session["last_activity"],
                     "status": session["status"],
+                    "disconnected_at": session.get("disconnected_at"),
+                    "total_duration": session.get("total_duration"),
+                    "disconnect_reason": session.get("disconnect_reason"),
+                    "user_id": session.get("user_id"),
+                    "user_email": session.get("user_email"),
+                    "user_name": session.get("user_name"),
                 })
 
             api_logger.debug(f"Getting MCP clients - found {len(clients)} active clients")
@@ -323,6 +329,100 @@ async def get_mcp_sessions():
             return session_info
         except Exception as e:
             api_logger.error(f"Failed to get MCP sessions - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/sessions/disconnected")
+async def get_disconnected_sessions(
+    days: int = Query(7, ge=1, le=30, description="Number of days to look back (default: 7)"),
+    limit: int = Query(50, le=200, description="Maximum number of sessions to return")
+):
+    """
+    Get disconnected sessions with duration and disconnect reason statistics.
+
+    Shows recently disconnected sessions for debugging and monitoring purposes.
+    Useful for understanding why clients disconnect and session duration patterns.
+    """
+    with safe_span("api_mcp_disconnected_sessions") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/sessions/disconnected")
+        safe_set_attribute(span, "days", days)
+        safe_set_attribute(span, "limit", limit)
+
+        try:
+            db_client = get_supabase_client()
+
+            # Calculate date range
+            end_dt = datetime.utcnow()
+            start_dt = end_dt - timedelta(days=days)
+
+            # Get disconnected sessions
+            result = db_client.table("archon_mcp_sessions")\
+                .select("*")\
+                .eq("status", "disconnected")\
+                .gte("disconnected_at", start_dt.isoformat())\
+                .order("disconnected_at", desc=True)\
+                .limit(limit)\
+                .execute()
+
+            sessions = result.data
+
+            # Get request counts for each session
+            for session in sessions:
+                requests_result = db_client.table("archon_mcp_requests")\
+                    .select("request_id", count="exact")\
+                    .eq("session_id", session["session_id"])\
+                    .execute()
+
+                session["total_requests"] = requests_result.count if hasattr(requests_result, 'count') else 0
+
+            # Calculate statistics
+            if sessions:
+                disconnect_reasons = {}
+                total_duration = 0
+                durations = []
+
+                for session in sessions:
+                    # Count disconnect reasons
+                    reason = session.get("disconnect_reason", "unknown")
+                    disconnect_reasons[reason] = disconnect_reasons.get(reason, 0) + 1
+
+                    # Calculate duration stats
+                    if session.get("total_duration"):
+                        total_duration += session["total_duration"]
+                        durations.append(session["total_duration"])
+
+                stats = {
+                    "total_disconnected": len(sessions),
+                    "disconnect_reasons": disconnect_reasons,
+                    "avg_duration_seconds": round(total_duration / len(sessions), 2) if sessions else 0,
+                    "max_duration_seconds": max(durations) if durations else 0,
+                    "min_duration_seconds": min(durations) if durations else 0,
+                }
+            else:
+                stats = {
+                    "total_disconnected": 0,
+                    "disconnect_reasons": {},
+                    "avg_duration_seconds": 0,
+                    "max_duration_seconds": 0,
+                    "min_duration_seconds": 0,
+                }
+
+            api_logger.debug(f"Retrieved {len(sessions)} disconnected sessions")
+            safe_set_attribute(span, "session_count", len(sessions))
+
+            return {
+                "sessions": sessions,
+                "statistics": stats,
+                "period": {
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                    "days": days
+                }
+            }
+
+        except Exception as e:
+            api_logger.error(f"Failed to get disconnected sessions - error={str(e)}")
             safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -514,6 +614,435 @@ async def get_llm_pricing(
 
         except Exception as e:
             api_logger.error(f"Failed to get pricing data - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/errors")
+async def get_mcp_errors(
+    severity: str = Query("all", description="Filter by severity: error | timeout | all"),
+    limit: int = Query(50, le=200, description="Maximum number of errors to return"),
+    session_id: Optional[str] = Query(None, description="Filter by session ID")
+):
+    """
+    Get recent MCP errors and timeouts with summary statistics.
+
+    Returns error logs with session context and tool names for debugging.
+    Supports filtering by severity and session.
+    """
+    with safe_span("api_mcp_errors") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/errors")
+        safe_set_attribute(span, "severity_filter", severity)
+        safe_set_attribute(span, "limit", limit)
+
+        try:
+            db_client = get_supabase_client()
+
+            # Build base query for errors
+            query = db_client.table("archon_mcp_requests")\
+                .select("*")\
+                .order("timestamp", desc=True)\
+                .limit(limit)
+
+            # Apply severity filter
+            if severity == "error":
+                query = query.eq("status", "error")
+            elif severity == "timeout":
+                query = query.eq("status", "timeout")
+            elif severity == "all":
+                query = query.in_("status", ["error", "timeout"])
+            else:
+                # Invalid severity, default to all
+                query = query.in_("status", ["error", "timeout"])
+
+            # Apply session filter if provided
+            if session_id:
+                query = query.eq("session_id", session_id)
+                safe_set_attribute(span, "session_id", session_id)
+
+            result = query.execute()
+            errors = result.data
+
+            # Calculate error summary statistics
+            error_count = len([e for e in errors if e.get("status") == "error"])
+            timeout_count = len([e for e in errors if e.get("status") == "timeout"])
+            last_error = errors[0] if errors else None
+
+            # Calculate error rate (need total requests for context)
+            # Get total requests in same time period as oldest error
+            error_rate_percent = 0.0
+            if errors and len(errors) > 0:
+                oldest_error_time = errors[-1].get("timestamp")
+
+                # Count total requests since oldest error
+                total_result = db_client.table("archon_mcp_requests")\
+                    .select("request_id", count="exact")\
+                    .gte("timestamp", oldest_error_time)\
+                    .execute()
+
+                total_requests = total_result.count if hasattr(total_result, 'count') else 0
+                if total_requests > 0:
+                    error_rate_percent = round((len(errors) / total_requests) * 100, 2)
+
+            summary = {
+                "error_count": error_count,
+                "timeout_count": timeout_count,
+                "last_error_at": last_error.get("timestamp") if last_error else None,
+                "error_rate_percent": error_rate_percent
+            }
+
+            api_logger.debug(f"Retrieved {len(errors)} MCP errors - severity={severity}")
+            safe_set_attribute(span, "error_count", len(errors))
+            safe_set_attribute(span, "error_rate", error_rate_percent)
+
+            return {
+                "errors": errors,
+                "summary": summary,
+                "total": len(errors)
+            }
+
+        except Exception as e:
+            api_logger.error(f"Failed to get MCP errors - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/analytics")
+async def get_mcp_analytics(
+    days: int = Query(30, ge=1, le=90, description="Number of days to analyze"),
+    compare: bool = Query(True, description="Include comparison with previous period")
+):
+    """
+    Get comprehensive MCP analytics including:
+    - Time-series tool usage trends
+    - Success/failure ratios
+    - Average response times by tool
+    - Peak usage times by hour
+    - Period comparison (current vs previous)
+    """
+    with safe_span("api_mcp_analytics") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/analytics")
+        safe_set_attribute(span, "days", days)
+        safe_set_attribute(span, "compare", compare)
+
+        try:
+            db_client = get_supabase_client()
+
+            # Calculate time ranges
+            current_end = datetime.utcnow()
+            current_start = current_end - timedelta(days=days)
+            previous_end = current_start
+            previous_start = previous_end - timedelta(days=days)
+
+            # Query current period requests
+            current_query = db_client.table("archon_mcp_requests")\
+                .select("*")\
+                .gte("timestamp", current_start.isoformat())\
+                .lte("timestamp", current_end.isoformat())\
+                .order("timestamp", desc=False)
+
+            current_result = current_query.execute()
+            current_requests = current_result.data
+
+            # Query previous period requests (for comparison)
+            previous_requests = []
+            if compare:
+                previous_query = db_client.table("archon_mcp_requests")\
+                    .select("*")\
+                    .gte("timestamp", previous_start.isoformat())\
+                    .lte("timestamp", previous_end.isoformat())\
+                    .order("timestamp", desc=False)
+
+                previous_result = previous_query.execute()
+                previous_requests = previous_result.data
+
+            # Calculate analytics
+            analytics = _calculate_analytics(current_requests, previous_requests if compare else None, days)
+
+            safe_set_attribute(span, "total_requests", len(current_requests))
+            safe_set_attribute(span, "previous_requests", len(previous_requests))
+
+            return analytics
+
+        except Exception as e:
+            api_logger.error(f"Failed to get MCP analytics - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _calculate_analytics(current_requests: list, previous_requests: Optional[list], days: int) -> dict:
+    """Calculate comprehensive analytics from request data."""
+    from collections import defaultdict
+
+    # Initialize analytics structure
+    analytics = {
+        "period": {
+            "days": days,
+            "start": (datetime.utcnow() - timedelta(days=days)).isoformat(),
+            "end": datetime.utcnow().isoformat()
+        },
+        "trends": {
+            "daily": [],  # [{date, requests, tokens, cost, success_rate}]
+            "hourly": []  # [{hour, requests, avg_duration}] for peak times
+        },
+        "ratios": {
+            "success": 0,
+            "error": 0,
+            "timeout": 0,
+            "success_rate": 0.0
+        },
+        "response_times": {
+            "by_tool": [],  # [{tool, avg_ms, min_ms, max_ms, count}]
+            "overall_avg": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+        },
+        "comparison": None  # {requests: {current, previous, change_percent}, ...}
+    }
+
+    if not current_requests:
+        return analytics
+
+    # Calculate daily trends
+    daily_data = defaultdict(lambda: {"requests": 0, "tokens": 0, "cost": 0.0, "successes": 0})
+    for req in current_requests:
+        date = req["timestamp"][:10]  # YYYY-MM-DD
+        daily_data[date]["requests"] += 1
+        daily_data[date]["tokens"] += req.get("total_tokens", 0)
+        daily_data[date]["cost"] += req.get("estimated_cost", 0.0)
+        if req.get("status") == "success":
+            daily_data[date]["successes"] += 1
+
+    analytics["trends"]["daily"] = [
+        {
+            "date": date,
+            "requests": data["requests"],
+            "tokens": data["tokens"],
+            "cost": round(data["cost"], 6),
+            "success_rate": round((data["successes"] / data["requests"]) * 100, 1) if data["requests"] > 0 else 0.0
+        }
+        for date, data in sorted(daily_data.items())
+    ]
+
+    # Calculate hourly patterns (peak usage times)
+    hourly_data = defaultdict(lambda: {"requests": 0, "total_duration": 0.0, "count_with_duration": 0})
+    for req in current_requests:
+        try:
+            hour = datetime.fromisoformat(req["timestamp"].replace("Z", "+00:00")).hour
+            hourly_data[hour]["requests"] += 1
+            if req.get("duration_ms") is not None:
+                hourly_data[hour]["total_duration"] += req["duration_ms"]
+                hourly_data[hour]["count_with_duration"] += 1
+        except Exception:
+            continue
+
+    analytics["trends"]["hourly"] = [
+        {
+            "hour": hour,
+            "requests": data["requests"],
+            "avg_duration": round(data["total_duration"] / data["count_with_duration"], 2) if data["count_with_duration"] > 0 else 0.0
+        }
+        for hour, data in sorted(hourly_data.items())
+    ]
+
+    # Calculate success/failure ratios
+    status_counts = defaultdict(int)
+    for req in current_requests:
+        status_counts[req.get("status", "unknown")] += 1
+
+    total_requests = len(current_requests)
+    analytics["ratios"] = {
+        "success": status_counts["success"],
+        "error": status_counts["error"],
+        "timeout": status_counts["timeout"],
+        "success_rate": round((status_counts["success"] / total_requests) * 100, 1) if total_requests > 0 else 0.0
+    }
+
+    # Calculate response times by tool
+    tool_times = defaultdict(list)
+    all_durations = []
+    for req in current_requests:
+        if req.get("duration_ms") is not None and req.get("tool_name"):
+            tool_times[req["tool_name"]].append(req["duration_ms"])
+            all_durations.append(req["duration_ms"])
+
+    analytics["response_times"]["by_tool"] = [
+        {
+            "tool": tool,
+            "avg_ms": round(sum(durations) / len(durations), 2),
+            "min_ms": min(durations),
+            "max_ms": max(durations),
+            "count": len(durations)
+        }
+        for tool, durations in sorted(tool_times.items(), key=lambda x: sum(x[1]) / len(x[1]))
+    ]
+
+    # Calculate overall percentiles
+    if all_durations:
+        all_durations.sort()
+        n = len(all_durations)
+        analytics["response_times"]["overall_avg"] = round(sum(all_durations) / n, 2)
+        analytics["response_times"]["p50"] = all_durations[int(n * 0.50)]
+        analytics["response_times"]["p95"] = all_durations[int(n * 0.95)] if n > 1 else all_durations[0]
+        analytics["response_times"]["p99"] = all_durations[int(n * 0.99)] if n > 1 else all_durations[0]
+
+    # Calculate comparison with previous period
+    if previous_requests is not None:
+        prev_status_counts = defaultdict(int)
+        prev_total_tokens = 0
+        prev_total_cost = 0.0
+
+        for req in previous_requests:
+            prev_status_counts[req.get("status", "unknown")] += 1
+            prev_total_tokens += req.get("total_tokens", 0)
+            prev_total_cost += req.get("estimated_cost", 0.0)
+
+        curr_total_tokens = sum(req.get("total_tokens", 0) for req in current_requests)
+        curr_total_cost = sum(req.get("estimated_cost", 0.0) for req in current_requests)
+
+        def calc_change(current, previous):
+            if previous == 0:
+                return 100.0 if current > 0 else 0.0
+            return round(((current - previous) / previous) * 100, 1)
+
+        analytics["comparison"] = {
+            "requests": {
+                "current": total_requests,
+                "previous": len(previous_requests),
+                "change_percent": calc_change(total_requests, len(previous_requests))
+            },
+            "success_rate": {
+                "current": analytics["ratios"]["success_rate"],
+                "previous": round((prev_status_counts["success"] / len(previous_requests)) * 100, 1) if len(previous_requests) > 0 else 0.0,
+                "change_percent": calc_change(
+                    analytics["ratios"]["success_rate"],
+                    (prev_status_counts["success"] / len(previous_requests)) * 100 if len(previous_requests) > 0 else 0
+                )
+            },
+            "tokens": {
+                "current": curr_total_tokens,
+                "previous": prev_total_tokens,
+                "change_percent": calc_change(curr_total_tokens, prev_total_tokens)
+            },
+            "cost": {
+                "current": round(curr_total_cost, 6),
+                "previous": round(prev_total_cost, 6),
+                "change_percent": calc_change(curr_total_cost, prev_total_cost)
+            }
+        }
+
+    return analytics
+
+
+@router.get("/logs")
+async def get_mcp_logs(
+    level: Optional[str] = Query(None, description="Filter by log level: info | warning | error | all"),
+    search: Optional[str] = Query(None, description="Search in tool name or error message"),
+    session_id: Optional[str] = Query(None, description="Filter by session ID"),
+    limit: int = Query(100, le=1000, description="Maximum number of logs to return"),
+    offset: int = Query(0, ge=0, description="Number of logs to skip")
+):
+    """
+    Get MCP request logs with filtering and search.
+
+    Log levels are mapped from request status:
+    - info: successful requests (status = success)
+    - warning: timeout requests (status = timeout)
+    - error: failed requests (status = error)
+    """
+    with safe_span("api_mcp_logs") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/logs")
+        safe_set_attribute(span, "level", level or "all")
+        safe_set_attribute(span, "search", search or "")
+        safe_set_attribute(span, "limit", limit)
+        safe_set_attribute(span, "offset", offset)
+
+        try:
+            db_client = get_supabase_client()
+
+            # Build query
+            query = db_client.table("archon_mcp_requests")\
+                .select("*")\
+                .order("timestamp", desc=True)
+
+            # Apply level filter (map to status)
+            if level and level != "all":
+                if level == "info":
+                    query = query.eq("status", "success")
+                elif level == "warning":
+                    query = query.eq("status", "timeout")
+                elif level == "error":
+                    query = query.eq("status", "error")
+
+            # Apply session filter
+            if session_id:
+                query = query.eq("session_id", session_id)
+
+            # Apply search filter (tool name or error message)
+            if search:
+                # Supabase doesn't support OR in a single query easily,
+                # so we'll fetch and filter in Python
+                pass  # Will filter after fetch
+
+            # Get total count before pagination
+            count_query = db_client.table("archon_mcp_requests").select("*", count="exact")
+            if level and level != "all":
+                if level == "info":
+                    count_query = count_query.eq("status", "success")
+                elif level == "warning":
+                    count_query = count_query.eq("status", "timeout")
+                elif level == "error":
+                    count_query = count_query.eq("status", "error")
+            if session_id:
+                count_query = count_query.eq("session_id", session_id)
+
+            count_result = count_query.execute()
+            total_count = count_result.count if hasattr(count_result, 'count') else len(count_result.data)
+
+            # Apply pagination
+            query = query.range(offset, offset + limit - 1)
+
+            # Execute query
+            result = query.execute()
+            logs = result.data
+
+            # Apply search filter in Python if needed
+            if search:
+                search_lower = search.lower()
+                logs = [
+                    log for log in logs
+                    if (log.get("tool_name") and search_lower in log["tool_name"].lower()) or
+                       (log.get("error_message") and search_lower in log["error_message"].lower())
+                ]
+
+            # Map status to log level for each log
+            for log in logs:
+                status = log.get("status", "unknown")
+                if status == "success":
+                    log["level"] = "info"
+                elif status == "timeout":
+                    log["level"] = "warning"
+                elif status == "error":
+                    log["level"] = "error"
+                else:
+                    log["level"] = "debug"
+
+            safe_set_attribute(span, "total_logs", len(logs))
+            safe_set_attribute(span, "total_count", total_count)
+
+            return {
+                "logs": logs,
+                "pagination": {
+                    "total": total_count,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + len(logs)) < total_count
+                }
+            }
+
+        except Exception as e:
+            api_logger.error(f"Failed to get MCP logs - error={str(e)}")
             safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e)) from e
 

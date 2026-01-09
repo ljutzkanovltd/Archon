@@ -137,7 +137,7 @@ export function KnowledgeSourceCard({
           <div className="flex items-center gap-1 ml-auto">
             {/* View Button */}
             {onView && (
-              <Tooltip content="View source" style="light" trigger="hover,focus">
+              <Tooltip content="View source" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -155,7 +155,7 @@ export function KnowledgeSourceCard({
 
             {/* Edit Button */}
             {onEdit && (
-              <Tooltip content="Edit source" style="light" trigger="hover,focus">
+              <Tooltip content="Edit source" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -173,7 +173,7 @@ export function KnowledgeSourceCard({
 
             {/* Recrawl Button */}
             {onRecrawl && (
-              <Tooltip content="Recrawl source" style="light" trigger="hover,focus">
+              <Tooltip content="Recrawl source" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -191,7 +191,7 @@ export function KnowledgeSourceCard({
 
             {/* Delete Button */}
             {onDelete && (
-              <Tooltip content="Delete source" style="light" trigger="hover,focus">
+              <Tooltip content="Delete source" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {

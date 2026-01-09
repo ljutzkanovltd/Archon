@@ -165,6 +165,7 @@ export interface DataTableProps<T = any> {
   // Actions
   tableButtons?: DataTableButton[];
   rowButtons?: (item: T) => DataTableButton[];
+  onRowClick?: (item: T) => void;
 
   // View Configuration
   viewMode?: "table" | "list" | "grid" | "custom";
@@ -238,7 +239,9 @@ export function DataTable<T = any>({
   columnResizeMode = "onChange",
 }: DataTableProps<T>) {
   // Load persisted preferences if tableId is provided
-  const preferences = tableId ? useTablePreferences(tableId) : null;
+  // CRITICAL: Hooks must be called unconditionally (React Rules of Hooks)
+  // Pass empty string when tableId is undefined - the hook handles it gracefully
+  const preferences = useTablePreferences(tableId || '');
 
   return (
     <DataTableProvider

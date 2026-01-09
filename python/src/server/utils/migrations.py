@@ -43,7 +43,8 @@ async def check_table_exists(table_name: str) -> bool:
 
     try:
         # Connect directly to PostgreSQL
-        conn = await asyncpg.connect(database_uri)
+        # PgBouncer compatibility: Disable statement cache for transaction pooling mode (port 6543)
+        conn = await asyncpg.connect(database_uri, statement_cache_size=0)
         try:
             # Query information_schema to check if table exists
             query = """

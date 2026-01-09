@@ -10,7 +10,7 @@ import { ViewModeToggle, ViewMode as ToggleViewMode } from "../ViewModeToggle";
 export interface FilterConfig {
   field: string;
   label: string;
-  type: "select" | "multiselect" | "text" | "date" | "daterange";
+  type: "select" | "multiselect" | "text" | "date" | "daterange" | "boolean";
   options?: { value: string; label: string }[];
   placeholder?: string;
 }
@@ -171,9 +171,10 @@ export function DataTableSearchWithFilters({
               <div key={config.field}>
                 <Label
                   htmlFor={`filter-${config.field}`}
-                  value={config.label}
                   className="mb-2 block text-sm font-medium text-gray-900 dark:text-white"
-                />
+                >
+                  {config.label}
+                </Label>
                 {config.type === "select" && config.options && (
                   <Select
                     id={`filter-${config.field}`}

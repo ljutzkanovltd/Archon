@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 import httpx
 
 from mcp.server.fastmcp import Context, FastMCP
+from src.mcp_server.utils import track_tool_execution
 from src.mcp_server.utils.error_handling import MCPErrorFormatter
 from src.mcp_server.utils.timeout_config import (
     get_default_timeout,
@@ -54,6 +55,7 @@ def register_project_tools(mcp: FastMCP):
     """Register consolidated project management tools with the MCP server."""
 
     @mcp.tool()
+    @track_tool_execution
     async def find_projects(
         ctx: Context,
         project_id: str | None = None,  # For getting single project
@@ -145,6 +147,7 @@ def register_project_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "list projects")
 
     @mcp.tool()
+    @track_tool_execution
     async def manage_project(
         ctx: Context,
         action: str,  # "create" | "update" | "delete" | "archive" | "unarchive"

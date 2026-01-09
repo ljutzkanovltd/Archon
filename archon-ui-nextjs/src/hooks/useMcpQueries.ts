@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { mcpApi } from "@/lib/apiClient";
 import type { McpServerStatus, McpServerConfig, McpSessionInfo, McpClient } from "@/lib/types";
 
@@ -11,6 +11,13 @@ export const mcpKeys = {
   clients: () => [...mcpKeys.all, "clients"] as const,
   health: () => [...mcpKeys.all, "health"] as const,
   usage: (params?: { days?: number }) => [...mcpKeys.all, "usage", params] as const,
+  sessionDetails: (sessionId: string) => [...mcpKeys.all, "session", sessionId] as const,
+  errors: (params?: { severity?: string; limit?: number; sessionId?: string }) =>
+    [...mcpKeys.all, "errors", params] as const,
+  analytics: (params?: { days?: number; compare?: boolean }) =>
+    [...mcpKeys.all, "analytics", params] as const,
+  logs: (params?: { level?: string; search?: string; sessionId?: string }) =>
+    [...mcpKeys.all, "logs", params] as const,
 };
 
 /**
@@ -131,5 +138,125 @@ export function useMcpUsageStats(days: number = 30) {
     },
     refetchOnWindowFocus: true,
     staleTime: 15000, // 15 seconds stale time
+  });
+}
+
+/**
+ * Hook to fetch MCP session details with request history
+ * Smart polling: 10s when visible, 30s when hidden
+ *
+ * @param sessionId - Session UUID to fetch details for
+ * @returns Query result with session metadata, requests, and summary
+ */
+export function useSessionDetails(sessionId: string) {
+  return useQuery({
+    queryKey: mcpKeys.sessionDetails(sessionId),
+    queryFn: async () => {
+      const data = await mcpApi.getSessionDetails(sessionId);
+      return data;
+    },
+    refetchInterval: (query) => {
+      // Smart polling based on visibility
+      return typeof document !== "undefined" && document.hidden ? 30000 : 10000;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 5000, // 5 seconds stale time
+    enabled: !!sessionId, // Only fetch if sessionId is provided
+  });
+}
+
+/**
+ * Hook to fetch MCP errors with filtering
+ * Smart polling: 10s when visible, 60s when hidden
+ *
+ * @param params - Filter parameters (severity, limit, sessionId)
+ * @returns Query result with errors array and summary statistics
+ */
+export function useMcpErrors(params?: {
+  severity?: "error" | "timeout" | "all";
+  limit?: number;
+  sessionId?: string;
+}) {
+  return useQuery({
+    queryKey: mcpKeys.errors(params),
+    queryFn: async () => {
+      const data = await mcpApi.getErrors(params);
+      return data;
+    },
+    refetchInterval: (query) => {
+      // Smart polling based on visibility
+      return typeof document !== "undefined" && document.hidden ? 60000 : 10000;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 5000, // 5 seconds stale time
+  });
+}
+
+/**
+ * Hook to fetch comprehensive MCP analytics
+ * Smart polling: 30s when visible, 120s when hidden (slower than real-time data)
+ *
+ * @param params - Analytics parameters (days, compare)
+ * @returns Query result with trends, ratios, response times, and comparison
+ */
+export function useMcpAnalytics(params?: {
+  days?: number;
+  compare?: boolean;
+}) {
+  return useQuery({
+    queryKey: mcpKeys.analytics(params),
+    queryFn: async () => {
+      const data = await mcpApi.getAnalytics(params);
+      return data;
+    },
+    refetchInterval: (query) => {
+      // Slower polling for analytics (less real-time critical)
+      return typeof document !== "undefined" && document.hidden ? 120000 : 30000;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 15000, // 15 seconds stale time
+  });
+}
+
+/**
+ * Hook to fetch MCP logs with infinite scroll pagination
+ * Smart polling: 10s when visible, 60s when hidden
+ *
+ * @param params - Filter parameters (level, search, sessionId)
+ * @param pageSize - Number of logs per page (default: 100)
+ * @returns Infinite query result with pages of logs
+ */
+export function useMcpLogs(
+  params?: {
+    level?: "info" | "warning" | "error" | "all";
+    search?: string;
+    sessionId?: string;
+  },
+  pageSize: number = 100
+) {
+  return useInfiniteQuery({
+    queryKey: mcpKeys.logs(params),
+    queryFn: async ({ pageParam = 0 }) => {
+      const data = await mcpApi.getLogs({
+        ...params,
+        limit: pageSize,
+        offset: pageParam,
+      });
+      return data;
+    },
+    getNextPageParam: (lastPage) => {
+      // Return next offset if there are more pages
+      if (lastPage.pagination.has_more) {
+        return lastPage.pagination.offset + lastPage.pagination.limit;
+      }
+      return undefined; // No more pages
+    },
+    refetchInterval: (query) => {
+      // Smart polling based on visibility
+      return typeof document !== "undefined" && document.hidden ? 60000 : 10000;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 5000, // 5 seconds stale time
+    initialPageParam: 0,
   });
 }

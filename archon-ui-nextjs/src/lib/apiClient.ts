@@ -8,7 +8,8 @@ import {
   ProgressResponse,
   ProgressListResponse,
   ProgressDetailResponse,
-  StopOperationResponse
+  StopOperationResponse,
+  Progress
 } from "./types";
 
 // API Response types
@@ -36,13 +37,18 @@ export interface ApiError {
 
 // Create Axios instance
 // DUAL-MODE SUPPORT:
-// - Browser context: Use relative URLs ("") - Next.js proxy will forward to backend
-// - Server context (SSR): Use absolute URL for Docker internal network
+// - Browser context: Use relative URLs ("") - Next.js proxy handles routing
+// - Server context (SSR): Use API_SERVER_URL (Docker) or NEXT_PUBLIC_API_URL (local)
+//
+// URL Priority (SSR context):
+// 1. API_SERVER_URL (Docker service name like archon-server:8181)
+// 2. NEXT_PUBLIC_API_URL (fallback for hybrid mode)
+// 3. localhost:8181 (final fallback)
 const API_BASE_URL = typeof window !== 'undefined'
-  ? "" // Browser: relative paths work with Next.js proxy (local dev) or same-origin (Docker)
-  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"); // SSR: absolute URL
+  ? "" // Browser: relative paths work with Next.js proxy
+  : (process.env.API_SERVER_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181");
 
-console.log('[API Client] Base URL:', API_BASE_URL, '(context:', typeof window !== 'undefined' ? 'browser' : 'server', ')'); // Debug log
+console.log('[API Client] Base URL:', API_BASE_URL, '(context:', typeof window !== 'undefined' ? 'browser' : 'server', ')');
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -595,6 +601,52 @@ export const knowledgeBaseApi = {
     );
     return response.data;
   },
+
+  /**
+   * Search within crawled page content using hybrid search.
+   * Searches the archon_crawled_pages table using vector + full-text + RRF.
+   *
+   * @param params - Search parameters
+   * @param params.query - Search query text
+   * @param params.match_count - Number of results to fetch (default: 20)
+   * @param params.source_id - Optional source ID to filter results
+   * @param params.page - Page number for pagination (default: 1)
+   * @param params.per_page - Items per page (default: 20)
+   * @returns Paginated content search results
+   */
+  searchContent: async (params: {
+    query: string;
+    match_count?: number;
+    source_id?: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<{
+    success: boolean;
+    results: Array<{
+      id: string;
+      url: string;
+      chunk_number: number;
+      content: string;
+      metadata: Record<string, any>;
+      source_id: string;
+      similarity: number;
+      match_type: string;
+    }>;
+    total: number;
+    page: number;
+    per_page: number;
+    pages: number;
+    query: string;
+  }> => {
+    const response = await apiClient.post("/api/knowledge/search", {
+      query: params.query,
+      match_count: params.match_count || 20,
+      source_id: params.source_id,
+      page: params.page || 1,
+      per_page: params.per_page || 20,
+    });
+    return { success: true, ...response.data };
+  },
 };
 
 // ==================== PROGRESS TRACKING ====================
@@ -774,6 +826,79 @@ export const mcpApi = {
     if (params?.days !== undefined) queryParams.append("days", params.days.toString());
 
     const url = `/api/mcp/usage/summary${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  /**
+   * Get MCP session details with request history
+   */
+  getSessionDetails: async (sessionId: string): Promise<any> => {
+    const response = await apiClient.get(`/api/mcp/sessions/${sessionId}`);
+    return response.data;
+  },
+
+  /**
+   * Get MCP errors with filtering
+   */
+  getErrors: async (params?: {
+    severity?: "error" | "timeout" | "all";
+    limit?: number;
+    sessionId?: string;
+  }): Promise<{
+    errors: any[];
+    summary: {
+      error_count: number;
+      timeout_count: number;
+      last_error_at: string | null;
+      error_rate_percent: number;
+    };
+    total: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (params?.severity) queryParams.append("severity", params.severity);
+    if (params?.limit !== undefined) queryParams.append("limit", params.limit.toString());
+    if (params?.sessionId) queryParams.append("session_id", params.sessionId);
+
+    const url = `/api/mcp/errors${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  /**
+   * Get comprehensive MCP analytics
+   */
+  getAnalytics: async (params?: {
+    days?: number;
+    compare?: boolean;
+  }): Promise<import("./types").McpAnalyticsResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.days !== undefined) queryParams.append("days", params.days.toString());
+    if (params?.compare !== undefined) queryParams.append("compare", params.compare.toString());
+
+    const url = `/api/mcp/analytics${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  /**
+   * Get MCP logs with filtering, search, and pagination
+   */
+  getLogs: async (params?: {
+    level?: "info" | "warning" | "error" | "all";
+    search?: string;
+    sessionId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<import("./types").McpLogsResponse> => {
+    const queryParams = new URLSearchParams();
+    if (params?.level) queryParams.append("level", params.level);
+    if (params?.search) queryParams.append("search", params.search);
+    if (params?.sessionId) queryParams.append("session_id", params.sessionId);
+    if (params?.limit !== undefined) queryParams.append("limit", params.limit.toString());
+    if (params?.offset !== undefined) queryParams.append("offset", params.offset.toString());
+
+    const url = `/api/mcp/logs${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
     const response = await apiClient.get(url);
     return response.data;
   },

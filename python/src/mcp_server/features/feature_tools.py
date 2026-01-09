@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 import httpx
 
 from mcp.server.fastmcp import Context, FastMCP
+from src.mcp_server.utils import track_tool_execution
 from src.mcp_server.utils.error_handling import MCPErrorFormatter
 from src.mcp_server.utils.timeout_config import get_default_timeout
 from src.server.config.service_discovery import get_api_url
@@ -22,6 +23,7 @@ def register_feature_tools(mcp: FastMCP):
     """Register feature management tools with the MCP server."""
 
     @mcp.tool()
+    @track_tool_execution
     async def get_project_features(ctx: Context, project_id: str) -> str:
         """
         Get features from a project's features field.

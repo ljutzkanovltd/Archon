@@ -334,7 +334,8 @@ cd ~/Documents/Projects/archon
 **Essential Commands**:
 ```bash
 # Service management
-./start-archon.sh              # Start all services
+./start-archon.sh              # Start all services (Docker mode)
+./start-archon.sh --skip-nextjs  # Backend only (for local Next.js dev)
 ./stop-archon.sh               # Stop all services
 
 # Health checks
@@ -350,6 +351,35 @@ curl http://localhost:8051/health
 docker exec -it supabase-ai-db psql -U postgres -c "SELECT 1"
 # Expected: 1 row returned
 ```
+
+### Development Modes
+
+**Full Docker Mode** (all containers including Next.js):
+```bash
+./start-archon.sh
+# All services in Docker
+# Access Next.js UI: http://localhost:3738
+# Access React UI: http://localhost:3737
+```
+
+**Hybrid Dev Mode** (Docker backend + local Next.js for fast hot-reload):
+```bash
+# Terminal 1: Start backend only
+./start-archon.sh --skip-nextjs
+
+# Terminal 2: Start Next.js locally (fast hot-reload, instant updates)
+./scripts/dev-nextjs-local.sh
+# Or manually: cd archon-ui-nextjs && npm run dev
+
+# Access Next.js UI: http://localhost:3738 (local, hot reload)
+# Access React UI: http://localhost:3737 (Docker)
+```
+
+**Why Hybrid Mode?**
+- ✅ **Instant hot-reload** for UI changes (no Docker rebuild)
+- ✅ Backend stays in Docker (no Python setup needed)
+- ✅ Best for frontend/UI development
+- ✅ Automatic CORS handling via Next.js proxy
 
 → **Complete setup**: `@.claude/docs/SYSTEM_SETUP.md`
 

@@ -54,7 +54,12 @@ class MigrationService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181";
+    // DUAL-MODE URL RESOLUTION:
+    // - Browser context: Use relative URLs ("") - Next.js proxy will forward to backend
+    // - Server context (SSR): Use absolute URL for Docker internal network
+    this.baseUrl = typeof window !== 'undefined'
+      ? "" // Browser: relative paths work with Next.js proxy
+      : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"); // SSR: absolute URL
   }
 
   async getMigrationStatus(): Promise<MigrationStatusResponse> {

@@ -54,13 +54,20 @@ class SimplifiedSessionManager:
                 logger.warning(f"Failed to initialize database client: {e}. Falling back to in-memory only.")
                 self.use_database = False
 
-    def create_session(self, client_info: Optional[dict[str, Any]] = None) -> str:
+    def create_session(
+        self,
+        client_info: Optional[dict[str, Any]] = None,
+        user_context: Optional[dict[str, Any]] = None
+    ) -> str:
         """
         Create a new session and return its ID.
 
         Args:
             client_info: Optional client metadata from MCP initialize request
                         Expected fields: name, version, capabilities
+            user_context: Optional user identification for multi-user support
+                         Expected fields: user_id, user_email, user_name
+                         Example: {"user_id": "uuid", "user_email": "user@example.com", "user_name": "John Doe"}
 
         Returns:
             Session ID (UUID string)
@@ -80,10 +87,20 @@ class SimplifiedSessionManager:
             client_version = client_info.get("version")
             client_capabilities = client_info.get("capabilities")
 
+        # Extract user context (optional, for multi-user support)
+        user_id = None
+        user_email = None
+        user_name = None
+
+        if user_context:
+            user_id = user_context.get("user_id")
+            user_email = user_context.get("user_email")
+            user_name = user_context.get("user_name")
+
         # Persist to database if enabled
         if self.use_database and self._db_client:
             try:
-                self._db_client.table("archon_mcp_sessions").insert({
+                session_data = {
                     "session_id": session_id,
                     "client_type": client_type,
                     "client_version": client_version,
@@ -92,8 +109,24 @@ class SimplifiedSessionManager:
                     "last_activity": now.isoformat(),
                     "status": "active",
                     "metadata": client_info or {}
-                }).execute()
-                logger.info(f"Created session {session_id} with client {client_type} (persisted to DB)")
+                }
+
+                # Add user context if provided
+                if user_id:
+                    session_data["user_id"] = user_id
+                if user_email:
+                    session_data["user_email"] = user_email
+                if user_name:
+                    session_data["user_name"] = user_name
+
+                self._db_client.table("archon_mcp_sessions").insert(session_data).execute()
+
+                log_message = f"Created session {session_id} with client {client_type}"
+                if user_email:
+                    log_message += f" for user {user_email}"
+                log_message += " (persisted to DB)"
+                logger.info(log_message)
+
             except Exception as e:
                 logger.error(f"Failed to persist session to database: {e}. Session will be in-memory only.")
         else:
@@ -191,8 +224,63 @@ class SimplifiedSessionManager:
 
         return True
 
+    def close_session(self, session_id: str, reason: str = "client_disconnect") -> None:
+        """
+        Close a session gracefully and calculate total duration.
+
+        Args:
+            session_id: Session UUID to close
+            reason: Reason for closure ('client_disconnect', 'timeout', 'server_shutdown')
+        """
+        # Remove from in-memory cache
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+
+        # Update database with disconnect time and duration
+        if self.use_database and self._db_client:
+            try:
+                # Get session start time from database
+                response = self._db_client.table("archon_mcp_sessions")\
+                    .select("connected_at, status")\
+                    .eq("session_id", session_id)\
+                    .execute()
+
+                if response.data and len(response.data) > 0:
+                    session_data = response.data[0]
+
+                    # Only close if not already disconnected
+                    if session_data.get("status") == "active":
+                        connected_at = datetime.fromisoformat(session_data["connected_at"])
+                        disconnected_at = datetime.now()
+                        total_duration = int((disconnected_at - connected_at).total_seconds())
+
+                        # Update session with disconnect time and duration
+                        self._db_client.table("archon_mcp_sessions")\
+                            .update({
+                                "disconnected_at": disconnected_at.isoformat(),
+                                "total_duration": total_duration,
+                                "status": "disconnected",
+                                "disconnect_reason": reason
+                            })\
+                            .eq("session_id", session_id)\
+                            .execute()
+
+                        logger.info(f"Session {session_id} closed gracefully (duration: {total_duration}s, reason: {reason})")
+                    else:
+                        logger.debug(f"Session {session_id} already disconnected, skipping close")
+                else:
+                    logger.warning(f"Session {session_id} not found in database")
+
+            except Exception as e:
+                logger.error(f"Failed to close session {session_id} in database: {e}")
+        else:
+            logger.info(f"Session {session_id} closed (in-memory only, reason: {reason})")
+
     def _disconnect_session(self, session_id: str) -> None:
-        """Mark a session as disconnected."""
+        """
+        Mark a session as disconnected (legacy method for timeout-based cleanup).
+        For explicit disconnects, use close_session() instead.
+        """
         # Remove from in-memory cache
         if session_id in self.sessions:
             del self.sessions[session_id]
@@ -203,11 +291,12 @@ class SimplifiedSessionManager:
                 self._db_client.table("archon_mcp_sessions")\
                     .update({
                         "disconnected_at": datetime.now().isoformat(),
-                        "status": "disconnected"
+                        "status": "disconnected",
+                        "disconnect_reason": "timeout"
                     })\
                     .eq("session_id", session_id)\
                     .execute()
-                logger.info(f"Session {session_id} marked as disconnected in database")
+                logger.info(f"Session {session_id} marked as disconnected in database (timeout)")
             except Exception as e:
                 logger.error(f"Failed to mark session as disconnected in database: {e}")
 

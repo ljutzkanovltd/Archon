@@ -141,9 +141,12 @@ class CredentialsService {
   private updateListeners: Set<(keys: string[]) => void> = new Set();
 
   constructor() {
-    // Use environment variable or default to localhost
-    this.baseUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181";
+    // DUAL-MODE URL RESOLUTION:
+    // - Browser context: Use relative URLs ("") - Next.js proxy will forward to backend
+    // - Server context (SSR): Use absolute URL for Docker internal network
+    this.baseUrl = typeof window !== 'undefined'
+      ? "" // Browser: relative paths work with Next.js proxy (local dev) or same-origin (Docker)
+      : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"); // SSR: absolute URL
   }
 
   // ==========================================================================
@@ -542,14 +545,28 @@ class CredentialsService {
    */
   async updateAzureChatConfig(config: AzureChatConfig): Promise<void> {
     try {
+      // CRITICAL FIX: Backend expects dict[str, str] - filter out boolean fields
+      // AZURE_OPENAI_API_KEY_SET is a UI-only field, not a credential to store
+      const { AZURE_OPENAI_API_KEY_SET: _unused, ...configToSend } = config;
+      
+      // DEBUG: Log what we're sending
+      console.log("=== DEBUG: Azure Chat Config ===");
+      console.log("Original config:", config);
+      console.log("Config to send:", configToSend);
+      console.log("Payload:", JSON.stringify(configToSend, null, 2));
+
       const response = await fetch(`${this.baseUrl}/api/azure-chat-config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(configToSend),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update Azure chat config: ${response.statusText}`);
+        const errorBody = await response.text();
+        console.error("=== DEBUG: Error Response ===");
+        console.error("Status:", response.status, response.statusText);
+        console.error("Body:", errorBody);
+        throw new Error(`Failed to update Azure chat config: ${response.statusText} - ${errorBody}`);
       }
 
       // Notify listeners
@@ -592,10 +609,14 @@ class CredentialsService {
    */
   async updateAzureEmbeddingConfig(config: AzureEmbeddingConfig): Promise<void> {
     try {
+      // CRITICAL FIX: Backend expects dict[str, str] - filter out boolean fields
+      // AZURE_OPENAI_API_KEY_SET is a UI-only field, not a credential to store
+      const { AZURE_OPENAI_API_KEY_SET: _unused, ...configToSend } = config;
+
       const response = await fetch(`${this.baseUrl}/api/azure-embedding-config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(configToSend),
       });
 
       if (!response.ok) {

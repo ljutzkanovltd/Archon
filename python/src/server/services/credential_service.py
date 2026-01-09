@@ -704,9 +704,14 @@ class CredentialService:
         Raises:
             ValueError: If endpoint not configured
         """
-        rag_settings = await self.get_credentials_by_category("rag_strategy")
+        # Check azure_config category first (where UI stores it), fallback to rag_strategy
+        azure_settings = await self.get_credentials_by_category("azure_config")
+        endpoint = azure_settings.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
 
-        endpoint = rag_settings.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
+        # Fallback to rag_strategy for backwards compatibility
+        if not endpoint:
+            rag_settings = await self.get_credentials_by_category("rag_strategy")
+            endpoint = rag_settings.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
 
         if not endpoint:
             raise ValueError(
@@ -727,8 +732,15 @@ class CredentialService:
         newer models and deployments. Older API versions may return 404 errors
         for preview models or recent deployments.
         """
-        rag_settings = await self.get_credentials_by_category("rag_strategy")
-        return rag_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION", "2024-10-21")
+        # Check azure_config category first (where UI stores it), fallback to rag_strategy
+        azure_settings = await self.get_credentials_by_category("azure_config")
+        api_version = azure_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION")
+
+        if not api_version:
+            rag_settings = await self.get_credentials_by_category("rag_strategy")
+            api_version = rag_settings.get("AZURE_OPENAI_EMBEDDING_API_VERSION")
+
+        return api_version or "2024-10-21"
 
     async def get_azure_embedding_deployment(self) -> str:
         """
@@ -753,9 +765,14 @@ class CredentialService:
         except Exception as e:
             logger.warning(f"Failed to invalidate LLM provider service cache: {e}")
 
-        rag_settings = await self.get_credentials_by_category("rag_strategy")
+        # Check azure_config category first (where UI stores it), fallback to rag_strategy
+        azure_settings = await self.get_credentials_by_category("azure_config")
+        deployment = azure_settings.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
 
-        deployment = rag_settings.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+        # Fallback to rag_strategy for backwards compatibility
+        if not deployment:
+            rag_settings = await self.get_credentials_by_category("rag_strategy")
+            deployment = rag_settings.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
 
         if not deployment:
             raise ValueError(

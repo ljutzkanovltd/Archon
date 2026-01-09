@@ -150,8 +150,9 @@ export default function LogFireSettingsTab() {
 
       // Make a test request to LogFire API
       // Note: You'll need to implement this endpoint in the backend
+      // Use relative URL - Next.js proxy will forward to backend
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"}/api/test-logfire-connection`,
+        `/api/test-logfire-connection`,
         {
           method: "POST",
           headers: {

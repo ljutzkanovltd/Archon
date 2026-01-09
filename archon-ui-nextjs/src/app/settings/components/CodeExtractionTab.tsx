@@ -337,7 +337,7 @@ export default function CodeExtractionTab() {
                       ) : setting.type === "decimal" ? (
                         <input
                           type="number"
-                          value={settings[setting.key]}
+                          value={settings[setting.key] as number}
                           onChange={(e) =>
                             updateSetting(
                               setting.key,
@@ -352,7 +352,7 @@ export default function CodeExtractionTab() {
                       ) : (
                         <input
                           type="number"
-                          value={settings[setting.key]}
+                          value={settings[setting.key] as number}
                           onChange={(e) =>
                             updateSetting(
                               setting.key,

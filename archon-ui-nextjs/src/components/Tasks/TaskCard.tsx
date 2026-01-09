@@ -77,6 +77,13 @@ const priorityConfig = {
 };
 
 /**
+ * Safe priority accessor with fallback to medium if undefined
+ */
+const getPriorityConfig = (priority: string | undefined) => {
+  return priorityConfig[priority as keyof typeof priorityConfig] || priorityConfig.medium;
+};
+
+/**
  * Priority color mapping (for backward compatibility)
  */
 const priorityColors = {
@@ -221,12 +228,12 @@ export function TaskCard({
               {task.title}
             </h4>
             <div className="mt-1 flex items-center gap-2">
-              <Badge color={priorityConfig[task.priority].color} size="xs">
-                {React.createElement(priorityConfig[task.priority].icon, {
+              <Badge color={getPriorityConfig(task.priority).color} size="xs">
+                {React.createElement(getPriorityConfig(task.priority).icon, {
                   className: "w-3 h-3 mr-0.5 inline",
                   "aria-hidden": "true"
                 })}
-                {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                {(task.priority || "medium").charAt(0).toUpperCase() + (task.priority || "medium").slice(1)}
               </Badge>
               {task.feature && (
                 <Badge color="purple" size="xs">
@@ -306,8 +313,8 @@ export function TaskCard({
           <Badge color={statusColors[task.status]} size="xs">
             {task.status}
           </Badge>
-          <Badge color={priorityConfig[task.priority].color} size="xs">
-            {React.createElement(priorityConfig[task.priority].icon, {
+          <Badge color={getPriorityConfig(task.priority).color} size="xs">
+            {React.createElement(getPriorityConfig(task.priority).icon, {
               className: "w-3 h-3 mr-0.5 inline",
               "aria-hidden": "true"
             })}
@@ -344,7 +351,7 @@ export function TaskCard({
           {/* Action buttons group (ml-auto pushes to right) */}
           <div className="flex items-center gap-1.5 ml-auto">
             {/* Copy ID Button */}
-            <Tooltip content="Copy Task ID" style="light" trigger="hover,focus">
+            <Tooltip content="Copy Task ID" style="light" trigger="hover">
               <button
                 type="button"
                 onClick={handleCopyId}
@@ -358,7 +365,7 @@ export function TaskCard({
 
             {/* Edit Button */}
             {onEdit && (
-              <Tooltip content="Edit task" style="light" trigger="hover,focus">
+              <Tooltip content="Edit task" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -376,7 +383,7 @@ export function TaskCard({
 
             {/* Status Change Button */}
             {onStatusChange && nextStatus && (
-              <Tooltip content={`Move to ${nextStatus}`} style="light" trigger="hover,focus">
+              <Tooltip content={`Move to ${nextStatus}`} style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -394,7 +401,7 @@ export function TaskCard({
 
             {/* Archive Button */}
             {onArchive && (
-              <Tooltip content={task.archived ? "Restore task" : "Archive task"} style="light" trigger="hover,focus">
+              <Tooltip content={task.archived ? "Restore task" : "Archive task"} style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -412,7 +419,7 @@ export function TaskCard({
 
             {/* Delete Button */}
             {onDelete && (
-              <Tooltip content="Delete task" style="light" trigger="hover,focus">
+              <Tooltip content="Delete task" style="light" trigger="hover">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -571,8 +578,8 @@ export function TaskCard({
           </div>
 
           {/* Priority badge */}
-          <Badge color={priorityConfig[task.priority].color} size="xs">
-            {React.createElement(priorityConfig[task.priority].icon, {
+          <Badge color={getPriorityConfig(task.priority).color} size="xs">
+            {React.createElement(getPriorityConfig(task.priority).icon, {
               className: "w-3 h-3 mr-0.5 inline",
               "aria-hidden": "true"
             })}

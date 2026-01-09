@@ -31,6 +31,11 @@ services:
       - AGENT_WORK_ORDERS_PORT=${AGENT_WORK_ORDERS_PORT:-8053}
       - AGENTS_ENABLED=${AGENTS_ENABLED:-false}
       - ARCHON_HOST=${HOST:-localhost}
+      - REDIS_HOST=redis-archon
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_TTL_DAYS=${REDIS_TTL_DAYS:-7}
     networks:
       - app-network
       - sporterp-ai-unified
@@ -260,13 +265,24 @@ services:
 
   # Next.js Frontend
   archon-frontend-nextjs:
+    profiles:
+      - nextjs  # Optional: only start with --profile nextjs flag
     build: ./archon-ui-nextjs
     container_name: archon-ui-nextjs
     ports:
       - "${ARCHON_UI_NEXTJS_PORT:-3738}:3738"
     environment:
-      # IMPORTANT: Use 'archon-server' not 'localhost' for Docker container-to-container communication
-      - NEXT_PUBLIC_API_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
+      # DUAL URL CONFIGURATION for Next.js contexts:
+      #
+      # BROWSER CONTEXT (client-side JS):
+      # - Use localhost because browser executes on host machine
+      - NEXT_PUBLIC_API_URL=http://localhost:${ARCHON_SERVER_PORT:-8181}
+
+      # SERVER CONTEXT (SSR + proxy rewrites):
+      # - Use Docker service name because Next.js server executes inside container
+      # - Container-to-container communication requires Docker service names
+      - API_SERVER_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
+
       - NODE_ENV=development
       - NEXT_TELEMETRY_DISABLED=1
     networks:
@@ -286,6 +302,24 @@ services:
     depends_on:
       archon-server:
         condition: service_healthy
+
+  # Redis Cache Service (for embedding caching)
+  redis-archon:
+    image: redis:7-alpine
+    container_name: redis-archon
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-archon-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 networks:
   # Internal network for Archon services
@@ -313,3 +347,7 @@ networks:
   # This is the default network where supabase-ai-db container resides
   supabase-ai_default:
     external: true
+
+volumes:
+  redis-archon-data:
+    driver: local

@@ -54,6 +54,13 @@ class HybridSearchStrategy:
                 filter_json = filter_metadata or {}
                 source_filter = filter_json.pop("source", None) if "source" in filter_json else None
 
+                # Debug logging for source filtering
+                logger.info(
+                    f"Hybrid search called | query={query[:50]} | "
+                    f"filter_metadata={filter_metadata} | "
+                    f"source_filter={source_filter}"
+                )
+
                 # Call the hybrid search PostgreSQL function
                 response = self.supabase_client.rpc(
                     "hybrid_search_archon_crawled_pages",
@@ -65,6 +72,10 @@ class HybridSearchStrategy:
                         "source_filter": source_filter,
                     },
                 ).execute()
+
+                logger.info(
+                    f"Hybrid search results | returned={len(response.data or [])} rows"
+                )
 
                 if not response.data:
                     logger.debug("No results from hybrid search")

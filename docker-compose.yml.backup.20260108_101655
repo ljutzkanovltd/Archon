@@ -1,0 +1,317 @@
+# Docker Compose profiles:
+# - Default (no profile): Starts archon-server, archon-mcp, and archon-frontend
+# - Agents are opt-in: archon-agents starts only with the "agents" profile
+# Usage:
+#   docker compose up                        # Starts server, mcp, frontend (agents disabled)
+#   docker compose --profile agents up -d    # Also starts archon-agents
+
+services:
+  # Server Service (FastAPI + Socket.IO + Crawling)
+  archon-server:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.server
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        ARCHON_SERVER_PORT: ${ARCHON_SERVER_PORT:-8181}
+    container_name: archon-server
+    ports:
+      - "${ARCHON_SERVER_PORT:-8181}:${ARCHON_SERVER_PORT:-8181}"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - DATABASE_URI=${DATABASE_URI}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - ARCHON_MCP_PORT=${ARCHON_MCP_PORT:-8051}
+      - ARCHON_AGENTS_PORT=${ARCHON_AGENTS_PORT:-8052}
+      - AGENT_WORK_ORDERS_PORT=${AGENT_WORK_ORDERS_PORT:-8053}
+      - AGENTS_ENABLED=${AGENTS_ENABLED:-false}
+      - ARCHON_HOST=${HOST:-localhost}
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default  # Required for DATABASE_URI hostname resolution (supabase-ai-db:5432)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # SECURITY: Docker socket mounting removed (CVE-2025-9074 - CVSS 9.3)
+      # MCP status now monitored via HTTP health checks (secure, portable)
+      # To re-enable Docker socket mode (not recommended):
+      #   1. Set ENABLE_DOCKER_SOCKET_MONITORING=true in .env
+      #   2. Uncomment the line below
+      # - /var/run/docker.sock:/var/run/docker.sock # SECURITY RISK: root-equivalent host access
+      - ./python/src:/app/src # Mount source code for hot reload
+      - ./python/tests:/app/tests # Mount tests for UI test execution
+      - ./migration:/app/migration # Mount migration files for version tracking
+      - ./backups:/app/backups:ro # Read-only access to backup files for monitoring
+      # Read-only access to all projects for code analysis
+      # REQUIRES: inotify watch limit of 524288 (see TROUBLESHOOTING_STARTUP_FIXES.md)
+      # Run: sudo sysctl -w fs.inotify.max_user_watches=524288
+      - /home/ljutzkanov/Documents/Projects:/app/projects:ro
+    command:
+      [
+        "python",
+        "-m",
+        "uvicorn",
+        "src.server.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "${ARCHON_SERVER_PORT:-8181}",
+        # TEMPORARY: Reload disabled for production crawling to prevent 500 errors
+        # "--reload",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:${ARCHON_SERVER_PORT:-8181}/health'')"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # Lightweight MCP Server Service (HTTP-based)
+  archon-mcp:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.mcp
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        ARCHON_MCP_PORT: ${ARCHON_MCP_PORT:-8051}
+    container_name: archon-mcp
+    ports:
+      - "${ARCHON_MCP_PORT:-8051}:${ARCHON_MCP_PORT:-8051}"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - DATABASE_URI=${DATABASE_URI}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - TRANSPORT=sse
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # MCP needs to know where to find other services
+      - API_SERVICE_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
+      - AGENTS_ENABLED=${AGENTS_ENABLED:-false}
+      - AGENTS_SERVICE_URL=${AGENTS_SERVICE_URL:-http://archon-agents:${ARCHON_AGENTS_PORT:-8052}}
+      - ARCHON_MCP_PORT=${ARCHON_MCP_PORT:-8051}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - ARCHON_AGENTS_PORT=${ARCHON_AGENTS_PORT:-8052}
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default  # Required for DATABASE_URI hostname resolution (supabase-ai-db:5432)
+    depends_on:
+      archon-server:
+        condition: service_healthy
+      
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          'python -c "import socket; s=socket.socket(); s.connect((''localhost'', ${ARCHON_MCP_PORT:-8051})); s.close()"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s # Give dependencies time to start
+
+  # AI Agents Service (ML/Reranking)
+  archon-agents:
+    profiles:
+      - agents  # Only starts when explicitly using --profile agents
+    build:
+      context: ./python
+      dockerfile: Dockerfile.agents
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        ARCHON_AGENTS_PORT: ${ARCHON_AGENTS_PORT:-8052}
+    container_name: archon-agents
+    ports:
+      - "${ARCHON_AGENTS_PORT:-8052}:${ARCHON_AGENTS_PORT:-8052}"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ARCHON_AGENTS_PORT=${ARCHON_AGENTS_PORT:-8052}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default  # Required for SUPABASE_URL hostname resolution
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:${ARCHON_AGENTS_PORT:-8052}/health'')"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # Agent Work Orders Service (Independent microservice for workflow execution)
+  archon-agent-work-orders:
+    profiles:
+      - work-orders  # Only starts when explicitly using --profile work-orders
+    build:
+      context: ./python
+      dockerfile: Dockerfile.agent-work-orders
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        AGENT_WORK_ORDERS_PORT: ${AGENT_WORK_ORDERS_PORT:-8053}
+    container_name: archon-agent-work-orders
+    depends_on:
+      - archon-server
+    ports:
+      - "${AGENT_WORK_ORDERS_PORT:-8053}:${AGENT_WORK_ORDERS_PORT:-8053}"
+    environment:
+      - ENABLE_AGENT_WORK_ORDERS=true
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - STATE_STORAGE_TYPE=supabase
+      - ARCHON_SERVER_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
+      - ARCHON_MCP_URL=http://archon-mcp:${ARCHON_MCP_PORT:-8051}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AGENT_WORK_ORDERS_PORT=${AGENT_WORK_ORDERS_PORT:-8053}
+      - CLAUDE_CLI_PATH=${CLAUDE_CLI_PATH:-claude}
+      - GH_CLI_PATH=${GH_CLI_PATH:-gh}
+      - GH_TOKEN=${GITHUB_PAT_TOKEN}
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default  # Required for SUPABASE_URL hostname resolution
+    volumes:
+      - ./python/src/agent_work_orders:/app/src/agent_work_orders # Hot reload for agent work orders
+      - ./data/agent-work-orders/repos:/repos # Persistent git repositories
+      - ./data/agent-work-orders/temp:/tmp/agent-work-orders # Persistent work files
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          'import urllib.request; urllib.request.urlopen("http://localhost:${AGENT_WORK_ORDERS_PORT:-8053}/health")',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # Frontend
+  archon-frontend:
+    build: ./archon-ui-main
+    container_name: archon-ui
+    ports:
+      - "${ARCHON_UI_PORT:-3737}:3737"
+    environment:
+      # Don't set VITE_API_URL so frontend uses relative URLs through proxy
+      # - VITE_API_URL=http://${HOST:-localhost}:${ARCHON_SERVER_PORT:-8181}
+      - VITE_ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - ARCHON_SERVER_PORT=${ARCHON_SERVER_PORT:-8181}
+      - HOST=${HOST:-localhost}
+      - PROD=${PROD:-false}
+      - VITE_ALLOWED_HOSTS=${VITE_ALLOWED_HOSTS:-}
+      - VITE_SHOW_DEVTOOLS=${VITE_SHOW_DEVTOOLS:-false}
+      - DOCKER_ENV=true
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default  # UI doesn't directly connect to DB but shares network for consistency
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3737"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./archon-ui-main/src:/app/src
+      - ./archon-ui-main/public:/app/public
+    depends_on:
+      archon-server:
+        condition: service_healthy
+
+  # Next.js Frontend
+  archon-frontend-nextjs:
+    build: ./archon-ui-nextjs
+    container_name: archon-ui-nextjs
+    ports:
+      - "${ARCHON_UI_NEXTJS_PORT:-3738}:3738"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://${HOST:-localhost}:${ARCHON_SERVER_PORT:-8181}
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+    networks:
+      - app-network
+      - sporterp-ai-unified
+      - localai_default
+      - supabase-ai_default
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3738"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ./archon-ui-nextjs/src:/app/src
+      - ./archon-ui-nextjs/public:/app/public
+    depends_on:
+      archon-server:
+        condition: service_healthy
+
+networks:
+  # Internal network for Archon services
+  app-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+
+  # External bridge network shared with local-ai-packaged for AI infrastructure
+  # Created and managed by local-ai-packaged
+  # Provides access to: Supabase AI (port 54323), LLM APIs (11434-11437), Qdrant, Neo4j
+  sporterp-ai-unified:
+    external: true
+    name: sporterp-ai-unified
+
+  # External network for local-ai services (LLM APIs, n8n, Flowise, etc.)
+  # Managed by local-ai-packaged
+  localai_default:
+    external: true
+    name: localai_default
+
+  # External network for Supabase database access
+  # Required for DATABASE_URI hostname resolution (supabase-ai-db:5432)
+  # Managed by local-ai-packaged/supabase/docker/docker-compose.yml
+  # This is the default network where supabase-ai-db container resides
+  supabase-ai_default:
+    external: true
+    name: supabase-ai_default

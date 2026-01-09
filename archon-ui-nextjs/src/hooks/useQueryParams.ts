@@ -142,7 +142,7 @@ export function useQueryParams<T extends QueryParamSchema>(
 
     for (const [key, defaultValue] of Object.entries(schema)) {
       const urlValue = searchParams.get(key);
-      result[key as keyof T] = deserializeValue(urlValue, defaultValue);
+      result[key as keyof T] = deserializeValue(urlValue, defaultValue) as T[keyof T];
     }
 
     return result;
@@ -202,7 +202,7 @@ export function useQueryParams<T extends QueryParamSchema>(
    */
   const updateParam = useCallback(
     <K extends keyof T>(key: K, value: T[K], updateOptions?: UpdateQueryParamsOptions) => {
-      setParams({ [key]: value } as Partial<T>, updateOptions);
+      setParams({ [key]: value } as unknown as Partial<T>, updateOptions);
     },
     [setParams]
   );

@@ -14,6 +14,7 @@ Note: Crawling and document upload operations are handled directly by the
 API service and frontend, not through MCP tools.
 """
 
+import functools
 import json
 import logging
 import os
@@ -26,12 +27,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import Context, FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from src.mcp_server.utils import track_tool_execution
 
 # Add the project root to Python path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -84,11 +86,12 @@ server_port = int(mcp_port)
 @dataclass
 class ArchonContext:
     """
-    Context for MCP server.
+    Context for MCP server with session tracking.
     No heavy dependencies - just service client for HTTP calls.
     """
 
     service_client: Any
+    session_id: Optional[str] = None
     health_status: dict = None
     startup_time: float = None
 
@@ -167,6 +170,15 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             # Create context
             context = ArchonContext(service_client=service_client)
 
+            # Create global session for single-user tracking
+            logger.info("🔐 Creating global MCP session for single-user mode...")
+            global_session_id = session_manager.create_session(
+                client_info={"name": "Claude Code", "version": "1.0"},
+                user_context=None  # Single-user mode, no user tracking
+            )
+            context.session_id = global_session_id
+            logger.info(f"✓ Global MCP session created: {global_session_id}")
+
             # Perform initial health check
             await perform_health_checks(context)
 
@@ -185,6 +197,30 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
         finally:
             # Clean up resources
             logger.info("🧹 Cleaning up MCP server...")
+
+            # Close global session and all active sessions
+            try:
+                session_manager = get_session_manager()
+
+                # Close global session first if it exists
+                if _shared_context and hasattr(_shared_context, 'session_id'):
+                    logger.info(f"Closing global session: {_shared_context.session_id}")
+                    session_manager.close_session(_shared_context.session_id, reason="server_shutdown")
+
+                # Close any other active sessions
+                active_sessions = list(session_manager.sessions.keys())
+                if active_sessions:
+                    logger.info(f"Closing {len(active_sessions)} remaining active sessions...")
+                    for session_id in active_sessions:
+                        session_manager.close_session(session_id, reason="server_shutdown")
+                    logger.info("✓ All sessions closed")
+                else:
+                    logger.info("No additional active sessions to close")
+
+            except Exception as e:
+                logger.error(f"Failed to close sessions on shutdown: {e}")
+                logger.error(traceback.format_exc())
+
             logger.info("✅ MCP server shutdown complete")
 
 
@@ -335,6 +371,7 @@ except Exception as e:
 
 # Health check endpoint
 @mcp.tool()
+@track_tool_execution
 async def health_check(ctx: Context) -> str:
     """
     Check health status of MCP server and dependencies.
@@ -384,6 +421,7 @@ async def health_check(ctx: Context) -> str:
 
 # Session management endpoint
 @mcp.tool()
+@track_tool_execution
 async def session_info(ctx: Context) -> str:
     """
     Get current and active session information.
@@ -595,6 +633,12 @@ try:
 except Exception as e:
     logger.error(f"✗ Failed to register /health endpoint: {e}")
     logger.error(traceback.format_exc())
+
+
+# Session tracking - import from utilities module
+# NOTE: FastMCP does not support @mcp.notification() decorator
+# Sessions are created on first tool call using track_tool_execution decorator (Task 112)
+# (import moved to top of file with other imports)
 
 
 def main():

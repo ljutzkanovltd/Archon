@@ -38,6 +38,8 @@ export {
   useMcpClients,
   useMcpSessionInfo,
   useMcpUsageStats,
+  useMcpAnalytics,
+  useMcpLogs,
   mcpKeys,
 } from "./useMcpQueries";
 

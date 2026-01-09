@@ -156,10 +156,9 @@ export default function FeaturesTab() {
 
   const loadProjectsSchema = async () => {
     try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181";
+      // Use relative URL - Next.js proxy will forward to backend
       const projectsHealthResponse = await fetch(
-        `${baseUrl}/api/projects/health`
+        `/api/projects/health`
       ).catch(() => null);
 
       if (projectsHealthResponse && projectsHealthResponse.ok) {

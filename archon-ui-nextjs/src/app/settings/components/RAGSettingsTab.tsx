@@ -107,6 +107,52 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Normalize Azure OpenAI endpoint URL to base URL only.
+ * Removes deployment paths that users often copy from Azure Portal.
+ *
+ * @param endpoint - The Azure OpenAI endpoint URL (may include deployment path)
+ * @returns Base URL only (protocol + host)
+ *
+ * @example
+ * // Full deployment URL → Base URL
+ * normalizeAzureEndpoint("https://my-resource.openai.azure.com/openai/deployments/gpt-4")
+ * // Returns: "https://my-resource.openai.azure.com"
+ *
+ * @example
+ * // URL with trailing slash → Clean base URL
+ * normalizeAzureEndpoint("https://my-resource.openai.azure.com/")
+ * // Returns: "https://my-resource.openai.azure.com"
+ */
+const normalizeAzureEndpoint = (endpoint: string): string => {
+  if (!endpoint) return '';
+
+  let normalized = endpoint.trim();
+
+  try {
+    // Use URL parsing to extract base URL (protocol + host only)
+    // Azure OpenAI base URL format: https://{resource}.{region}.cognitiveservices.azure.com
+    // or: https://{resource}.openai.azure.com
+    const url = new URL(normalized);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // Fallback to regex if URL parsing fails
+    // Remove everything after the domain (deployment paths, query params, etc.)
+    normalized = normalized.replace(/\/openai.*$/i, '');
+    normalized = normalized.replace(/\?.*$/, '');
+    normalized = normalized.replace(/\/+$/, '');
+    return normalized;
+  }
+};
+
+// ============================================================================
+// Settings Configuration
+// ============================================================================
+
 const STRATEGY_SETTINGS = [
   {
     key: "USE_CONTEXTUAL_EMBEDDINGS",
@@ -449,9 +495,24 @@ const AzureConfigPanel: React.FC<AzureConfigPanelProps> = ({
                   : "AZURE_OPENAI_EMBEDDING_ENDPOINT"]: e.target.value,
               } as any)
             }
+            onBlur={(e) => {
+              // Normalize endpoint URL when user finishes editing
+              const normalized = normalizeAzureEndpoint(e.target.value);
+              if (normalized !== e.target.value) {
+                setConfig({
+                  ...config,
+                  [mode === "chat"
+                    ? "AZURE_OPENAI_CHAT_ENDPOINT"
+                    : "AZURE_OPENAI_EMBEDDING_ENDPOINT"]: normalized,
+                } as any);
+              }
+            }}
             placeholder="https://your-resource.openai.azure.com"
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
           />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Base URL only (deployment paths will be automatically removed)
+          </p>
         </div>
 
         <div>
@@ -761,16 +822,8 @@ export default function RAGSettingsTab() {
     try {
       setSaving("crawling");
 
-      // Extract only crawling settings from the settings state
-      const crawlingSettings = {
-        CRAWL_BATCH_SIZE: settings.CRAWL_BATCH_SIZE,
-        CRAWL_MAX_CONCURRENT: settings.CRAWL_MAX_CONCURRENT,
-        CRAWL_WAIT_STRATEGY: settings.CRAWL_WAIT_STRATEGY,
-        CRAWL_PAGE_TIMEOUT: settings.CRAWL_PAGE_TIMEOUT,
-        CRAWL_DELAY_BEFORE_HTML: settings.CRAWL_DELAY_BEFORE_HTML,
-      };
-
-      await credentialsService.updateRagSettings(crawlingSettings);
+      // Pass complete settings object - the service handles extracting relevant fields
+      await credentialsService.updateRagSettings(settings);
       showToast("Crawling performance settings saved successfully", "success");
     } catch (error) {
       console.error("Failed to save crawling settings:", error);
@@ -784,15 +837,8 @@ export default function RAGSettingsTab() {
     try {
       setSaving("storage");
 
-      // Extract only storage settings from the settings state
-      const storageSettings = {
-        DOCUMENT_STORAGE_BATCH_SIZE: settings.DOCUMENT_STORAGE_BATCH_SIZE,
-        EMBEDDING_BATCH_SIZE: settings.EMBEDDING_BATCH_SIZE,
-        DELETE_BATCH_SIZE: settings.DELETE_BATCH_SIZE,
-        ENABLE_PARALLEL_BATCHES: settings.ENABLE_PARALLEL_BATCHES,
-      };
-
-      await credentialsService.updateRagSettings(storageSettings);
+      // Pass complete settings object - the service handles extracting relevant fields
+      await credentialsService.updateRagSettings(settings);
       showToast("Storage performance settings saved successfully", "success");
     } catch (error) {
       console.error("Failed to save storage settings:", error);
@@ -806,15 +852,8 @@ export default function RAGSettingsTab() {
     try {
       setSaving("advanced");
 
-      // Extract only advanced settings from the settings state
-      const advancedSettings = {
-        MEMORY_THRESHOLD_PERCENT: settings.MEMORY_THRESHOLD_PERCENT,
-        DISPATCHER_CHECK_INTERVAL: settings.DISPATCHER_CHECK_INTERVAL,
-        CODE_EXTRACTION_BATCH_SIZE: settings.CODE_EXTRACTION_BATCH_SIZE,
-        CODE_SUMMARY_MAX_WORKERS: settings.CODE_SUMMARY_MAX_WORKERS,
-      };
-
-      await credentialsService.updateRagSettings(advancedSettings);
+      // Pass complete settings object - the service handles extracting relevant fields
+      await credentialsService.updateRagSettings(settings);
       showToast("Advanced settings saved successfully", "success");
     } catch (error) {
       console.error("Failed to save advanced settings:", error);
@@ -828,12 +867,23 @@ export default function RAGSettingsTab() {
     try {
       setSaving("azure");
 
+      // Normalize Azure endpoints before saving to prevent deployment path pollution
       if (activeSelection === "chat") {
-        await credentialsService.updateAzureChatConfig(azureChatConfig);
+        const normalizedConfig = {
+          ...azureChatConfig,
+          AZURE_OPENAI_CHAT_ENDPOINT: normalizeAzureEndpoint(
+            azureChatConfig.AZURE_OPENAI_CHAT_ENDPOINT
+          ),
+        };
+        await credentialsService.updateAzureChatConfig(normalizedConfig);
       } else {
-        await credentialsService.updateAzureEmbeddingConfig(
-          azureEmbeddingConfig
-        );
+        const normalizedConfig = {
+          ...azureEmbeddingConfig,
+          AZURE_OPENAI_EMBEDDING_ENDPOINT: normalizeAzureEndpoint(
+            azureEmbeddingConfig.AZURE_OPENAI_EMBEDDING_ENDPOINT
+          ),
+        };
+        await credentialsService.updateAzureEmbeddingConfig(normalizedConfig);
       }
 
       showToast(
@@ -1161,11 +1211,11 @@ export default function RAGSettingsTab() {
                 ) : (
                   <input
                     type="text"
-                    value={(settings as any)[setting.key] || ""}
+                    value={(settings as any)[(setting as any).key] || ""}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
-                        [setting.key]: e.target.value,
+                        [(setting as any).key]: e.target.value,
                       })
                     }
                     className="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
@@ -1255,11 +1305,11 @@ export default function RAGSettingsTab() {
                 ) : (
                   <input
                     type="text"
-                    value={(settings as any)[setting.key] || ""}
+                    value={(settings as any)[(setting as any).key] || ""}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
-                        [setting.key]: e.target.value,
+                        [(setting as any).key]: e.target.value,
                       })
                     }
                     className="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white"

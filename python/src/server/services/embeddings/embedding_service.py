@@ -25,6 +25,7 @@ from .embedding_exceptions import (
     EmbeddingQuotaExhaustedError,
     EmbeddingRateLimitError,
 )
+from .redis_cache import get_embedding_cache
 
 
 @dataclass
@@ -235,7 +236,7 @@ get_openai_client = get_llm_client
 
 async def create_embedding(text: str, provider: str | None = None) -> list[float]:
     """
-    Create an embedding for a single text using the configured provider.
+    Create an embedding for a single text using the configured provider with Redis caching.
 
     Args:
         text: Text to create an embedding for
@@ -250,6 +251,32 @@ async def create_embedding(text: str, provider: str | None = None) -> list[float
         EmbeddingAPIError: For other API errors
     """
     try:
+        # Get cache and embedding config
+        cache = await get_embedding_cache()
+        embedding_config = await _maybe_await(
+            credential_service.get_active_provider(service_type="embedding")
+        )
+        embedding_provider = provider or embedding_config.get("provider", "openai")
+        embedding_model = await get_embedding_model(provider=embedding_provider)
+
+        # Try to get dimensions from settings
+        try:
+            rag_settings = await _maybe_await(
+                credential_service.get_credentials_by_category("rag_strategy")
+            )
+            embedding_dimensions = int(rag_settings.get("EMBEDDING_DIMENSIONS", "1536"))
+            dimensions_to_use = embedding_dimensions if embedding_dimensions > 0 else None
+        except Exception:
+            dimensions_to_use = None
+
+        # Try cache first
+        cached_embedding = await cache.get(text, embedding_model, dimensions_to_use)
+        if cached_embedding:
+            search_logger.info("✅ Embedding cache HIT")
+            return cached_embedding
+
+        # Cache miss - generate new embedding
+        search_logger.info("❌ Embedding cache MISS - calling API")
         result = await create_embeddings_batch([text], provider=provider)
         if not result.embeddings:
             # Check if there were failures
@@ -271,7 +298,13 @@ async def create_embedding(text: str, provider: str | None = None) -> list[float
                 raise EmbeddingAPIError(
                     "No embeddings returned from batch creation", text_preview=text
                 )
-        return result.embeddings[0]
+
+        embedding = result.embeddings[0]
+
+        # Store in cache
+        await cache.set(text, embedding_model, embedding, dimensions_to_use)
+
+        return embedding
     except EmbeddingError:
         # Re-raise our custom exceptions
         raise

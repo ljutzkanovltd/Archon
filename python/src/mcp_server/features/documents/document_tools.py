@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 import httpx
 
 from mcp.server.fastmcp import Context, FastMCP
+from src.mcp_server.utils import track_tool_execution
 from src.mcp_server.utils.error_handling import MCPErrorFormatter
 from src.mcp_server.utils.timeout_config import get_default_timeout
 from src.server.config.service_discovery import get_api_url
@@ -36,6 +37,7 @@ def register_document_tools(mcp: FastMCP):
     """Register consolidated document management tools with the MCP server."""
 
     @mcp.tool()
+    @track_tool_execution
     async def find_documents(
         ctx: Context,
         project_id: str,
@@ -139,6 +141,7 @@ def register_document_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "list documents")
 
     @mcp.tool()
+    @track_tool_execution
     async def manage_document(
         ctx: Context,
         action: str,  # "create" | "update" | "delete"

@@ -201,7 +201,7 @@ export function KnowledgeDetailView({ sourceId }: KnowledgeDetailViewProps) {
   const handleViewPage = (page: KnowledgePage) => {
     // For now, just log the page. In the future, could open a modal or navigate to a detail view
     console.log("View page:", page);
-    alert(`Page: ${page.title}\n\nContent preview:\n${page.content.substring(0, 200)}...`);
+    alert(`Page: ${page.title}\n\nContent preview:\n${page.content?.substring(0, 200) || 'No content available'}...`);
   };
 
   // ========== DATATABLE CONFIGURATION ==========

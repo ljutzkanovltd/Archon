@@ -26,6 +26,7 @@ from ..services.crawler_manager import get_crawler
 from ..services.crawling import CrawlingService
 from ..services.credential_service import credential_service
 from ..services.embeddings.provider_error_adapters import ProviderErrorFactory
+from ..services.embeddings.redis_cache import get_embedding_cache
 from ..services.knowledge import DatabaseMetricsService, KnowledgeItemService, KnowledgeSummaryService
 from ..services.search.rag_service import RAGService
 from ..services.storage import DocumentStorageService
@@ -912,6 +913,36 @@ async def refresh_knowledge_item(source_id: str, request: RefreshRequest | None 
                     safe_logfire_info(
                         f"Acquired crawl semaphore for refresh | source_id={source_id}"
                     )
+
+                    # CRITICAL: Delete existing pages and code examples before re-crawl
+                    # to avoid duplicates in the database
+                    try:
+                        # Delete existing pages (CASCADE will delete associated chunks in archon_crawled_pages)
+                        safe_logfire_info(f"Deleting existing pages for refresh | source_id={source_id}")
+                        page_delete_response = await get_supabase_client().table("archon_page_metadata")\
+                            .delete().eq("source_id", source_id).execute()
+                        pages_deleted = len(page_delete_response.data) if page_delete_response.data else 0
+                        safe_logfire_info(
+                            f"Deleted {pages_deleted} pages (chunks deleted via CASCADE) | source_id={source_id}"
+                        )
+
+                        # Delete existing code examples
+                        safe_logfire_info(f"Deleting existing code examples for refresh | source_id={source_id}")
+                        code_delete_response = await get_supabase_client().table("archon_code_examples")\
+                            .delete().eq("source_id", source_id).execute()
+                        code_examples_deleted = len(code_delete_response.data) if code_delete_response.data else 0
+                        safe_logfire_info(
+                            f"Deleted {code_examples_deleted} code examples | source_id={source_id}"
+                        )
+
+                    except Exception as delete_error:
+                        # Log deletion errors but continue with refresh
+                        safe_logfire_error(
+                            f"Error deleting existing data during refresh | source_id={source_id} | "
+                            f"error={str(delete_error)}"
+                        )
+                        # Still proceed with refresh - new data will be created
+
                     result = await crawl_service.orchestrate_crawl(request_dict)
 
                     # Store the ACTUAL crawl task for proper cancellation
@@ -932,7 +963,11 @@ async def refresh_knowledge_item(source_id: str, request: RefreshRequest | None 
         # Start the wrapper task - we don't need to track it since we'll track the actual crawl task
         asyncio.create_task(_perform_refresh_with_semaphore())
 
-        return {"progressId": progress_id, "message": f"Started refresh for {url}"}
+        return {
+            "success": True,
+            "data": {"operation_id": progress_id},
+            "message": f"Started refresh for {url}"
+        }
 
     except HTTPException:
         raise
@@ -1736,4 +1771,193 @@ async def resume_crawl_task(progress_id: str):
         safe_logfire_error(
             f"Failed to resume crawl task | error={str(e)} | progress_id={progress_id}"
         )
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# Content Search Models and Endpoint
+
+class ContentSearchRequest(BaseModel):
+    """Request model for content search"""
+    query: str
+    match_count: int = 20
+    source_id: str | None = None
+    page: int = 1
+    per_page: int = 20
+
+
+class ContentSearchResult(BaseModel):
+    """Individual search result"""
+    id: str
+    url: str
+    chunk_number: int
+    content: str
+    metadata: dict
+    source_id: str
+    similarity: float
+    match_type: str
+
+
+class ContentSearchResponse(BaseModel):
+    """Response model for content search"""
+    results: list[ContentSearchResult]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    query: str
+
+
+@router.post("/knowledge/search", response_model=ContentSearchResponse)
+async def search_knowledge_content(request: ContentSearchRequest):
+    """
+    Search within crawled page content using hybrid search.
+
+    This endpoint searches the archon_crawled_pages table (212k+ pages)
+    using hybrid search that combines:
+    - Vector/semantic search for conceptual matches
+    - Full-text search for keyword matches
+    - RRF (Reciprocal Rank Fusion) for result ranking
+
+    Args:
+        request: ContentSearchRequest with query and filters
+
+    Returns:
+        ContentSearchResponse with paginated results
+
+    Example:
+        POST /api/knowledge/search
+        {
+            "query": "authentication JWT tokens",
+            "match_count": 20,
+            "source_id": "abc123",  // optional
+            "page": 1,
+            "per_page": 20
+        }
+    """
+    try:
+        import time
+        search_start = time.time()
+
+        # Validate inputs
+        if not request.query or len(request.query.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+        request.page = max(1, request.page)
+        request.per_page = min(100, max(1, request.per_page))
+        request.match_count = min(100, max(1, request.match_count))
+
+        safe_logfire_info(
+            f"Content search request | query={request.query[:50]} | "
+            f"match_count={request.match_count} | source_id={request.source_id}"
+        )
+
+        # Get Supabase client
+        supabase = get_supabase_client()
+
+        # Initialize RAG service which includes hybrid search
+        rag_service = RAGService(supabase_client=supabase)
+
+        # Create query embedding with timing
+        embedding_start = time.time()
+        from ..services.embeddings.embedding_service import create_embedding
+        query_embedding = await create_embedding(request.query)
+        embedding_time = time.time() - embedding_start
+
+        if not query_embedding:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create query embedding. Check embedding provider configuration."
+            )
+
+        # Prepare filter metadata
+        filter_metadata = {}
+        if request.source_id:
+            filter_metadata["source_id"] = request.source_id
+
+        # Perform hybrid search with timing
+        db_search_start = time.time()
+        results = await rag_service.hybrid_strategy.search_documents_hybrid(
+            query=request.query,
+            query_embedding=query_embedding,
+            match_count=request.match_count,
+            filter_metadata=filter_metadata if filter_metadata else None
+        )
+        db_search_time = time.time() - db_search_start
+
+        # Calculate total time and percentages
+        search_time = time.time() - search_start
+        embedding_pct = (embedding_time / search_time * 100) if search_time > 0 else 0
+        db_search_pct = (db_search_time / search_time * 100) if search_time > 0 else 0
+        other_pct = 100 - embedding_pct - db_search_pct
+
+        # Detailed performance logging
+        perf_details = (
+            f"total={search_time:.3f}s | "
+            f"embedding={embedding_time:.3f}s ({embedding_pct:.1f}%) | "
+            f"db_search={db_search_time:.3f}s ({db_search_pct:.1f}%) | "
+            f"other={other_pct:.1f}%"
+        )
+
+        if search_time > 2.0:
+            logger.warning(
+                f"⚠️  Slow content search | {perf_details} | "
+                f"query={request.query[:50]} | results={len(results)}"
+            )
+        else:
+            logger.info(
+                f"✅ Content search completed | {perf_details} | "
+                f"query={request.query[:50]} | results={len(results)}"
+            )
+
+        # Apply pagination
+        total = len(results)
+        start_idx = (request.page - 1) * request.per_page
+        end_idx = start_idx + request.per_page
+        paginated_results = results[start_idx:end_idx]
+
+        # Format results
+        formatted_results = [
+            ContentSearchResult(
+                id=str(r["id"]),
+                url=r["url"],
+                chunk_number=r["chunk_number"],
+                content=r["content"],
+                metadata=r["metadata"],
+                source_id=r["source_id"],
+                similarity=r["similarity"],
+                match_type=r["match_type"]
+            )
+            for r in paginated_results
+        ]
+
+        return ContentSearchResponse(
+            results=formatted_results,
+            total=total,
+            page=request.page,
+            per_page=request.per_page,
+            pages=(total + request.per_page - 1) // request.per_page if request.per_page > 0 else 0,
+            query=request.query
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Content search failed | error={str(e)} | query={request.query}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/cache/stats")
+async def get_cache_stats():
+    """Get Redis cache statistics for embeddings."""
+    try:
+        cache = await get_embedding_cache()
+        stats = await cache.get_stats()
+
+        return {
+            "success": True,
+            "cache_stats": stats,
+            "ttl_days": cache.ttl_days if cache._enabled else None,
+        }
+    except Exception as e:
+        safe_logfire_error(f"Failed to get cache stats | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})

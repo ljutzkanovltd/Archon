@@ -16,9 +16,11 @@ import {
   HiCog,
   HiServer,
   HiClipboardList,
+  HiBeaker,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ProjectTaskBadge } from "./Sidebar/ProjectTaskBadge";
+import { useWorkOrders } from "@/features/agent-work-orders/hooks/useAgentWorkOrderQueries";
 
 interface MenuItemProps {
   href: string;
@@ -170,7 +172,11 @@ export function DesktopSidebar() {
     tasksEnabled,
     knowledgeBaseEnabled,
     mcpServerDashboardEnabled,
+    agentWorkOrdersEnabled,
   } = useSettings();
+
+  // Fetch work orders for badge count
+  const { data: workOrders = [] } = useWorkOrders();
 
   // Sidebar width management
   const MIN_WIDTH = 64; // Collapsed width
@@ -274,6 +280,11 @@ export function DesktopSidebar() {
       ["todo", "doing", "review"].includes(task.status)
   ).length;
 
+  // Calculate active work order count (pending, running)
+  const activeWorkOrderCount = workOrders.filter(
+    (workOrder) => workOrder.status === "pending" || workOrder.status === "running"
+  ).length;
+
   // Build menu items with projects as children
   const allMenuItems: MenuItemProps[] = [
     {
@@ -307,6 +318,12 @@ export function DesktopSidebar() {
       badge: activeTaskCount > 0 ? String(activeTaskCount) : undefined,
     },
     {
+      href: "/agent-work-orders",
+      icon: HiBeaker,
+      label: "Agent Work Orders",
+      badge: activeWorkOrderCount > 0 ? String(activeWorkOrderCount) : undefined,
+    },
+    {
       href: "/knowledge-base",
       icon: HiDatabase,
       label: "Knowledge Base",
@@ -327,6 +344,7 @@ export function DesktopSidebar() {
   const menuItems = allMenuItems.filter((item) => {
     if (item.href === "/projects" && !projectsEnabled) return false;
     if (item.href === "/tasks" && !tasksEnabled) return false;
+    if (item.href === "/agent-work-orders" && !agentWorkOrdersEnabled) return false;
     if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
     if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
     return true; // Always show Dashboard and Settings
@@ -398,7 +416,11 @@ export function MobileSidebar() {
     tasksEnabled,
     knowledgeBaseEnabled,
     mcpServerDashboardEnabled,
+    agentWorkOrdersEnabled,
   } = useSettings();
+
+  // Fetch work orders for badge count
+  const { data: workOrders = [] } = useWorkOrders();
 
   // Fetch projects on mount
   useEffect(() => {
@@ -422,6 +444,11 @@ export function MobileSidebar() {
       !task.archived &&
       task.status &&
       ["todo", "doing", "review"].includes(task.status)
+  ).length;
+
+  // Calculate active work order count (pending, running)
+  const activeWorkOrderCount = workOrders.filter(
+    (workOrder) => workOrder.status === "pending" || workOrder.status === "running"
   ).length;
 
   // Build menu items with projects as children
@@ -458,6 +485,12 @@ export function MobileSidebar() {
       badge: activeTaskCount > 0 ? String(activeTaskCount) : undefined,
     },
     {
+      href: "/agent-work-orders",
+      icon: HiBeaker,
+      label: "Agent Work Orders",
+      badge: activeWorkOrderCount > 0 ? String(activeWorkOrderCount) : undefined,
+    },
+    {
       href: "/knowledge-base",
       icon: HiDatabase,
       label: "Knowledge Base",
@@ -478,6 +511,7 @@ export function MobileSidebar() {
   const menuItems = allMenuItems.filter((item) => {
     if (item.href === "/projects" && !projectsEnabled) return false;
     if (item.href === "/tasks" && !tasksEnabled) return false;
+    if (item.href === "/agent-work-orders" && !agentWorkOrdersEnabled) return false;
     if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
     if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
     return true; // Always show Dashboard and Settings

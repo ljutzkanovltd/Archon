@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { TasksListView } from "../views/TasksListView";
 import { TaskDetailView } from "../views/TaskDetailView";
@@ -20,6 +21,17 @@ export function TasksPage() {
     return <TaskDetailView taskId={taskId} />;
   }
 
-  // Otherwise show list view
-  return <TasksListView />;
+  // Otherwise show list view with Suspense boundary
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+          <p className="ml-3 text-gray-500 dark:text-gray-400">Loading tasks...</p>
+        </div>
+      }
+    >
+      <TasksListView />
+    </Suspense>
+  );
 }

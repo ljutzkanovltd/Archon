@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import React, { FC, useMemo } from "react";
+import React, { FC, useMemo, Suspense } from "react";
 
 export interface TabItem {
   id: string;
@@ -17,7 +17,11 @@ interface TabViewProps {
   className?: string;
 }
 
-const TabView: FC<TabViewProps> = ({ tabsList, className = "" }) => {
+/**
+ * Internal component that uses useSearchParams
+ * Must be wrapped in Suspense
+ */
+const TabViewContent: FC<TabViewProps> = ({ tabsList, className = "" }) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = searchParams.get("t");
@@ -66,6 +70,24 @@ const TabView: FC<TabViewProps> = ({ tabsList, className = "" }) => {
         {activeTab?.component}
       </React.Fragment>
     </div>
+  );
+};
+
+/**
+ * TabView component with Suspense boundary
+ * Wraps TabViewContent which uses useSearchParams
+ */
+const TabView: FC<TabViewProps> = (props) => {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+        </div>
+      }
+    >
+      <TabViewContent {...props} />
+    </Suspense>
   );
 };
 

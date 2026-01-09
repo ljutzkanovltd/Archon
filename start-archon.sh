@@ -26,6 +26,7 @@
 #   --skip-backup               Skip database backup before start
 #   --skip-dependency-check     Skip AI dependency validation
 #   --skip-health-checks        Skip post-startup health checks
+#   --skip-nextjs               Don't start Next.js container (for local dev: npm run dev)
 #   --auto-vpn                  Automatically connect VPN if needed
 #   --help                      Show this help message
 #
@@ -141,6 +142,7 @@ SKIP_NEXTJS=false
 
 # Core containers (always started)
 CORE_CONTAINER_PATTERNS=(
+    "redis-archon"
     "archon-server"
     "archon-mcp"
     "archon-ui"
@@ -709,6 +711,16 @@ else
                 2)
                     log_info "User chose: Restart containers"
                     log_info "Stopping existing containers..."
+
+                    # Explicitly stop Next.js container if --skip-nextjs flag is set
+                    # This ensures the container is actually removed before restarting other services
+                    if [ "$SKIP_NEXTJS" = true ] && docker ps -a --format '{{.Names}}' | grep -q "archon-ui-nextjs"; then
+                        log_info "Removing Next.js container (--skip-nextjs flag set)..."
+                        docker stop archon-ui-nextjs 2>/dev/null || true
+                        docker rm archon-ui-nextjs 2>/dev/null || true
+                        log_success "Next.js container removed"
+                    fi
+
                     cd "$SCRIPT_DIR" && docker compose down
                     log_success "Containers stopped"
                     SKIP_DOCKER_COMPOSE=false
@@ -736,6 +748,16 @@ else
         force-restart)
             log_info "Conflict resolution: FORCE-RESTART mode"
             log_info "Forcing restart of existing containers..."
+
+            # Explicitly stop Next.js container if --skip-nextjs flag is set
+            # This ensures the container is actually removed before restarting other services
+            if [ "$SKIP_NEXTJS" = true ] && docker ps -a --format '{{.Names}}' | grep -q "archon-ui-nextjs"; then
+                log_info "Removing Next.js container (--skip-nextjs flag set)..."
+                docker stop archon-ui-nextjs 2>/dev/null || true
+                docker rm archon-ui-nextjs 2>/dev/null || true
+                log_success "Next.js container removed"
+            fi
+
             cd "$SCRIPT_DIR" && docker compose down
             log_success "Containers stopped"
             SKIP_DOCKER_COMPOSE=false
@@ -761,13 +783,28 @@ else
 
     # Build docker compose command based on mode
     cd "$SCRIPT_DIR"
+
+    # Determine base compose command
     if [ "$REMOTE_SUPABASE" = true ]; then
-        log_info "Running: docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml up -d"
-        COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml up -d"
+        BASE_COMPOSE="docker compose -f docker-compose.yml -f docker-compose.remote-overlay.yml"
     else
-        log_info "Running: docker compose up -d"
-        COMPOSE_CMD="docker compose up -d"
+        BASE_COMPOSE="docker compose"
     fi
+
+    # Build explicit service list (exclude Next.js if --skip-nextjs flag is set)
+    # This ensures archon-ui-nextjs container is NOT started when flag is present
+    # NOTE: We use explicit service names instead of profiles to ensure precise control
+    SERVICES_TO_START="redis-archon archon-server archon-mcp archon-frontend"
+
+    if [ "$SKIP_NEXTJS" != true ]; then
+        SERVICES_TO_START="$SERVICES_TO_START archon-frontend-nextjs"
+        # Add profile flag to activate nextjs profile
+        BASE_COMPOSE="$BASE_COMPOSE --profile nextjs"
+    fi
+
+    # Build final command with explicit service names
+    COMPOSE_CMD="$BASE_COMPOSE up -d $SERVICES_TO_START"
+    log_info "Running: $COMPOSE_CMD"
 
     # Start services in background
     if $COMPOSE_CMD; then

@@ -3,3 +3,7 @@ export { McpStatusBar } from "./McpStatusBar";
 export { McpClientList } from "./McpClientList";
 export { UsageStatsCard } from "./UsageStatsCard";
 export { UsageByToolChart } from "./UsageByToolChart";
+export { ToolExecutionHistory } from "./ToolExecutionHistory";
+export { SessionTimeline } from "./SessionTimeline";
+export { McpAnalytics } from "./McpAnalytics";
+export { McpLogsViewer } from "./McpLogsViewer";

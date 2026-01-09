@@ -36,6 +36,16 @@ export default function KnowledgeBasePage() {
   const [completionRate, setCompletionRate] = useState<number>(0);
   const [metricsLoading, setMetricsLoading] = useState(false);
 
+  // Content search state
+  const [searchMode, setSearchMode] = useState<"sources" | "content">("sources");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchPages, setSearchPages] = useState(0);
+
   useEffect(() => {
     loadSources();
     loadAdditionalMetrics();
@@ -96,7 +106,7 @@ export default function KnowledgeBasePage() {
         setSources(sourcesWithCounts);
 
         // Calculate completion rate (sources with >5 documents)
-        const sourcesWithDocs = sourcesWithCounts.filter(s => (s.documents_count || 0) > 5).length;
+        const sourcesWithDocs = sourcesWithCounts.filter((s: KnowledgeSource) => (s.documents_count || 0) > 5).length;
         const rate = sourcesWithCounts.length > 0
           ? Math.round((sourcesWithDocs / sourcesWithCounts.length) * 100)
           : 0;
@@ -237,6 +247,51 @@ export default function KnowledgeBasePage() {
     } catch (err) {
       throw err;
     }
+  };
+
+  const handleContentSearch = async (page = 1) => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchPages(0);
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchPage(page);
+
+    try {
+      const response = await knowledgeBaseApi.searchContent({
+        query: searchQuery,
+        match_count: 50,
+        page,
+        per_page: 10,
+      });
+
+      if (response.success) {
+        setSearchResults(response.results);
+        setSearchTotal(response.total);
+        setSearchPages(response.pages);
+      } else {
+        throw new Error("Search failed");
+      }
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Failed to search content");
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchPages(0);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleSearchModeChange = (mode: "sources" | "content") => {
+    setSearchMode(mode);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchPage(1);
   };
 
   // ========== DATATABLE CONFIGURATION ==========
@@ -476,6 +531,141 @@ export default function KnowledgeBasePage() {
 
       {/* Active Operations */}
       <CrawlingProgress className="mb-4" />
+
+      {/* Search Mode Toggle and Content Search */}
+      <div className="mb-6 rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        {/* Search Mode Toggle */}
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Search Mode:
+          </span>
+          <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
+            <button
+              onClick={() => handleSearchModeChange("sources")}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                searchMode === "sources"
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              } rounded-l-lg border-r border-gray-300 dark:border-gray-600`}
+            >
+              Source Titles
+            </button>
+            <button
+              onClick={() => handleSearchModeChange("content")}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                searchMode === "content"
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              } rounded-r-lg`}
+            >
+              Page Content
+            </button>
+          </div>
+        </div>
+
+        {/* Content Search UI */}
+        {searchMode === "content" && (
+          <div>
+            <div className="mb-4 flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleContentSearch(1)}
+                placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+              />
+              <button
+                onClick={() => handleContentSearch(1)}
+                disabled={searchLoading || !searchQuery.trim()}
+                className="rounded-lg bg-blue-600 px-6 py-2 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {searchLoading ? "Searching..." : "Search"}
+              </button>
+            </div>
+
+            {/* Search Results */}
+            {searchError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:bg-red-900/20 dark:text-red-400">
+                <p className="font-semibold">Search Error</p>
+                <p className="text-sm">{searchError}</p>
+              </div>
+            )}
+
+            {searchResults.length > 0 && (
+              <div>
+                <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                  Found {searchTotal} results in {searchPages} pages
+                </div>
+                <div className="space-y-4">
+                  {searchResults.map((result, index) => (
+                    <div
+                      key={result.id || index}
+                      className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                    >
+                      <div className="mb-2 flex items-start justify-between">
+                        <a
+                          href={result.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+                        >
+                          {result.url}
+                        </a>
+                        <div className="flex gap-2">
+                          <span className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            {result.match_type}
+                          </span>
+                          <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                            {Math.round(result.similarity * 100)}% match
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                        {result.content}
+                      </p>
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Chunk #{result.chunk_number}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {searchPages > 1 && (
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => handleContentSearch(searchPage - 1)}
+                      disabled={searchPage === 1 || searchLoading}
+                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Page {searchPage} of {searchPages}
+                    </span>
+                    <button
+                      onClick={() => handleContentSearch(searchPage + 1)}
+                      disabled={searchPage === searchPages || searchLoading}
+                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
+                <p className="text-gray-600 dark:text-gray-400">
+                  No results found for &quot;{searchQuery}&quot;
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Conditional Render: Empty State or DataTable */}
       {!isLoading && sources.length === 0 ? (

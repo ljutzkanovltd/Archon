@@ -2,7 +2,7 @@
 
 import { usePageTitle, useMcpStatus, useMcpConfig, useMcpClients, useMcpSessionInfo, useMcpUsageStats } from "@/hooks";
 import { HiServer } from "react-icons/hi";
-import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart } from "@/components/MCP";
+import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart, ToolExecutionHistory, SessionTimeline, McpAnalytics, McpLogsViewer } from "@/components/MCP";
 
 export default function McpPage() {
   usePageTitle("MCP Status", "Archon");
@@ -63,6 +63,56 @@ export default function McpPage() {
           Connected Clients
         </h2>
         <McpClientList clients={clients} />
+      </div>
+
+      {/* Tool Execution History - Show for each connected client */}
+      {clients.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+            Tool Execution History
+          </h2>
+          {clients.map((client) => (
+            <div key={client.session_id} className="mb-6">
+              <h3 className="text-lg font-medium mb-3 text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                <span>{client.client_type}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                  ({client.session_id.slice(0, 8)})
+                </span>
+              </h3>
+              <ToolExecutionHistory sessionId={client.session_id} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Session Timeline - Visual timeline for each connected client */}
+      {clients.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+            Session Timeline
+          </h2>
+          {clients.map((client) => (
+            <div key={client.session_id} className="mb-6">
+              <h3 className="text-lg font-medium mb-3 text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                <span>{client.client_type}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                  ({client.session_id.slice(0, 8)})
+                </span>
+              </h3>
+              <SessionTimeline sessionId={client.session_id} height={400} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Analytics Dashboard - Expandable comprehensive analytics */}
+      <div className="mb-6">
+        <McpAnalytics days={30} compare={true} />
+      </div>
+
+      {/* Logs Viewer - Detailed log inspection with virtualization */}
+      <div className="mb-6">
+        <McpLogsViewer initialLevel="all" />
       </div>
 
       {/* Usage Statistics */}

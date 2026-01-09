@@ -91,7 +91,7 @@ export function useProgress(
   useSmartPolling({
     baseInterval: pollingInterval,
     hiddenInterval: 10000,
-    enabled: enabled && !!progressId && shouldPoll && !query.isError,
+    enabled: !!(enabled && !!progressId && shouldPoll && !query.isError),
     onPoll: () => {
       queryClient.invalidateQueries({ queryKey: ["progress", progressId] });
     },

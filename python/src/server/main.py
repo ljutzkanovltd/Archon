@@ -39,6 +39,7 @@ from .api_routes.settings_api import router as settings_router
 
 # Import Logfire configuration
 from .config.logfire_config import api_logger, setup_logfire
+from .services.client_manager import close_supabase_client
 from .services.crawler_manager import cleanup_crawler, initialize_crawler
 
 # Import utilities and core classes
@@ -119,6 +120,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"Could not initialize prompt service: {e}")
 
+        # Initialize Redis embedding cache
+        try:
+            from .services.embeddings.redis_cache import get_embedding_cache
+
+            cache = await get_embedding_cache()
+            api_logger.info("✅ Redis embedding cache initialized")
+        except Exception as e:
+            api_logger.warning(f"⚠️  Redis cache initialization failed: {e}")
+            # Non-fatal - cache will gracefully degrade
+
         # Run configuration validation checks (non-blocking)
         try:
             api_logger.info("Running configuration validation checks...")
@@ -147,12 +158,26 @@ async def lifespan(app: FastAPI):
     try:
         # MCP Client cleanup not needed
 
+        # Disconnect Redis cache
+        try:
+            from .services.embeddings.redis_cache import get_embedding_cache
+
+            cache = await get_embedding_cache()
+            await cache.disconnect()
+        except Exception as e:
+            api_logger.warning("Could not disconnect Redis cache: %s", e, exc_info=True)
+
         # Cleanup crawling context
         try:
             await cleanup_crawler()
         except Exception as e:
             api_logger.warning("Could not cleanup crawling context: %s", e, exc_info=True)
 
+        # Cleanup Supabase connection pool
+        try:
+            close_supabase_client()
+        except Exception as e:
+            api_logger.warning("Could not cleanup Supabase client: %s", e, exc_info=True)
 
         api_logger.info("✅ Cleanup completed")
 

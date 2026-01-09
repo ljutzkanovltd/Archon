@@ -154,6 +154,8 @@ export interface Task {
   priority: "low" | "medium" | "high" | "urgent";
   assignee: string;
   feature?: string;
+  estimated_hours?: number;
+  actual_hours?: number;
   created_at: string;
   updated_at: string;
   completed_at?: string;
@@ -294,6 +296,7 @@ export type ProgressStatus =
   | "processing"
   | "storing"
   | "document_storage"
+  | "paused"
   | "completed"
   | "error"
   | "failed"
@@ -457,9 +460,16 @@ export interface McpServerConfig {
 export interface McpClient {
   session_id: string;
   client_type: "Claude" | "Cursor" | "Windsurf" | "Cline" | "KiRo" | "Augment" | "Gemini" | "Unknown";
+  client_version?: string;
   connected_at: string;
   last_activity: string;
-  status: "active" | "idle";
+  status: "active" | "idle" | "disconnected";
+  disconnected_at?: string;
+  total_duration?: number;
+  disconnect_reason?: string;
+  user_id?: string;
+  user_email?: string;
+  user_name?: string;
 }
 
 export interface McpSessionInfo {
@@ -470,3 +480,234 @@ export interface McpSessionInfo {
 }
 
 export type SupportedIDE = "claudecode" | "gemini" | "codex" | "cursor" | "windsurf" | "cline" | "kiro";
+
+// ==================== MCP REQUEST & ERROR TYPES ====================
+
+/**
+ * Request status enum - shared across all request-related types
+ */
+export type McpRequestStatus = "success" | "error" | "timeout";
+
+/**
+ * Individual MCP request (tool call) with token usage and performance
+ * Maps to: archon_mcp_requests table
+ */
+export interface McpRequest {
+  request_id: string;
+  session_id: string;
+  method: string;
+  tool_name: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+  timestamp: string;
+  duration_ms: number | null;
+  status: McpRequestStatus;
+  error_message: string | null;
+}
+
+/**
+ * Request usage summary for a session
+ */
+export interface McpRequestSummary {
+  total_requests: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_cost: number;
+}
+
+/**
+ * Extended session details with full request history
+ * API Response: GET /api/mcp/sessions/{session_id}
+ */
+export interface McpSessionDetails {
+  session: McpSessionMetadata;
+  requests: McpRequest[];
+  summary: McpRequestSummary;
+  pagination?: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
+}
+
+/**
+ * Detailed session metadata (extends McpClient)
+ * Maps to: archon_mcp_sessions table
+ */
+export interface McpSessionMetadata {
+  session_id: string;
+  client_type: string;
+  client_version: string | null;
+  client_capabilities: Record<string, any> | null;
+  connected_at: string;
+  disconnected_at: string | null;
+  last_activity: string;
+  status: "active" | "idle" | "disconnected";
+  metadata: Record<string, any>;
+}
+
+/**
+ * Error severity levels
+ */
+export type McpErrorSeverity = "error" | "warning" | "timeout";
+
+/**
+ * Individual error/warning entry
+ * Used by: ErrorWarningMonitor component
+ */
+export interface McpError {
+  request_id: string;
+  session_id: string;
+  tool_name: string | null;
+  error_message: string;
+  timestamp: string;
+  severity: McpErrorSeverity;
+  duration_ms: number | null;
+  method: string;
+  session_client_type?: string;
+}
+
+/**
+ * Error summary statistics
+ * API Response: GET /api/mcp/errors
+ */
+export interface McpErrorSummary {
+  error_count: number;
+  timeout_count: number;
+  last_error_at: string | null;
+  error_rate_percent: number;
+}
+
+/**
+ * Error monitoring response
+ * API Response: GET /api/mcp/errors?severity=error&limit=50
+ */
+export interface McpErrorResponse {
+  errors: McpError[];
+  summary: McpErrorSummary;
+  total: number;
+}
+
+// ==================== MCP ANALYTICS TYPES ====================
+
+/**
+ * Daily trend data point for analytics
+ */
+export interface McpDailyTrend {
+  date: string;  // YYYY-MM-DD format
+  requests: number;
+  tokens: number;
+  cost: number;
+  success_rate: number;  // Percentage (0-100)
+}
+
+/**
+ * Hourly usage pattern (peak times)
+ */
+export interface McpHourlyTrend {
+  hour: number;  // 0-23
+  requests: number;
+  avg_duration: number;  // Average duration in milliseconds
+}
+
+/**
+ * Success/failure ratio statistics
+ */
+export interface McpRatios {
+  success: number;
+  error: number;
+  timeout: number;
+  success_rate: number;  // Percentage (0-100)
+}
+
+/**
+ * Response time statistics by tool
+ */
+export interface McpToolResponseTime {
+  tool: string;
+  avg_ms: number;
+  min_ms: number;
+  max_ms: number;
+  count: number;
+}
+
+/**
+ * Overall response time statistics with percentiles
+ */
+export interface McpResponseTimes {
+  by_tool: McpToolResponseTime[];
+  overall_avg: number;  // Average across all requests (ms)
+  p50: number;  // Median (ms)
+  p95: number;  // 95th percentile (ms)
+  p99: number;  // 99th percentile (ms)
+}
+
+/**
+ * Comparison metric structure
+ */
+export interface McpComparisonMetric {
+  current: number;
+  previous: number;
+  change_percent: number;  // Positive = increase, negative = decrease
+}
+
+/**
+ * Period comparison data
+ */
+export interface McpComparison {
+  requests: McpComparisonMetric;
+  success_rate: McpComparisonMetric;
+  tokens: McpComparisonMetric;
+  cost: McpComparisonMetric;
+}
+
+/**
+ * Complete analytics response
+ * API Response: GET /api/mcp/analytics?days=30&compare=true
+ */
+export interface McpAnalyticsResponse {
+  period: {
+    days: number;
+    start: string;  // ISO timestamp
+    end: string;    // ISO timestamp
+  };
+  trends: {
+    daily: McpDailyTrend[];
+    hourly: McpHourlyTrend[];
+  };
+  ratios: McpRatios;
+  response_times: McpResponseTimes;
+  comparison: McpComparison | null;  // Null if compare=false
+}
+
+// ==================== MCP LOGS TYPES ====================
+
+/**
+ * Log level enum (mapped from request status)
+ */
+export type McpLogLevel = "info" | "warning" | "error" | "debug" | "all";
+
+/**
+ * MCP log entry (extended from McpRequest with level field)
+ */
+export interface McpLogEntry extends McpRequest {
+  level: McpLogLevel;  // Computed from status: success=info, timeout=warning, error=error
+}
+
+/**
+ * Logs response with pagination
+ * API Response: GET /api/mcp/logs?level=error&search=timeout&limit=100&offset=0
+ */
+export interface McpLogsResponse {
+  logs: McpLogEntry[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
+}

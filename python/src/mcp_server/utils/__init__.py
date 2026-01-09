@@ -10,6 +10,7 @@ from .request_tracker import (
     track_mcp_request,
     track_simple_request,
 )
+from .session_tracking import get_or_create_session, track_tool_execution
 from .timeout_config import (
     get_default_timeout,
     get_max_polling_attempts,
@@ -28,4 +29,6 @@ __all__ = [
     "track_simple_request",
     "extract_text_from_args",
     "extract_text_from_result",
+    "track_tool_execution",
+    "get_or_create_session",
 ]

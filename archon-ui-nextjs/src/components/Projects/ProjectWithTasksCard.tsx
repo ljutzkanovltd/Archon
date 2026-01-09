@@ -84,7 +84,7 @@ export function ProjectWithTasksCard({
         {/* Action buttons group */}
         <div className="flex items-center gap-1.5 ml-auto">
           {/* View Button */}
-          <Tooltip content="View project" style="light" trigger="hover,focus">
+          <Tooltip content="View project" style="light" trigger="hover">
             <button
               type="button"
               onClick={() => onView(project)}
@@ -96,7 +96,7 @@ export function ProjectWithTasksCard({
           </Tooltip>
 
           {/* Edit Button */}
-          <Tooltip content="Edit project" style="light" trigger="hover,focus">
+          <Tooltip content="Edit project" style="light" trigger="hover">
             <button
               type="button"
               onClick={() => onEdit(project)}
@@ -109,7 +109,7 @@ export function ProjectWithTasksCard({
           </Tooltip>
 
           {/* Archive/Restore Button */}
-          <Tooltip content={project.archived ? "Restore project" : "Archive project"} style="light" trigger="hover,focus">
+          <Tooltip content={project.archived ? "Restore project" : "Archive project"} style="light" trigger="hover">
             <button
               type="button"
               onClick={() => onArchive(project)}
@@ -121,7 +121,7 @@ export function ProjectWithTasksCard({
           </Tooltip>
 
           {/* Toggle Tasks Button */}
-          <Tooltip content={isExpanded ? "Hide tasks" : `Show ${projectTasks.length} tasks`} style="light" trigger="hover,focus">
+          <Tooltip content={isExpanded ? "Hide tasks" : `Show ${projectTasks.length} tasks`} style="light" trigger="hover">
             <button
               type="button"
               onClick={handleToggle}

@@ -406,7 +406,14 @@ ${screenshot ? "📷 Screenshot attached" : ""}
               {toast.type === "info" && "ℹ"}
             </div>
             <div className="ml-3 text-sm font-normal">{toast.message}</div>
-            <Toast.Toggle onClick={() => setToast({ ...toast, show: false })} />
+            <button
+              type="button"
+              className="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex h-8 w-8 dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700"
+              onClick={() => setToast({ ...toast, show: false })}
+              aria-label="Close"
+            >
+              <HiX className="w-5 h-5" />
+            </button>
           </Toast>
         </div>
       )}
