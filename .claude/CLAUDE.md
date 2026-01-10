@@ -533,6 +533,21 @@ docker exec -it supabase-ai-db psql -U postgres -d postgres
 - Retrieve code examples
 - Manage tasks and projects
 
+### Session Management Architecture
+
+Archon implements a **dual session management system**:
+
+1. **FastMCP Protocol Sessions**: Managed automatically by FastMCP framework for MCP protocol communication
+2. **Archon Analytics Sessions**: Created lazily on first tool call for tracking tool usage and metrics
+
+**Key Features**:
+- ✅ **Lazy Creation**: Sessions created on first tool call, not at server startup
+- ✅ **No Conflicts**: FastMCP handles protocol, Archon handles analytics
+- ✅ **Context-Based**: Session mapping stored in FastMCP context
+- ✅ **Database Persistence**: Analytics sessions stored in Supabase for dashboard
+
+→ **Complete architecture**: `@.claude/docs/MCP_SESSION_ARCHITECTURE.md`
+
 ### MCP Capabilities
 
 **Knowledge Base**: `search_docs`, `get_doc`, `list_docs`, `get_code_examples`
@@ -783,6 +798,10 @@ unarchive_project(project_id="project-123")  # Restore if needed
 
 **MCP Server Not Responding**: `docker ps | grep archon-mcp` → `curl http://localhost:8051/health` → `./stop-archon.sh && ./start-archon.sh`
 
+**Sessions Not Being Created**: Sessions are created lazily on first tool call, not at startup. Make a test tool call via MCP client to trigger session creation.
+
+**Multiple Sessions for Same Client**: Each MCP connection creates a new FastMCP protocol session, which triggers new Archon analytics session on first tool call. This is expected behavior.
+
 **Supabase Connection Issues**: Check Supabase services running → Verify PostgreSQL port → Check Kong gateway
 
 **Document Indexing Failures**: Check logs → Reindex manually → Verify file permissions
@@ -811,6 +830,7 @@ unarchive_project(project_id="project-123")  # Restore if needed
 - `@.claude/docs/BEST_PRACTICES.md` - MCP protocol, task management, agent patterns
 - `@.claude/docs/API_REFERENCE.md` - Complete API documentation
 - `@.claude/docs/BACKUP_PROCEDURES.md` - Backup automation, disaster recovery
+- `@.claude/docs/MCP_SESSION_ARCHITECTURE.md` - Session management architecture, lazy creation
 
 ### External Resources
 

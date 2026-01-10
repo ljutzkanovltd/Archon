@@ -86,12 +86,23 @@ server_port = int(mcp_port)
 @dataclass
 class ArchonContext:
     """
-    Context for MCP server with session tracking.
-    No heavy dependencies - just service client for HTTP calls.
+    Context for MCP server with lazy session lifecycle.
+
+    Session Lifecycle:
+    - session_id is NOT created at server startup
+    - FastMCP handles MCP protocol session management
+    - Archon creates tracking session on first tool call via @track_tool_execution
+    - This allows FastMCP to manage protocol sessions while Archon tracks analytics
+
+    Attributes:
+        service_client: HTTP client for backend API calls
+        session_id: Optional Archon tracking session ID (created on first tool call)
+        health_status: Service health information
+        startup_time: Server startup timestamp
     """
 
     service_client: Any
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None  # Created lazily on first tool call, not at startup
     health_status: dict = None
     startup_time: float = None
 
@@ -170,15 +181,6 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             # Create context
             context = ArchonContext(service_client=service_client)
 
-            # Create global session for single-user tracking
-            logger.info("🔐 Creating global MCP session for single-user mode...")
-            global_session_id = session_manager.create_session(
-                client_info={"name": "Claude Code", "version": "1.0"},
-                user_context=None  # Single-user mode, no user tracking
-            )
-            context.session_id = global_session_id
-            logger.info(f"✓ Global MCP session created: {global_session_id}")
-
             # Perform initial health check
             await perform_health_checks(context)
 
@@ -198,13 +200,13 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             # Clean up resources
             logger.info("🧹 Cleaning up MCP server...")
 
-            # Close global session and all active sessions
+            # Close all active sessions (no global session with lazy creation)
             try:
                 session_manager = get_session_manager()
 
-                # Close global session first if it exists
-                if _shared_context and hasattr(_shared_context, 'session_id'):
-                    logger.info(f"Closing global session: {_shared_context.session_id}")
+                # Check if context session exists (created on first tool call)
+                if _shared_context and hasattr(_shared_context, 'session_id') and _shared_context.session_id:
+                    logger.info(f"Closing context session: {_shared_context.session_id}")
                     session_manager.close_session(_shared_context.session_id, reason="server_shutdown")
 
                 # Close any other active sessions
@@ -215,7 +217,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
                         session_manager.close_session(session_id, reason="server_shutdown")
                     logger.info("✓ All sessions closed")
                 else:
-                    logger.info("No additional active sessions to close")
+                    logger.info("No active sessions to close (lazy session creation - may not have been created)")
 
             except Exception as e:
                 logger.error(f"Failed to close sessions on shutdown: {e}")

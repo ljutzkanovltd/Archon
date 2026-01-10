@@ -298,7 +298,7 @@ Archon uses true microservices architecture with clear separation of concerns:
 | ------------------------ | ------------------------------ | -------------------------------- | ------------------------------------------------------------------ |
 | **Frontend**             | `archon-ui-main/`              | Web interface and dashboard      | React, TypeScript, TailwindCSS, Socket.IO client                   |
 | **Server**               | `python/src/server/`           | Core business logic and APIs     | FastAPI, service layer, Socket.IO broadcasts, all ML/AI operations |
-| **MCP Server**           | `python/src/mcp/`              | MCP protocol interface           | Lightweight HTTP wrapper, MCP tools, session management            |
+| **MCP Server**           | `python/src/mcp/`              | MCP protocol interface           | Lightweight HTTP wrapper, MCP tools, lazy session tracking         |
 | **Agents**               | `python/src/agents/`           | PydanticAI agent hosting         | Document and RAG agents, streaming responses                       |
 | **Agent Work Orders** *(optional)* | `python/src/agent_work_orders/` | Workflow execution engine | Claude Code CLI automation, repository management, SSE updates |
 
@@ -308,6 +308,17 @@ Archon uses true microservices architecture with clear separation of concerns:
 - **Socket.IO**: Real-time updates from Server to Frontend
 - **MCP Protocol**: AI clients connect to MCP Server via SSE or stdio
 - **No Direct Imports**: Services are truly independent with no shared code dependencies
+
+### Session Management
+
+Archon uses a **dual session management system**:
+
+- **FastMCP Protocol Sessions**: Managed automatically by FastMCP for MCP protocol communication
+- **Archon Analytics Sessions**: Created lazily on first tool call for tracking and dashboard metrics
+
+Sessions are created only when needed (lazy creation), stored in Supabase, and mapped via FastMCP context. This architecture ensures no conflicts between protocol management and analytics tracking.
+
+See `docs/MCP_SESSION_ARCHITECTURE.md` for complete details.
 
 ### Key Architectural Benefits
 

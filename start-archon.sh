@@ -139,6 +139,7 @@ AUTO_VPN="${AUTO_VPN:-false}"
 # Optional services configuration
 SKIP_OPTIONAL_SERVICES=false
 SKIP_NEXTJS=false
+SKIP_WORK_ORDERS=false
 
 # Core containers (always started)
 CORE_CONTAINER_PATTERNS=(
@@ -147,12 +148,12 @@ CORE_CONTAINER_PATTERNS=(
     "archon-mcp"
     "archon-ui"
     "archon-ui-nextjs"
+    "archon-agent-work-orders"
 )
 
 # Optional containers (can be skipped with --skip-optional)
 OPTIONAL_CONTAINER_PATTERNS=(
     "archon-agents"
-    "archon-agent-work-orders"
 )
 
 # Build final container list (populated after argument parsing)
@@ -187,8 +188,9 @@ OPTIONS:
   --skip-backup               Skip database backup before start
   --skip-dependency-check     Skip AI dependency validation
   --skip-health-checks        Skip post-startup health checks
-  --skip-optional             Skip optional services (archon-agents, archon-agent-work-orders)
+  --skip-optional             Skip optional services (archon-agents)
   --skip-nextjs               Skip Next.js frontend (for local development on port 3738)
+  --skip-work-orders          Skip Agent Work Orders service (started by default)
   -h, --help                  Show this help message
 
 CONFLICT MODES:
@@ -260,6 +262,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_NEXTJS=true
             shift
             ;;
+        --skip-work-orders)
+            SKIP_WORK_ORDERS=true
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -278,13 +284,26 @@ ARCHON_CONTAINER_PATTERNS=("${CORE_CONTAINER_PATTERNS[@]}")
 
 # Remove archon-ui-nextjs if --skip-nextjs flag is set
 if [ "$SKIP_NEXTJS" = true ]; then
-    ARCHON_CONTAINER_PATTERNS=()
-    for container in "${CORE_CONTAINER_PATTERNS[@]}"; do
+    TEMP_PATTERNS=()
+    for container in "${ARCHON_CONTAINER_PATTERNS[@]}"; do
         if [ "$container" != "archon-ui-nextjs" ]; then
-            ARCHON_CONTAINER_PATTERNS+=("$container")
+            TEMP_PATTERNS+=("$container")
         fi
     done
+    ARCHON_CONTAINER_PATTERNS=("${TEMP_PATTERNS[@]}")
     log_info "Skipping Next.js frontend (--skip-nextjs flag) - run locally with: cd archon-ui-nextjs && npm run dev"
+fi
+
+# Remove archon-agent-work-orders if --skip-work-orders flag is set
+if [ "$SKIP_WORK_ORDERS" = true ]; then
+    TEMP_PATTERNS=()
+    for container in "${ARCHON_CONTAINER_PATTERNS[@]}"; do
+        if [ "$container" != "archon-agent-work-orders" ]; then
+            TEMP_PATTERNS+=("$container")
+        fi
+    done
+    ARCHON_CONTAINER_PATTERNS=("${TEMP_PATTERNS[@]}")
+    log_info "Skipping Agent Work Orders service (--skip-work-orders flag)"
 fi
 
 # Add optional containers unless --skip-optional flag is set
@@ -294,6 +313,37 @@ else
     ARCHON_CONTAINER_PATTERNS+=("${OPTIONAL_CONTAINER_PATTERNS[@]}")
 fi
 
+# Interactive database selection
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_info "  Database Configuration"
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_info "Current MODE from .env: $MODE"
+echo ""
+echo "Choose database to use:"
+echo "  1) local  - Local Supabase (from local-ai-packaged)"
+echo "  2) remote - Remote Supabase Cloud (eu-west-2)"
+echo ""
+read -p "Enter choice [1-2] (press Enter to keep current): " db_choice
+
+case "$db_choice" in
+    1)
+        MODE="local"
+        log_success "Selected: LOCAL database"
+        ;;
+    2)
+        MODE="remote"
+        log_success "Selected: REMOTE database"
+        ;;
+    "")
+        log_info "Keeping current MODE: $MODE"
+        ;;
+    *)
+        log_error "Invalid choice: $db_choice"
+        exit 1
+        ;;
+esac
+echo ""
+
 # Validate deployment mode (simplified: local or remote)
 if [[ ! "$MODE" =~ ^(local|remote)$ ]]; then
     log_error "Invalid mode: $MODE"
@@ -301,12 +351,53 @@ if [[ ! "$MODE" =~ ^(local|remote)$ ]]; then
     exit 1
 fi
 
-# Set remote mode flag
-REMOTE_SUPABASE=false
-if [ "$MODE" = "remote" ]; then
+# Display configuration selection header
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_info "  Configuration Selection (MODE=$MODE)"
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Auto-select configuration based on MODE
+if [ "$MODE" = "local" ]; then
+    # Validate LOCAL_* variables exist
+    if [ -z "$LOCAL_SUPABASE_URL" ] || [ -z "$LOCAL_DATABASE_URI" ]; then
+        log_error "MODE=local but LOCAL_SUPABASE_URL or LOCAL_DATABASE_URI not set in .env"
+        log_error "Please ensure LOCAL_* variables are configured"
+        exit 1
+    fi
+
+    export SUPABASE_URL="${LOCAL_SUPABASE_URL}"
+    export SUPABASE_SERVICE_KEY="${LOCAL_SUPABASE_SERVICE_KEY}"
+    export DATABASE_URI="${LOCAL_DATABASE_URI}"
+
+    log_success "Using LOCAL Supabase (from local-ai-packaged)"
+    log_info "  Kong API: ${SUPABASE_URL}"
+    log_info "  PostgreSQL: supabase-ai-db:5432"
+    log_info "  Network: sporterp-ai-unified bridge"
+
+    # Set flags
+    REMOTE_SUPABASE=false
+
+elif [ "$MODE" = "remote" ]; then
+    # Validate REMOTE_* variables exist
+    if [ -z "$REMOTE_SUPABASE_URL" ] || [ -z "$REMOTE_DATABASE_URI" ]; then
+        log_error "MODE=remote but REMOTE_SUPABASE_URL or REMOTE_DATABASE_URI not set in .env"
+        log_error "Please ensure REMOTE_* variables are configured"
+        exit 1
+    fi
+
+    export SUPABASE_URL="${REMOTE_SUPABASE_URL}"
+    export SUPABASE_SERVICE_KEY="${REMOTE_SUPABASE_SERVICE_KEY}"
+    export DATABASE_URI="${REMOTE_DATABASE_URI}"
+
+    log_success "Using REMOTE Supabase (Supabase Cloud)"
+    log_info "  API URL: ${SUPABASE_URL}"
+    log_info "  Region: eu-west-2 (AWS London)"
+
+    # Set flags
     REMOTE_SUPABASE=true
-    log_info "Using remote Supabase (cloud-hosted)"
 fi
+
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Validate LLM mode if specified
 if [ -n "$LLM_MODE" ] && [[ ! "$LLM_MODE" =~ ^(local|remote)$ ]]; then
@@ -800,6 +891,11 @@ else
         SERVICES_TO_START="$SERVICES_TO_START archon-frontend-nextjs"
         # Add profile flag to activate nextjs profile
         BASE_COMPOSE="$BASE_COMPOSE --profile nextjs"
+    fi
+
+    # Add agent work orders by default (unless --skip-work-orders flag is set)
+    if [ "$SKIP_WORK_ORDERS" != true ]; then
+        SERVICES_TO_START="$SERVICES_TO_START archon-agent-work-orders"
     fi
 
     # Build final command with explicit service names

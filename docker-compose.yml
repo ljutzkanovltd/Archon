@@ -176,8 +176,6 @@ services:
 
   # Agent Work Orders Service (Independent microservice for workflow execution)
   archon-agent-work-orders:
-    profiles:
-      - work-orders  # Only starts when explicitly using --profile work-orders
     build:
       context: ./python
       dockerfile: Dockerfile.agent-work-orders
