@@ -144,6 +144,37 @@ async def perform_health_checks(context: ArchonContext):
         context.health_status["last_health_check"] = datetime.now().isoformat()
 
 
+async def periodic_session_cleanup(interval_seconds: int = 60):
+    """
+    Background task to clean up expired sessions every minute.
+
+    Args:
+        interval_seconds: Cleanup interval (default: 60 = 1 minute)
+    """
+    import asyncio
+
+    logger.info(f"🧹 Starting background session cleanup (interval: {interval_seconds}s)")
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+
+            session_manager = get_session_manager()
+            expired_count = session_manager.cleanup_expired_sessions()
+
+            if expired_count > 0:
+                logger.info(f"🧹 Cleaned up {expired_count} expired sessions")
+            else:
+                logger.debug("No expired sessions to clean up")
+
+        except asyncio.CancelledError:
+            logger.info("Background cleanup task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in background cleanup: {e}")
+            logger.error(traceback.format_exc())
+
+
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     """
@@ -173,6 +204,12 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             session_manager = get_session_manager()
             logger.info("✓ Session manager initialized")
 
+            # Recover active sessions from database (after restart)
+            logger.info("🔄 Recovering active sessions from database...")
+            recovered = session_manager.recover_active_sessions()
+            if recovered:
+                logger.info(f"✅ Recovered {len(recovered)} sessions after restart")
+
             # Initialize service client for HTTP calls
             logger.info("🌐 Initializing service client...")
             service_client = get_mcp_service_client()
@@ -184,13 +221,27 @@ async def lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             # Perform initial health check
             await perform_health_checks(context)
 
-            logger.info("✓ MCP server ready")
+            logger.info("✓ MCP server ready (with session recovery)")
+
+            # Start background cleanup task
+            import asyncio
+            cleanup_task = asyncio.create_task(periodic_session_cleanup(interval_seconds=60))
+            logger.info("✓ Background session cleanup started (60s interval)")
 
             # Store context globally
             _shared_context = context
             _initialization_complete = True
 
-            yield context
+            try:
+                yield context
+            finally:
+                # Cancel cleanup task on shutdown
+                logger.info("🛑 Stopping background cleanup task...")
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
 
         except Exception as e:
             logger.error(f"💥 Critical error in lifespan setup: {e}")
@@ -421,7 +472,38 @@ async def health_check(ctx: Context) -> str:
         })
 
 
-# Session management endpoint
+# Session management endpoints
+@mcp.tool()
+@track_tool_execution
+async def heartbeat(ctx: Context) -> str:
+    """
+    Update session activity timestamp to prevent timeout.
+
+    This tool should be called periodically by MCP clients to keep sessions alive.
+    Recommended call frequency: every 2-3 minutes for 5-minute timeout.
+
+    Returns:
+        JSON string confirming heartbeat received
+    """
+    try:
+        from datetime import timezone
+
+        # Session update happens automatically via @track_tool_execution decorator
+        # Just return confirmation
+
+        session_manager = get_session_manager()
+
+        return json.dumps({
+            "success": True,
+            "message": "Session activity updated",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timeout_seconds": session_manager.timeout
+        })
+    except Exception as e:
+        logger.error(f"Error updating heartbeat: {e}")
+        return json.dumps({"success": False, "error": str(e)})
+
+
 @mcp.tool()
 @track_tool_execution
 async def session_info(ctx: Context) -> str:

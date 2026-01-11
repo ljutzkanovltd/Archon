@@ -35,31 +35,60 @@ def close_session_on_error(session_id: str, error: Exception) -> None:
         logger.error(traceback.format_exc())
 
 
-def get_or_create_session(context: Any, fastmcp_session_id: Optional[str] = None, client_info: dict = None) -> str:
+def get_or_create_session(
+    context: Any,
+    fastmcp_session_id: Optional[str] = None,
+    client_session_id: Optional[str] = None,
+    client_info: dict = None
+) -> str:
     """
-    Get or create Archon session for tracking.
+    Get or create Archon session for tracking with client session ID validation.
 
     FastMCP handles MCP protocol sessions.
     Archon creates tracking sessions on first tool call.
 
+    Session Priority (highest to lowest):
+    1. Client-provided session ID (validated)
+    2. Context session ID (validated)
+    3. Create new session
+
     Args:
         context: ArchonContext or FastMCP context
         fastmcp_session_id: Optional FastMCP session ID for mapping
+        client_session_id: Optional client-provided Archon session ID (from X-Archon-Session-Id header)
         client_info: Optional client metadata
 
     Returns:
         str: Archon session ID for tracking
     """
-    # Check if Archon session already exists for this context
+    from src.server.services.mcp_session_manager import get_session_manager
+
+    session_manager = get_session_manager()
+
+    # Priority 1: Client-provided session ID (if valid)
+    if client_session_id:
+        if session_manager.validate_session(client_session_id):
+            logger.debug(f"✓ Client-provided session valid: {client_session_id}")
+            # Store in context for subsequent calls
+            if hasattr(context, 'session_id'):
+                context.session_id = client_session_id
+            return client_session_id
+        else:
+            logger.warning(f"⚠️ Client-provided session {client_session_id} invalid/expired, will create new session")
+
+    # Priority 2: Context session ID (if valid)
     if hasattr(context, 'session_id') and context.session_id:
-        return context.session_id
+        # VALIDATE session is still active before reusing
+        if session_manager.validate_session(context.session_id):
+            logger.debug(f"✓ Reusing valid context session: {context.session_id}")
+            return context.session_id
+        else:
+            # Session expired or invalid - clear it
+            logger.warning(f"⚠️ Context session {context.session_id} invalid/expired, creating new session")
+            context.session_id = None
 
+    # Priority 3: Create new Archon tracking session
     try:
-        from src.server.services.mcp_session_manager import get_session_manager
-
-        session_manager = get_session_manager()
-
-        # Create Archon tracking session on first tool call
         if not client_info:
             client_info = {"name": "unknown-client", "version": "unknown"}
 
@@ -75,6 +104,8 @@ def get_or_create_session(context: Any, fastmcp_session_id: Optional[str] = None
         log_msg = f"✓ Archon tracking session created on first tool call - session: {session_id}, client: {client_info.get('name', 'unknown')}"
         if fastmcp_session_id:
             log_msg += f", FastMCP session: {fastmcp_session_id}"
+        if client_session_id:
+            log_msg += f" (replaced invalid client session: {client_session_id})"
         logger.info(log_msg)
 
         return session_id
@@ -113,17 +144,24 @@ def track_tool_execution(func):
         session_id = None
 
         try:
-            # Extract FastMCP session ID from request context
+            # Extract session IDs from request context
             fastmcp_session_id = None
+            client_session_id = None
+
             if hasattr(ctx, "request_context") and ctx.request_context:
                 # Try to extract FastMCP session from request headers or metadata
                 if hasattr(ctx.request_context, "session_id"):
                     fastmcp_session_id = ctx.request_context.session_id
                 elif hasattr(ctx.request_context, "headers"):
-                    # Check for X-MCP-Session-Id header
+                    # Check for session ID headers
                     headers = ctx.request_context.headers
                     if isinstance(headers, dict):
                         fastmcp_session_id = headers.get("X-MCP-Session-Id") or headers.get("x-mcp-session-id")
+                        # Extract client-provided Archon session ID
+                        client_session_id = headers.get("X-Archon-Session-Id") or headers.get("x-archon-session-id")
+
+                        if client_session_id:
+                            logger.debug(f"Client provided Archon session ID: {client_session_id}")
 
             # Get or create Archon session from lifespan context
             if hasattr(ctx, "request_context") and hasattr(ctx.request_context, "lifespan_context"):
@@ -138,8 +176,8 @@ def track_tool_execution(func):
                         # Try to infer client from metadata
                         client_info = {"name": "MCP Client", "version": "unknown"}
 
-                # Get or create Archon tracking session
-                session_id = get_or_create_session(context, fastmcp_session_id, client_info)
+                # Get or create Archon tracking session (with client session ID validation)
+                session_id = get_or_create_session(context, fastmcp_session_id, client_session_id, client_info)
             else:
                 # No context available - this should not happen with FastMCP
                 logger.error(f"Tool {tool_name}: No lifespan_context available - cannot create session")
@@ -159,7 +197,7 @@ def track_tool_execution(func):
         finally:
             # Track request in database (only if session was created)
             if session_id:
-                duration_ms = (time.time() - start_time) * 1000
+                duration_ms = int((time.time() - start_time) * 1000)
                 try:
                     from src.server.services.mcp_session_manager import get_session_manager
 

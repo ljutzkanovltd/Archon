@@ -533,6 +533,35 @@ docker exec -it supabase-ai-db psql -U postgres -d postgres
 - Retrieve code examples
 - Manage tasks and projects
 
+### ⚠️ CRITICAL: MCP Protocol Requirements
+
+**ALL MCP requests MUST include these headers:**
+```bash
+Content-Type: application/json
+Accept: application/json, text/event-stream
+```
+
+**FastMCP requires BOTH Accept values**. Missing either will result in errors:
+- Missing: `Bad Request: Missing session ID`
+- Missing: `Not Acceptable: Client must accept both application/json and text/event-stream`
+
+**Example Initialize Request:**
+```bash
+curl -X POST http://localhost:8051/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{...}}'
+```
+
+**Example Tool Call:**
+```bash
+curl -X POST http://localhost:8051/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "X-MCP-Session-Id: <session_id>" \
+  -d '{"jsonrpc":"2.0","id":"tool-1","method":"tools/call","params":{...}}'
+```
+
 ### Session Management Architecture
 
 Archon implements a **dual session management system**:
@@ -545,6 +574,19 @@ Archon implements a **dual session management system**:
 - ✅ **No Conflicts**: FastMCP handles protocol, Archon handles analytics
 - ✅ **Context-Based**: Session mapping stored in FastMCP context
 - ✅ **Database Persistence**: Analytics sessions stored in Supabase for dashboard
+
+**Session Lifecycle (Phase 5 - v2.1)**:
+- **Timeout**: 300 seconds (5 minutes) - reduced from 1 hour
+- **Cleanup Frequency**: Every 60 seconds (1 minute)
+- **Heartbeat**: `heartbeat()` MCP tool available for session keepalive
+- **Disconnect Detection**: Automatic detection within 6 minutes maximum
+- **Status Flow**: `active` → `disconnected` (reason: timeout/error/manual)
+
+**Session Health API**:
+```bash
+curl http://localhost:8181/api/mcp/sessions/health | jq .
+# Returns: status_breakdown, age_distribution, connection_health, recent_activity
+```
 
 → **Complete architecture**: `@.claude/docs/MCP_SESSION_ARCHITECTURE.md`
 

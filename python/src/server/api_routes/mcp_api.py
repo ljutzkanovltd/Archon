@@ -333,6 +333,136 @@ async def get_mcp_sessions():
             raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get("/sessions/health")
+async def get_session_health():
+    """
+    Get comprehensive session health metrics for dashboard monitoring.
+
+    Returns:
+        - status_breakdown: Count by status (active, disconnected)
+        - age_distribution: Sessions grouped by age (healthy, aging, stale)
+        - connection_health: Average duration, sessions per hour, disconnect rate
+        - recent_activity: Latest session activities
+    """
+    with safe_span("api_mcp_session_health") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/sessions/health")
+
+        try:
+            db_client = get_supabase_client()
+            now = datetime.utcnow()
+
+            # Status breakdown
+            active_result = db_client.table("archon_mcp_sessions")\
+                .select("session_id", count="exact")\
+                .eq("status", "active")\
+                .execute()
+
+            disconnected_result = db_client.table("archon_mcp_sessions")\
+                .select("session_id", count="exact")\
+                .eq("status", "disconnected")\
+                .execute()
+
+            status_breakdown = {
+                "active": active_result.count if hasattr(active_result, 'count') else len(active_result.data),
+                "disconnected": disconnected_result.count if hasattr(disconnected_result, 'count') else len(disconnected_result.data),
+                "total": (active_result.count if hasattr(active_result, 'count') else len(active_result.data)) +
+                        (disconnected_result.count if hasattr(disconnected_result, 'count') else len(disconnected_result.data))
+            }
+
+            # Age distribution (for active sessions)
+            active_sessions = db_client.table("archon_mcp_sessions")\
+                .select("session_id, last_activity, connected_at")\
+                .eq("status", "active")\
+                .execute()
+
+            age_distribution = {
+                "healthy": 0,  # < 5 min since last activity
+                "aging": 0,    # 5-10 min since last activity
+                "stale": 0     # > 10 min since last activity
+            }
+
+            for session in active_sessions.data:
+                last_activity = datetime.fromisoformat(session["last_activity"].replace("Z", "+00:00"))
+                age_minutes = (now - last_activity.replace(tzinfo=None)).total_seconds() / 60
+
+                if age_minutes < 5:
+                    age_distribution["healthy"] += 1
+                elif age_minutes < 10:
+                    age_distribution["aging"] += 1
+                else:
+                    age_distribution["stale"] += 1
+
+            # Connection health (last 24 hours)
+            cutoff_24h = now - timedelta(hours=24)
+            recent_sessions = db_client.table("archon_mcp_sessions")\
+                .select("session_id, connected_at, disconnected_at, status")\
+                .gte("connected_at", cutoff_24h.isoformat())\
+                .execute()
+
+            total_duration = 0
+            disconnected_count = 0
+
+            for session in recent_sessions.data:
+                connected_at = datetime.fromisoformat(session["connected_at"].replace("Z", "+00:00"))
+
+                if session.get("disconnected_at"):
+                    disconnected_at = datetime.fromisoformat(session["disconnected_at"].replace("Z", "+00:00"))
+                    duration = (disconnected_at - connected_at).total_seconds()
+                    total_duration += duration
+                    disconnected_count += 1
+                elif session["status"] == "active":
+                    # Active session - calculate current duration
+                    duration = (now - connected_at.replace(tzinfo=None)).total_seconds()
+                    total_duration += duration
+
+            sessions_count = len(recent_sessions.data)
+            avg_duration = int(total_duration / sessions_count) if sessions_count > 0 else 0
+            sessions_per_hour = round(sessions_count / 24, 2)
+            disconnect_rate = round((disconnected_count / sessions_count * 100), 1) if sessions_count > 0 else 0
+
+            connection_health = {
+                "avg_duration_seconds": avg_duration,
+                "sessions_per_hour": sessions_per_hour,
+                "disconnect_rate_percent": disconnect_rate,
+                "total_sessions_24h": sessions_count
+            }
+
+            # Recent activity (last 10 sessions)
+            recent_activity = db_client.table("archon_mcp_sessions")\
+                .select("session_id, client_type, last_activity, status, connected_at")\
+                .order("last_activity", desc=True)\
+                .limit(10)\
+                .execute()
+
+            recent_list = []
+            for session in recent_activity.data:
+                last_activity = datetime.fromisoformat(session["last_activity"].replace("Z", "+00:00"))
+                connected_at = datetime.fromisoformat(session["connected_at"].replace("Z", "+00:00"))
+                age_minutes = int((now - last_activity.replace(tzinfo=None)).total_seconds() / 60)
+                uptime_minutes = int((now - connected_at.replace(tzinfo=None)).total_seconds() / 60)
+
+                recent_list.append({
+                    "session_id": session["session_id"][:8] + "...",  # Truncated for display
+                    "client_type": session.get("client_type", "unknown"),
+                    "status": session["status"],
+                    "age_minutes": age_minutes,
+                    "uptime_minutes": uptime_minutes
+                })
+
+            return {
+                "status_breakdown": status_breakdown,
+                "age_distribution": age_distribution,
+                "connection_health": connection_health,
+                "recent_activity": recent_list,
+                "timestamp": now.isoformat()
+            }
+
+        except Exception as e:
+            api_logger.error(f"Failed to get session health - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/sessions/disconnected")
 async def get_disconnected_sessions(
     days: int = Query(7, ge=1, le=30, description="Number of days to look back (default: 7)"),

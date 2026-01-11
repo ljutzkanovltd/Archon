@@ -794,6 +794,39 @@ export const mcpApi = {
   },
 
   /**
+   * Get MCP session health metrics
+   */
+  getSessionHealth: async (): Promise<{
+    status_breakdown: {
+      active: number;
+      disconnected: number;
+      total: number;
+    };
+    age_distribution: {
+      healthy: number;
+      aging: number;
+      stale: number;
+    };
+    connection_health: {
+      avg_duration_seconds: number;
+      sessions_per_hour: number;
+      disconnect_rate_percent: number;
+      total_sessions_24h: number;
+    };
+    recent_activity: Array<{
+      session_id: string;
+      client_type: string;
+      status: string;
+      age_minutes: number;
+      uptime_minutes: number;
+    }>;
+    timestamp: string;
+  }> => {
+    const response = await apiClient.get("/api/mcp/sessions/health");
+    return response.data;
+  },
+
+  /**
    * Get connected MCP clients
    */
   getClients: async (): Promise<{ clients: any[]; total: number }> => {

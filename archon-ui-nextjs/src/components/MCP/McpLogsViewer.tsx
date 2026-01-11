@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useMemo, useRef } from "react";
-// @ts-ignore - react-window types issue
-import { FixedSizeList } from "react-window";
-// @ts-ignore - react-window-infinite-loader types issue
-import InfiniteLoader from "react-window-infinite-loader";
+// @ts-expect-error - react-window v2 types mismatch with v1 @types
+import { List } from "react-window";
+// @ts-expect-error - react-window-infinite-loader types issue
+import { InfiniteLoader } from "react-window-infinite-loader";
 import {
   HiSearch,
   HiFilter,
@@ -415,22 +415,21 @@ export function McpLogsViewer({ sessionId, initialLevel = "all", className = "" 
       {/* Virtualized List */}
       {allLogs.length > 0 ? (
         <InfiniteLoader
-          isItemLoaded={isItemLoaded}
-          itemCount={itemCount}
-          loadMoreItems={fetchNextPage as any}
+          isRowLoaded={isItemLoaded}
+          rowCount={itemCount}
+          loadMoreRows={fetchNextPage as any}
         >
-          {({ onItemsRendered, ref }: any) => (
-            <FixedSizeList
-              ref={ref}
+          {({ onRowsRendered }: any) => (
+            <List
               height={600}
-              itemCount={itemCount}
-              itemSize={expandedLogId ? 300 : 100}
+              rowCount={itemCount}
+              rowHeight={expandedLogId ? 300 : 100}
               width="100%"
-              onItemsRendered={onItemsRendered}
+              onRowsRendered={onRowsRendered}
+              rowComponent={Row}
+              rowProps={{}}
               className="scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
-            >
-              {Row}
-            </FixedSizeList>
+            />
           )}
         </InfiniteLoader>
       ) : (

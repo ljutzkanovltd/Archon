@@ -321,12 +321,9 @@ services:
 
 networks:
   # Internal network for Archon services
+  # Docker auto-assigns subnet to avoid conflicts (original working pattern pre-Dec 17, 2025)
   app-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.21.0.0/16
-          gateway: 172.21.0.1
 
   # External bridge network shared with local-ai-packaged for AI infrastructure
   # Created and managed by local-ai-packaged

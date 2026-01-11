@@ -37,6 +37,7 @@ export {
   useMcpConfig,
   useMcpClients,
   useMcpSessionInfo,
+  useMcpSessionHealth,
   useMcpUsageStats,
   useMcpAnalytics,
   useMcpLogs,

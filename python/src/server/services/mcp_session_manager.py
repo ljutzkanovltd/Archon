@@ -10,7 +10,7 @@ This module provides session management for MCP server connections with:
 
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 # Removed direct logging import - using unified config
@@ -32,12 +32,12 @@ class SimplifiedSessionManager:
     - Request tracking with token usage and cost estimation
     """
 
-    def __init__(self, timeout: int = 3600, use_database: bool = True):
+    def __init__(self, timeout: int = 300, use_database: bool = True):
         """
         Initialize session manager
 
         Args:
-            timeout: Session expiration time in seconds (default: 1 hour)
+            timeout: Session expiration time in seconds (default: 5 minutes)
             use_database: Whether to persist sessions to PostgreSQL (default: True)
         """
         self.sessions: dict[str, datetime] = {}  # session_id -> last_seen (in-memory cache)
@@ -73,7 +73,7 @@ class SimplifiedSessionManager:
             Session ID (UUID string)
         """
         session_id = str(uuid.uuid4())
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         self.sessions[session_id] = now
 
         # Extract client type from client_info
@@ -173,7 +173,7 @@ class SimplifiedSessionManager:
         Returns:
             True if session is valid and active, False otherwise
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Check in-memory cache first
         if session_id not in self.sessions:
@@ -224,6 +224,78 @@ class SimplifiedSessionManager:
 
         return True
 
+    def update_session(self, session_id: str) -> bool:
+        """
+        Update session's last_activity timestamp (heartbeat).
+
+        This method is called by the heartbeat tool to keep sessions alive.
+
+        Args:
+            session_id: Session UUID to update
+
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        if session_id not in self.sessions:
+            logger.warning(f"Cannot update unknown session: {session_id}")
+            return False
+
+        now = datetime.now(timezone.utc)
+        self.sessions[session_id] = now
+
+        # Update database
+        if self.use_database and self._db_client:
+            try:
+                self._db_client.table("archon_mcp_sessions")\
+                    .update({"last_activity": now.isoformat()})\
+                    .eq("session_id", session_id)\
+                    .execute()
+                logger.debug(f"Session {session_id} activity updated (heartbeat)")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to update session last_activity in database: {e}")
+                return False
+
+        return True
+
+    def mark_disconnected(self, session_id: str, reason: str = "client_disconnect") -> bool:
+        """
+        Mark a session as disconnected immediately (for disconnect detection).
+
+        This is used when we detect a client has disconnected without
+        waiting for the timeout period.
+
+        Args:
+            session_id: Session UUID to mark as disconnected
+            reason: Reason for disconnect (e.g., "client_disconnect", "error", "timeout")
+
+        Returns:
+            True if successfully marked as disconnected
+        """
+        if session_id not in self.sessions:
+            logger.warning(f"Cannot mark unknown session as disconnected: {session_id}")
+            return False
+
+        # Remove from in-memory cache
+        del self.sessions[session_id]
+
+        # Update database
+        if self.use_database and self._db_client:
+            try:
+                now = datetime.now(timezone.utc)
+                self._db_client.table("archon_mcp_sessions").update({
+                    "status": "disconnected",
+                    "disconnected_at": now.isoformat(),
+                    "disconnect_reason": reason
+                }).eq("session_id", session_id).execute()
+                logger.info(f"Session {session_id} marked as disconnected (reason: {reason})")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to mark session {session_id} as disconnected: {e}")
+                return False
+
+        return True
+
     def close_session(self, session_id: str, reason: str = "client_disconnect") -> None:
         """
         Close a session gracefully and calculate total duration.
@@ -251,7 +323,7 @@ class SimplifiedSessionManager:
                     # Only close if not already disconnected
                     if session_data.get("status") == "active":
                         connected_at = datetime.fromisoformat(session_data["connected_at"])
-                        disconnected_at = datetime.now()
+                        disconnected_at = datetime.now(timezone.utc)
                         total_duration = int((disconnected_at - connected_at).total_seconds())
 
                         # Update session with disconnect time and duration
@@ -290,7 +362,7 @@ class SimplifiedSessionManager:
             try:
                 self._db_client.table("archon_mcp_sessions")\
                     .update({
-                        "disconnected_at": datetime.now().isoformat(),
+                        "disconnected_at": datetime.now(timezone.utc).isoformat(),
                         "status": "disconnected",
                         "disconnect_reason": "timeout"
                     })\
@@ -379,6 +451,9 @@ class SimplifiedSessionManager:
                 estimated_cost = 0.0
 
             # Insert request record
+            # CRITICAL FIX: Cast duration_ms to int - database column is INTEGER type
+            duration_ms_int = int(duration_ms) if duration_ms is not None else None
+
             self._db_client.table("archon_mcp_requests").insert({
                 "session_id": session_id,
                 "method": method,
@@ -386,8 +461,8 @@ class SimplifiedSessionManager:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "estimated_cost": estimated_cost,
-                "timestamp": datetime.now().isoformat(),
-                "duration_ms": duration_ms,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": duration_ms_int,
                 "status": status,
                 "error_message": error_message
             }).execute()
@@ -400,25 +475,117 @@ class SimplifiedSessionManager:
             logger.error(f"Failed to track request: {e}")
 
     def cleanup_expired_sessions(self) -> int:
-        """Remove expired sessions and return count of removed sessions"""
-        now = datetime.now()
+        """
+        Remove expired sessions and return count of removed sessions.
+
+        This cleanup runs every 60 seconds and marks sessions as disconnected
+        if they haven't had activity within the timeout period (5 minutes).
+
+        Returns:
+            Number of sessions cleaned up
+        """
+        now = datetime.now(timezone.utc)
         expired = []
 
+        # Check in-memory sessions first
         for session_id, last_seen in self.sessions.items():
             if now - last_seen > timedelta(seconds=self.timeout):
                 expired.append(session_id)
 
-        for session_id in expired:
-            del self.sessions[session_id]
-            logger.info(f"Cleaned up expired session: {session_id}")
+        # Also check database for sessions not in memory (crashed/restarted server)
+        if self.use_database and self._db_client:
+            try:
+                cutoff_time = (now - timedelta(seconds=self.timeout)).isoformat()
+                result = self._db_client.table("archon_mcp_sessions")\
+                    .select("session_id")\
+                    .eq("status", "active")\
+                    .lt("last_activity", cutoff_time)\
+                    .execute()
 
-        return len(expired)
+                for session in result.data:
+                    sid = session["session_id"]
+                    if sid not in expired:
+                        expired.append(sid)
+
+            except Exception as e:
+                logger.error(f"Error checking database for expired sessions: {e}")
+
+        # Process expired sessions
+        disconnected_count = 0
+        for session_id in expired:
+            # Remove from in-memory cache
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+
+            # Mark as disconnected in database
+            if self.use_database and self._db_client:
+                try:
+                    self._db_client.table("archon_mcp_sessions").update({
+                        "status": "disconnected",
+                        "disconnected_at": now.isoformat(),
+                        "disconnect_reason": "timeout_no_activity"
+                    }).eq("session_id", session_id).execute()
+                    disconnected_count += 1
+                    logger.debug(f"Session {session_id} marked as disconnected (timeout)")
+                except Exception as e:
+                    logger.error(f"Failed to mark session {session_id} as disconnected: {e}")
+            else:
+                disconnected_count += 1
+                logger.debug(f"Cleaned up expired session: {session_id} (in-memory only)")
+
+        if disconnected_count > 0:
+            logger.info(f"🧹 Cleaned up {disconnected_count} inactive sessions")
+
+        return disconnected_count
 
     def get_active_session_count(self) -> int:
         """Get count of active sessions"""
         # Clean up expired sessions first
         self.cleanup_expired_sessions()
         return len(self.sessions)
+
+    def recover_active_sessions(self) -> list[str]:
+        """
+        Load active sessions from database into in-memory cache.
+        Called on server startup to prevent session fragmentation after restart.
+
+        Returns:
+            List of recovered session IDs
+        """
+        if not self.use_database or not self._db_client:
+            logger.warning("Database not available, skipping session recovery")
+            return []
+
+        try:
+            # Query active sessions from last timeout period
+            cutoff_time = (datetime.now(timezone.utc) - timedelta(seconds=self.timeout)).isoformat()
+
+            result = self._db_client.table("archon_mcp_sessions")\
+                .select("session_id, last_activity")\
+                .eq("status", "active")\
+                .gte("last_activity", cutoff_time)\
+                .execute()
+
+            recovered = []
+            for session in result.data:
+                session_id = session["session_id"]
+                last_activity = datetime.fromisoformat(session["last_activity"])
+
+                # Add to in-memory cache
+                self.sessions[session_id] = last_activity
+                recovered.append(session_id)
+
+            if recovered:
+                logger.info(f"✅ Recovered {len(recovered)} active sessions from database after restart")
+            else:
+                logger.info("No active sessions to recover from database")
+
+            return recovered
+
+        except Exception as e:
+            logger.error(f"Failed to recover sessions from database: {e}")
+            logger.error(traceback.format_exc())
+            return []
 
 
 # Global session manager instance

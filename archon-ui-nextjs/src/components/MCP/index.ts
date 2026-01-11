@@ -7,3 +7,4 @@ export { ToolExecutionHistory } from "./ToolExecutionHistory";
 export { SessionTimeline } from "./SessionTimeline";
 export { McpAnalytics } from "./McpAnalytics";
 export { McpLogsViewer } from "./McpLogsViewer";
+export { SessionHealthMetrics } from "./SessionHealthMetrics";

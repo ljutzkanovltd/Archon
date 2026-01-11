@@ -119,6 +119,27 @@ export function useMcpSessionInfo() {
 }
 
 /**
+ * Hook to fetch MCP session health metrics with 10-second polling
+ * Smart polling: 10s when visible, 30s when hidden
+ *
+ * @returns Query result with health metrics (status breakdown, age distribution, etc.)
+ */
+export function useMcpSessionHealth() {
+  return useQuery({
+    queryKey: mcpKeys.health(),
+    queryFn: async () => {
+      return await mcpApi.getSessionHealth();
+    },
+    refetchInterval: (query) => {
+      // Smart polling based on visibility
+      return typeof document !== "undefined" && document.hidden ? 30000 : 10000;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 5000, // 5 seconds stale time
+  });
+}
+
+/**
  * Hook to fetch MCP usage statistics with 30-second polling
  * Smart polling: 30s when visible, 60s when hidden
  *

@@ -72,14 +72,11 @@ services:
 
 networks:
   # Internal network for Archon services communication
+  # Docker auto-assigns subnet to avoid conflicts (original working pattern pre-Dec 17, 2025)
   app-network:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "true"
-    ipam:
-      config:
-        - subnet: 172.21.0.0/16
-          gateway: 172.21.0.1
 
   # Override external networks - create as unused internal bridges
   # These are required to satisfy docker-compose merge semantics with base file

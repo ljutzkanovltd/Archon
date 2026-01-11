@@ -2,7 +2,7 @@
 
 import { usePageTitle, useMcpStatus, useMcpConfig, useMcpClients, useMcpSessionInfo, useMcpUsageStats } from "@/hooks";
 import { HiServer } from "react-icons/hi";
-import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart, ToolExecutionHistory, SessionTimeline, McpAnalytics, McpLogsViewer } from "@/components/MCP";
+import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart, ToolExecutionHistory, SessionTimeline, McpAnalytics, McpLogsViewer, SessionHealthMetrics } from "@/components/MCP";
 
 export default function McpPage() {
   usePageTitle("MCP Status", "Archon");
@@ -55,6 +55,11 @@ export default function McpPage() {
           Server Status
         </h2>
         <McpStatusBar status={status} sessionInfo={sessionInfo} config={config} />
+      </div>
+
+      {/* Session Health Metrics */}
+      <div className="mb-6">
+        <SessionHealthMetrics />
       </div>
 
       {/* Connected Clients */}
