@@ -44,6 +44,8 @@ export {
   mcpKeys,
 } from "./useMcpQueries";
 
+export { useMcpWebSocket } from "./useMcpWebSocket";
+
 export { useTaskCounts } from "./useTaskCounts";
 export type { TaskCounts } from "./useTaskCounts";
 

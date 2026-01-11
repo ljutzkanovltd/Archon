@@ -89,6 +89,7 @@ mcp = [
     "logfire>=0.30.0",
     "fastapi>=0.104.0",
     "tiktoken>=0.5.0",
+    "python-jose[cryptography]>=3.3.0",
 ]
 
 # Agents container dependencies (ML/reranking service)

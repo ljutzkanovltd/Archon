@@ -506,6 +506,59 @@ async def heartbeat(ctx: Context) -> str:
 
 @mcp.tool()
 @track_tool_execution
+async def reconnect_session(ctx: Context, session_id: str, reconnect_token: str) -> str:
+    """
+    Reconnect to an existing MCP session using a reconnection token.
+
+    This tool allows clients to resume a session after network interruption
+    or client restart. The reconnection token is generated via the backend
+    API endpoint GET /api/mcp/sessions/{session_id}/token.
+
+    Args:
+        session_id: The session ID to reconnect to
+        reconnect_token: JWT token for authentication
+
+    Returns:
+        JSON with reconnection result and session details
+    """
+    try:
+        session_manager = get_session_manager()
+
+        # Attempt reconnection
+        result = session_manager.reconnect_session(session_id, reconnect_token)
+
+        if result.get("success"):
+            # Update context with reconnected session
+            if hasattr(ctx, "request_context") and hasattr(ctx.request_context, "lifespan_context"):
+                context = ctx.request_context.lifespan_context
+                if hasattr(context, 'session_id'):
+                    context.session_id = session_id
+
+            return json.dumps({
+                "success": True,
+                "message": "Session reconnected successfully",
+                "session_id": session_id,
+                "reconnect_count": result.get("reconnect_count", 0)
+            })
+        else:
+            # Reconnection failed
+            return json.dumps({
+                "success": False,
+                "error": result.get("reason", "unknown_error"),
+                "message": f"Reconnection failed: {result.get('reason', 'unknown')}"
+            })
+
+    except Exception as e:
+        logger.error(f"Error reconnecting session: {e}")
+        return json.dumps({
+            "success": False,
+            "error": "internal_error",
+            "message": str(e)
+        })
+
+
+@mcp.tool()
+@track_tool_execution
 async def session_info(ctx: Context) -> str:
     """
     Get current and active session information.

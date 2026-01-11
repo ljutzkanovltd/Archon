@@ -9,17 +9,20 @@ Docker socket mode available via ENABLE_DOCKER_SOCKET_MONITORING (legacy, securi
 """
 
 import os
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, Body
 
 # Import unified logging
 from ..config.config import get_mcp_monitoring_config
 from ..config.logfire_config import api_logger, safe_set_attribute, safe_span
 from ..config.service_discovery import get_mcp_url
 from ..services.client_manager import get_supabase_client
+from ..services.session_event_broadcaster import get_broadcaster
+from ..services.mcp_session_manager import get_session_manager
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -1173,6 +1176,171 @@ async def get_mcp_logs(
 
         except Exception as e:
             api_logger.error(f"Failed to get MCP logs - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.websocket("/ws/sessions")
+async def websocket_sessions(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time session updates.
+
+    Broadcasts session events:
+    - session_created
+    - session_updated
+    - session_disconnected
+
+    Also sends periodic session health updates every 5 seconds.
+    """
+    broadcaster = get_broadcaster()
+
+    try:
+        await broadcaster.connect(websocket)
+        api_logger.info("WebSocket client connected to /ws/sessions")
+
+        # Keep connection alive and send periodic health updates
+        while True:
+            try:
+                # Fetch current session health
+                db_client = get_supabase_client()
+                result = db_client.table("archon_mcp_sessions")\
+                    .select("session_id, client_type, status, last_activity")\
+                    .order("last_activity", desc=True)\
+                    .limit(50)\
+                    .execute()
+
+                # Send health update
+                await websocket.send_json({
+                    "type": "health_update",
+                    "data": {
+                        "sessions": result.data,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
+
+                # Wait 5 seconds before next update
+                await asyncio.sleep(5)
+
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                api_logger.error(f"Error in WebSocket loop: {e}")
+                break
+
+    except WebSocketDisconnect:
+        api_logger.info("WebSocket client disconnected from /ws/sessions")
+    except Exception as e:
+        api_logger.error(f"WebSocket error: {e}")
+    finally:
+        await broadcaster.disconnect(websocket)
+
+
+@router.post("/sessions/{session_id}/reconnect")
+async def reconnect_session_endpoint(
+    session_id: str,
+    token: str = Body(..., embed=True)
+):
+    """
+    Reconnect to existing session via API.
+
+    POST /api/mcp/sessions/{session_id}/reconnect
+    Body: {"token": "eyJhbGc..."}
+
+    Returns:
+        {"success": true, "session_id": "...", "message": "Session reconnected"}
+
+    Raises:
+        401: Reconnection failed (invalid/expired token)
+        500: Internal server error
+    """
+    with safe_span("api_session_reconnect") as span:
+        safe_set_attribute(span, "session_id", session_id)
+
+        try:
+            session_manager = get_session_manager()
+            result = session_manager.reconnect_session(session_id, token)
+
+            if result["success"]:
+                safe_set_attribute(span, "reconnect_count", result.get("reconnect_count", 0))
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "message": "Session reconnected",
+                    "reconnect_count": result.get("reconnect_count", 0)
+                }
+            else:
+                safe_set_attribute(span, "failure_reason", result["reason"])
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Reconnection failed: {result['reason']}"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            api_logger.error(f"Session reconnection error: {e}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/sessions/{session_id}/token")
+async def get_reconnect_token(session_id: str):
+    """
+    Get reconnection token for active session.
+
+    GET /api/mcp/sessions/{session_id}/token
+
+    Returns:
+        {
+            "session_id": "...",
+            "reconnect_token": "eyJhbGc...",
+            "expires_in_minutes": 15
+        }
+
+    Raises:
+        404: Session not found
+        400: Session not active
+        500: Internal server error
+    """
+    with safe_span("api_get_reconnect_token") as span:
+        safe_set_attribute(span, "session_id", session_id)
+
+        try:
+            db_client = get_supabase_client()
+
+            # Get session
+            result = db_client.table("archon_mcp_sessions")\
+                .select("session_id, status")\
+                .eq("session_id", session_id)\
+                .execute()
+
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+            session = result.data[0]
+
+            if session["status"] != "active":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot generate token for {session['status']} session"
+                )
+
+            # Generate new token
+            session_manager = get_session_manager()
+            token = session_manager.generate_session_token(session_id)
+
+            safe_set_attribute(span, "token_generated", True)
+
+            return {
+                "session_id": session_id,
+                "reconnect_token": token,
+                "expires_in_minutes": session_manager.token_expiry_minutes
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            api_logger.error(f"Error generating reconnect token: {e}")
             safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e)) from e
 

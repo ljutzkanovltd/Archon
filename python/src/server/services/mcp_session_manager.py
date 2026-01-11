@@ -10,6 +10,8 @@ This module provides session management for MCP server connections with:
 
 import os
 import uuid
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -17,6 +19,9 @@ from typing import Any, Optional
 from ..config.logfire_config import get_logger
 from .client_manager import get_supabase_client
 from . import token_counter
+
+# JWT support for session reconnection
+from jose import jwt, JWTError
 
 logger = get_logger(__name__)
 
@@ -44,6 +49,10 @@ class SimplifiedSessionManager:
         self.timeout = timeout
         self.use_database = use_database
         self._db_client = None
+
+        # JWT secret for session reconnection tokens
+        self.jwt_secret = os.getenv("MCP_SESSION_SECRET", secrets.token_urlsafe(32))
+        self.token_expiry_minutes = int(os.getenv("MCP_RECONNECT_TOKEN_EXPIRY", "15"))
 
         # Initialize database client if enabled
         if self.use_database:
@@ -295,6 +304,153 @@ class SimplifiedSessionManager:
                 return False
 
         return True
+
+    def session_exists(self, session_id: str) -> bool:
+        """
+        Check if a session exists (in-memory or database).
+
+        Args:
+            session_id: Session UUID to check
+
+        Returns:
+            True if session exists and is active
+        """
+        # Check in-memory first
+        if session_id in self.sessions:
+            return True
+
+        # Check database
+        if self.use_database and self._db_client:
+            try:
+                result = self._db_client.table("archon_mcp_sessions")\
+                    .select("session_id, status")\
+                    .eq("session_id", session_id)\
+                    .eq("status", "active")\
+                    .execute()
+                return len(result.data) > 0
+            except Exception as e:
+                logger.error(f"Error checking session existence: {e}")
+                return False
+
+        return False
+
+    def generate_session_token(self, session_id: str, expires_minutes: Optional[int] = None) -> str:
+        """
+        Generate JWT token for session reconnection.
+
+        Args:
+            session_id: Session UUID
+            expires_minutes: Token expiration time (default: from config)
+
+        Returns:
+            JWT token string
+        """
+        if expires_minutes is None:
+            expires_minutes = self.token_expiry_minutes
+
+        now = datetime.now(timezone.utc)
+        payload = {
+            "session_id": session_id,
+            "exp": now + timedelta(minutes=expires_minutes),
+            "iat": now,
+            "purpose": "session_reconnect"
+        }
+
+        token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
+
+        # Store token hash in database for verification
+        if self.use_database and self._db_client:
+            try:
+                token_hash = hashlib.sha256(token.encode()).hexdigest()
+                self._db_client.table("archon_mcp_sessions").update({
+                    "reconnect_token_hash": token_hash,
+                    "reconnect_expires_at": (now + timedelta(minutes=expires_minutes)).isoformat()
+                }).eq("session_id", session_id).execute()
+                logger.debug(f"Generated reconnection token for session {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to store token hash: {e}")
+
+        return token
+
+    def reconnect_session(self, session_id: str, token: str) -> dict:
+        """
+        Reconnect to existing session using session_id and token.
+
+        Args:
+            session_id: Session UUID
+            token: JWT reconnection token
+
+        Returns:
+            {"success": bool, "reason": str, "session_id": str}
+        """
+        try:
+            # Decode and verify JWT
+            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+
+            # Verify session_id matches
+            if payload.get("session_id") != session_id:
+                logger.warning(f"Session ID mismatch in reconnection attempt for {session_id}")
+                return {"success": False, "reason": "session_id_mismatch"}
+
+            # Verify purpose
+            if payload.get("purpose") != "session_reconnect":
+                logger.warning(f"Invalid token purpose for session {session_id}")
+                return {"success": False, "reason": "invalid_token_purpose"}
+
+            # Check if session exists in database
+            if self.use_database and self._db_client:
+                result = self._db_client.table("archon_mcp_sessions")\
+                    .select("*")\
+                    .eq("session_id", session_id)\
+                    .execute()
+
+                if not result.data:
+                    logger.warning(f"Session not found for reconnection: {session_id}")
+                    return {"success": False, "reason": "session_not_found"}
+
+                session = result.data[0]
+
+                # Verify token hash
+                token_hash = hashlib.sha256(token.encode()).hexdigest()
+                if session.get("reconnect_token_hash") != token_hash:
+                    logger.warning(f"Token hash mismatch for session {session_id}")
+                    return {"success": False, "reason": "token_mismatch"}
+
+                # Check if session already disconnected
+                if session["status"] == "disconnected":
+                    logger.warning(f"Attempted reconnection to disconnected session: {session_id}")
+                    return {"success": False, "reason": "session_already_disconnected"}
+
+                # Update last_activity to prevent timeout
+                now = datetime.now(timezone.utc)
+                self.sessions[session_id] = now
+
+                reconnect_count = session.get("reconnect_count", 0) + 1
+
+                self._db_client.table("archon_mcp_sessions").update({
+                    "last_activity": now.isoformat(),
+                    "reconnect_count": reconnect_count
+                }).eq("session_id", session_id).execute()
+
+                logger.info(f"✅ Session reconnected: {session_id} (reconnect #{reconnect_count})")
+                return {
+                    "success": True,
+                    "reason": "reconnected",
+                    "session_id": session_id,
+                    "reconnect_count": reconnect_count
+                }
+
+            return {"success": False, "reason": "database_unavailable"}
+
+        except jwt.ExpiredSignatureError:
+            logger.warning(f"Expired token for session {session_id}")
+            return {"success": False, "reason": "token_expired"}
+        except jwt.JWTError as e:
+            logger.warning(f"Invalid token for session {session_id}: {e}")
+            return {"success": False, "reason": "invalid_token"}
+        except Exception as e:
+            logger.error(f"Error reconnecting session {session_id}: {e}")
+            return {"success": False, "reason": "internal_error", "error": str(e)}
 
     def close_session(self, session_id: str, reason: str = "client_disconnect") -> None:
         """
