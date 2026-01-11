@@ -1,0 +1,45 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - heading "Archon" [level=2] [ref=e7]
+        - button "Switch to dark mode" [ref=e9] [cursor=pointer]:
+          - img [ref=e10]
+    - generic [ref=e12]:
+      - complementary [ref=e13]:
+        - generic [ref=e15]:
+          - link "Dashboard" [ref=e16] [cursor=pointer]:
+            - /url: /
+            - img [ref=e17]
+            - generic [ref=e20]: Dashboard
+          - link "Projects" [ref=e21] [cursor=pointer]:
+            - /url: /projects
+            - img [ref=e22]
+            - generic [ref=e24]: Projects
+          - link "Tasks" [ref=e25] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e26]
+            - generic [ref=e29]: Tasks
+          - link "Knowledge Base" [ref=e30] [cursor=pointer]:
+            - /url: /knowledge-base
+            - img [ref=e31]
+            - generic [ref=e35]: Knowledge Base
+          - link "MCP Server" [ref=e36] [cursor=pointer]:
+            - /url: /mcp
+            - img [ref=e37]
+            - generic [ref=e39]: MCP Server
+          - link "Settings" [ref=e40] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e41]
+            - generic [ref=e43]: Settings
+        - generic "Drag to resize | Double-click to reset" [ref=e44]
+        - button "Collapse sidebar" [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+      - contentinfo [ref=e54]:
+        - paragraph [ref=e56]: © 2026 Archon Dashboard. SportERP Platform.
+```

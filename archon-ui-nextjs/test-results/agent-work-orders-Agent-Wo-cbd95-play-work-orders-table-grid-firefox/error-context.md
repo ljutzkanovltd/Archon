@@ -1,0 +1,104 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - heading "Archon" [level=2] [ref=e7]
+        - button "Switch to dark mode" [ref=e9] [cursor=pointer]:
+          - img [ref=e10]
+    - generic [ref=e12]:
+      - complementary [ref=e13]:
+        - generic [ref=e15]:
+          - link "Dashboard" [ref=e16] [cursor=pointer]:
+            - /url: /
+            - img [ref=e17]
+            - generic [ref=e20]: Dashboard
+          - link "Projects" [ref=e21] [cursor=pointer]:
+            - /url: /projects
+            - img [ref=e22]
+            - generic [ref=e24]: Projects
+          - link "Tasks" [ref=e25] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e26]
+            - generic [ref=e29]: Tasks
+          - link "Knowledge Base" [ref=e30] [cursor=pointer]:
+            - /url: /knowledge-base
+            - img [ref=e31]
+            - generic [ref=e35]: Knowledge Base
+          - link "MCP Server" [ref=e36] [cursor=pointer]:
+            - /url: /mcp
+            - img [ref=e37]
+            - generic [ref=e39]: MCP Server
+          - link "Settings" [ref=e40] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e41]
+            - generic [ref=e43]: Settings
+        - generic "Drag to resize | Double-click to reset" [ref=e44]
+        - button "Collapse sidebar" [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+      - generic [ref=e48]:
+        - generic [ref=e50]:
+          - navigation "Breadcrumb" [ref=e51]:
+            - list [ref=e52]:
+              - listitem [ref=e53]:
+                - link "Home" [ref=e54] [cursor=pointer]:
+                  - /url: /
+                  - img [ref=e55]
+                  - generic [ref=e57]: Home
+              - listitem [ref=e58]:
+                - img [ref=e59]
+                - generic [ref=e62]: Agent Work Orders
+          - generic [ref=e63]:
+            - heading "Agent Work Orders" [level=1] [ref=e64]
+            - paragraph [ref=e65]: Manage automated development workflows and repositories
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - link "Work Orders" [ref=e68] [cursor=pointer]:
+                - /url: /agent-work-orders?t=work-orders
+                - img [ref=e69]
+                - text: Work Orders
+              - link "Repositories" [ref=e72] [cursor=pointer]:
+                - /url: /agent-work-orders?t=repositories
+                - img [ref=e73]
+                - text: Repositories
+            - generic [ref=e75]:
+              - generic [ref=e76]:
+                - generic [ref=e77]:
+                  - generic [ref=e78]: Total
+                  - generic [ref=e79]: "0"
+                - generic [ref=e80]:
+                  - generic [ref=e81]: Active
+                  - generic [ref=e82]: "0"
+                - generic [ref=e83]:
+                  - generic [ref=e84]: Completed
+                  - generic [ref=e85]: "0"
+                - generic [ref=e86]:
+                  - generic [ref=e87]: Failed
+                  - generic [ref=e88]: "0"
+              - generic [ref=e90]:
+                - button "New Work Order" [ref=e93] [cursor=pointer]:
+                  - img [ref=e94]
+                  - text: New Work Order
+                - generic [ref=e97]:
+                  - search [ref=e98]:
+                    - generic:
+                      - img
+                    - searchbox "Search" [ref=e99]
+                  - generic [ref=e100]:
+                    - button "Filters" [ref=e101] [cursor=pointer]:
+                      - img [ref=e102]
+                      - text: Filters
+                    - group "View mode" [ref=e104]:
+                      - button "Table" [pressed] [ref=e105] [cursor=pointer]:
+                        - img [ref=e106]
+                        - generic [ref=e108]: Table
+                      - button "Grid" [ref=e109] [cursor=pointer]:
+                        - img [ref=e110]
+                        - generic [ref=e112]: Grid
+        - contentinfo [ref=e115]:
+          - paragraph [ref=e117]: © 2026 Archon Dashboard. SportERP Platform.
+```
