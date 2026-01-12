@@ -765,7 +765,7 @@ export default function KnowledgeBasePage() {
         )}
       </div>
 
-      {/* Conditional Render: Empty State or Sources with Bulk Operations */}
+      {/* Data Table with Bulk Operations Support */}
       {!isLoading && sources.length === 0 ? (
         <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <EmptyState
@@ -782,14 +782,44 @@ export default function KnowledgeBasePage() {
             }}
           />
         </div>
+      ) : viewMode === "grid" ? (
+        /* Grid View: Use DataTable for consistency */
+        <DataTable
+          data={sources}
+          columns={columns}
+          tableButtons={tableButtons}
+          rowButtons={rowButtons}
+          tableId="archon-knowledge-sources-grid"
+          viewMode="grid"
+          customRender={(source) => (
+            <KnowledgeSourceCard
+              key={source.source_id}
+              source={source}
+              onView={handleView}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onRecrawl={handleRecrawl}
+            />
+          )}
+          showSearch={searchMode === "sources"}
+          showViewToggle={true}
+          showFilters={true}
+          filterConfigs={filterConfigs}
+          showPagination
+          isLoading={isLoading}
+          emptyMessage="No sources found. Create your first source to get started!"
+          caption={`Grid view of ${sources.length} knowledge sources`}
+          keyExtractor={(source) => source.source_id}
+          className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+        />
       ) : (
-        <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          {/* Header with View Toggle and Add Button */}
+        /* Table View: Use KnowledgeTableViewWithBulk with DataTable-style wrapper */
+        <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          {/* DataTable-style Header */}
           <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               Knowledge Sources ({sources.length})
             </h2>
-
             <div className="flex items-center gap-3">
               {/* View Toggle */}
               <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
@@ -820,7 +850,6 @@ export default function KnowledgeBasePage() {
                   </svg>
                 </button>
               </div>
-
               {/* Add Source Button */}
               <button
                 onClick={() => setIsAddDialogOpen(true)}
@@ -832,34 +861,17 @@ export default function KnowledgeBasePage() {
             </div>
           </div>
 
-          {/* View Content */}
-          {viewMode === "table" ? (
-            /* Table View with Bulk Operations */
-            <KnowledgeTableViewWithBulk
-              sources={sources}
-              onView={handleView}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onRecrawl={handleRecrawl}
-              onBulkRecrawl={handleBulkRecrawl}
-              onBulkDelete={handleBulkDelete}
-              searchTerm={searchQuery}
-            />
-          ) : (
-            /* Grid View */
-            <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
-              {sources.map((source) => (
-                <KnowledgeSourceCard
-                  key={source.source_id}
-                  source={source}
-                  onView={handleView}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  onRecrawl={handleRecrawl}
-                />
-              ))}
-            </div>
-          )}
+          {/* Table Content with Bulk Operations */}
+          <KnowledgeTableViewWithBulk
+            sources={sources}
+            onView={handleView}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onRecrawl={handleRecrawl}
+            onBulkRecrawl={handleBulkRecrawl}
+            onBulkDelete={handleBulkDelete}
+            searchTerm={searchQuery}
+          />
         </div>
       )}
 
