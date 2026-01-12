@@ -23,6 +23,7 @@ from ..config.service_discovery import get_mcp_url
 from ..services.client_manager import get_supabase_client
 from ..services.session_event_broadcaster import get_broadcaster
 from ..services.mcp_session_manager import get_session_manager
+from ..utils.db_utils import get_direct_db_connection
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -1201,20 +1202,116 @@ async def websocket_sessions(websocket: WebSocket):
         # Keep connection alive and send periodic health updates
         while True:
             try:
-                # Fetch current session health
+                # Fetch comprehensive session health (reuse logic from get_session_health)
                 db_client = get_supabase_client()
-                result = db_client.table("archon_mcp_sessions")\
-                    .select("session_id, client_type, status, last_activity")\
-                    .order("last_activity", desc=True)\
-                    .limit(50)\
+                now = datetime.utcnow()
+
+                # Status breakdown
+                active_result = db_client.table("archon_mcp_sessions")\
+                    .select("session_id", count="exact")\
+                    .eq("status", "active")\
                     .execute()
 
-                # Send health update
+                disconnected_result = db_client.table("archon_mcp_sessions")\
+                    .select("session_id", count="exact")\
+                    .eq("status", "disconnected")\
+                    .execute()
+
+                status_breakdown = {
+                    "active": active_result.count if hasattr(active_result, 'count') else len(active_result.data),
+                    "disconnected": disconnected_result.count if hasattr(disconnected_result, 'count') else len(disconnected_result.data),
+                    "total": (active_result.count if hasattr(active_result, 'count') else len(active_result.data)) +
+                            (disconnected_result.count if hasattr(disconnected_result, 'count') else len(disconnected_result.data))
+                }
+
+                # Age distribution (for active sessions)
+                active_sessions = db_client.table("archon_mcp_sessions")\
+                    .select("session_id, last_activity, connected_at")\
+                    .eq("status", "active")\
+                    .execute()
+
+                age_distribution = {
+                    "healthy": 0,
+                    "aging": 0,
+                    "stale": 0
+                }
+
+                for session in active_sessions.data:
+                    last_activity = datetime.fromisoformat(session["last_activity"].replace("Z", "+00:00"))
+                    age_minutes = (now - last_activity.replace(tzinfo=None)).total_seconds() / 60
+
+                    if age_minutes < 5:
+                        age_distribution["healthy"] += 1
+                    elif age_minutes < 10:
+                        age_distribution["aging"] += 1
+                    else:
+                        age_distribution["stale"] += 1
+
+                # Connection health (last 24 hours)
+                cutoff_24h = now - timedelta(hours=24)
+                recent_sessions = db_client.table("archon_mcp_sessions")\
+                    .select("session_id, connected_at, disconnected_at, status")\
+                    .gte("connected_at", cutoff_24h.isoformat())\
+                    .execute()
+
+                total_duration = 0
+                disconnected_count = 0
+
+                for session in recent_sessions.data:
+                    connected_at = datetime.fromisoformat(session["connected_at"].replace("Z", "+00:00"))
+
+                    if session.get("disconnected_at"):
+                        disconnected_at = datetime.fromisoformat(session["disconnected_at"].replace("Z", "+00:00"))
+                        duration = (disconnected_at - connected_at).total_seconds()
+                        total_duration += duration
+                        disconnected_count += 1
+                    elif session["status"] == "active":
+                        duration = (now - connected_at.replace(tzinfo=None)).total_seconds()
+                        total_duration += duration
+
+                sessions_count = len(recent_sessions.data)
+                avg_duration = int(total_duration / sessions_count) if sessions_count > 0 else None
+                sessions_per_hour = round(sessions_count / 24, 2) if sessions_count > 0 else None
+                disconnect_rate = round((disconnected_count / sessions_count * 100), 1) if sessions_count > 0 else None
+
+                connection_health = {
+                    "avg_duration_seconds": avg_duration,
+                    "sessions_per_hour": sessions_per_hour,
+                    "disconnect_rate_percent": disconnect_rate,
+                    "total_sessions_24h": sessions_count
+                }
+
+                # Recent activity (last 10 sessions)
+                recent_activity_result = db_client.table("archon_mcp_sessions")\
+                    .select("session_id, client_type, last_activity, status, connected_at")\
+                    .order("last_activity", desc=True)\
+                    .limit(10)\
+                    .execute()
+
+                recent_list = []
+                for session in recent_activity_result.data:
+                    last_activity = datetime.fromisoformat(session["last_activity"].replace("Z", "+00:00"))
+                    connected_at = datetime.fromisoformat(session["connected_at"].replace("Z", "+00:00"))
+                    age_minutes = int((now - last_activity.replace(tzinfo=None)).total_seconds() / 60)
+                    uptime_minutes = int((now - connected_at.replace(tzinfo=None)).total_seconds() / 60)
+
+                    recent_list.append({
+                        "session_id": session["session_id"][:8] + "...",
+                        "client_type": session.get("client_type", "unknown"),
+                        "status": session["status"],
+                        "age_minutes": age_minutes,
+                        "uptime_minutes": uptime_minutes
+                    })
+
+                # Send comprehensive health update
                 await websocket.send_json({
                     "type": "health_update",
                     "data": {
-                        "sessions": result.data,
-                        "timestamp": datetime.utcnow().isoformat()
+                        "status_breakdown": status_breakdown,
+                        "age_distribution": age_distribution,
+                        "connection_health": connection_health,
+                        "recent_activity": recent_list,
+                        "timestamp": now.isoformat()
                     }
                 })
 
@@ -1341,6 +1438,345 @@ async def get_reconnect_token(session_id: str):
             raise
         except Exception as e:
             api_logger.error(f"Error generating reconnect token: {e}")
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/errors/aggregate")
+async def get_error_aggregation(
+    time_range: str = Query("1h", description="Time range: 5m, 15m, 1h, 6h, 24h, 7d"),
+    severity: Optional[str] = Query(None, description="Filter by severity: low, medium, high, critical"),
+    error_type: Optional[str] = Query(None, description="Filter by type: network, database, mcp_protocol, tool_execution, other")
+):
+    """Get aggregated error statistics with filtering."""
+    with safe_span("api_mcp_errors_aggregate") as span:
+        safe_set_attribute(span, "time_range", time_range)
+        if severity:
+            safe_set_attribute(span, "severity_filter", severity)
+        if error_type:
+            safe_set_attribute(span, "error_type_filter", error_type)
+
+        try:
+            # Parse time range
+            time_deltas = {
+                "5m": timedelta(minutes=5),
+                "15m": timedelta(minutes=15),
+                "1h": timedelta(hours=1),
+                "6h": timedelta(hours=6),
+                "24h": timedelta(hours=24),
+                "7d": timedelta(days=7),
+            }
+            delta = time_deltas.get(time_range, timedelta(hours=1))
+            start_time = datetime.utcnow() - delta
+
+            # Direct database query (bypass PostgREST)
+            conn = await get_direct_db_connection()
+            try:
+                # Build query with filters
+                query = """
+                    SELECT error_id, session_id, tool_name, error_type, severity, timestamp, resolved
+                    FROM archon_mcp_error_logs
+                    WHERE timestamp >= $1
+                """
+                params = [start_time]
+
+                if severity:
+                    query += f" AND severity = ${len(params) + 1}"
+                    params.append(severity)
+                if error_type:
+                    query += f" AND error_type = ${len(params) + 1}"
+                    params.append(error_type)
+
+                query += " ORDER BY timestamp DESC"
+
+                rows = await conn.fetch(query, *params)
+                errors = [dict(row) for row in rows]
+            finally:
+                await conn.close()
+
+            # Aggregate statistics
+            total_errors = len(errors)
+            unresolved_errors = sum(1 for e in errors if not e.get("resolved", False))
+
+            by_severity = {"low": 0, "medium": 0, "high": 0, "critical": 0}
+            by_type = {"network": 0, "database": 0, "mcp_protocol": 0, "tool_execution": 0, "other": 0}
+            by_hour = {}
+
+            for error in errors:
+                # Count by severity
+                sev = error.get("severity", "low")
+                by_severity[sev] = by_severity.get(sev, 0) + 1
+
+                # Count by type
+                err_type = error.get("error_type", "other")
+                by_type[err_type] = by_type.get(err_type, 0) + 1
+
+                # Count by hour
+                ts = datetime.fromisoformat(error["timestamp"].replace("Z", "+00:00"))
+                hour_key = ts.strftime("%Y-%m-%d %H:00")
+                by_hour[hour_key] = by_hour.get(hour_key, 0) + 1
+
+            response = {
+                "time_range": time_range,
+                "start_time": start_time.isoformat(),
+                "total_errors": total_errors,
+                "unresolved_errors": unresolved_errors,
+                "resolved_errors": total_errors - unresolved_errors,
+                "by_severity": by_severity,
+                "by_type": by_type,
+                "by_hour": sorted(by_hour.items(), key=lambda x: x[0]),
+                "recent_errors": errors[:10]  # Last 10 errors
+            }
+
+            safe_set_attribute(span, "total_errors", total_errors)
+            safe_set_attribute(span, "unresolved_errors", unresolved_errors)
+
+            return response
+
+        except Exception as e:
+            api_logger.error(f"Failed to aggregate errors: {e}", exc_info=True)
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/errors/rate")
+async def get_error_rate(
+    interval: str = Query("5m", description="Interval for rate calculation: 1m, 5m, 15m, 1h"),
+    lookback: str = Query("1h", description="Lookback period: 1h, 6h, 24h")
+):
+    """Calculate error rate (errors per minute/hour) over time."""
+    with safe_span("api_mcp_errors_rate") as span:
+        safe_set_attribute(span, "interval", interval)
+        safe_set_attribute(span, "lookback", lookback)
+
+        try:
+            # Parse lookback period
+            lookback_deltas = {
+                "1h": timedelta(hours=1),
+                "6h": timedelta(hours=6),
+                "24h": timedelta(hours=24),
+            }
+            lookback_delta = lookback_deltas.get(lookback, timedelta(hours=1))
+            start_time = datetime.utcnow() - lookback_delta
+
+            # Parse interval
+            interval_minutes = {
+                "1m": 1,
+                "5m": 5,
+                "15m": 15,
+                "1h": 60,
+            }
+            interval_mins = interval_minutes.get(interval, 5)
+
+            # Direct database query
+            conn = await get_direct_db_connection()
+            try:
+                rows = await conn.fetch(
+                    "SELECT timestamp, severity FROM archon_mcp_error_logs WHERE timestamp >= $1",
+                    start_time
+                )
+                errors = [dict(row) for row in rows]
+            finally:
+                await conn.close()
+
+            # Calculate rate per interval
+            rate_data = {}
+            for error in errors:
+                ts = datetime.fromisoformat(error["timestamp"].replace("Z", "+00:00"))
+                # Round down to interval
+                interval_start = ts.replace(
+                    minute=(ts.minute // interval_mins) * interval_mins,
+                    second=0,
+                    microsecond=0
+                )
+                key = interval_start.strftime("%Y-%m-%d %H:%M")
+                rate_data[key] = rate_data.get(key, 0) + 1
+
+            # Calculate errors per minute
+            rates = []
+            for time_key, count in sorted(rate_data.items()):
+                rate_per_min = count / interval_mins
+                rates.append({
+                    "timestamp": time_key,
+                    "error_count": count,
+                    "errors_per_minute": round(rate_per_min, 2)
+                })
+
+            # Calculate current rate (last interval)
+            current_rate = rates[-1]["errors_per_minute"] if rates else 0
+
+            # Calculate average rate
+            avg_rate = sum(r["errors_per_minute"] for r in rates) / len(rates) if rates else 0
+
+            # Detect spike (>3x average)
+            spike_detected = current_rate > (avg_rate * 3) if avg_rate > 0 else False
+
+            response = {
+                "interval": interval,
+                "lookback": lookback,
+                "current_rate": round(current_rate, 2),
+                "average_rate": round(avg_rate, 2),
+                "spike_detected": spike_detected,
+                "total_errors": len(errors),
+                "rate_data": rates
+            }
+
+            safe_set_attribute(span, "current_rate", current_rate)
+            safe_set_attribute(span, "spike_detected", spike_detected)
+
+            return response
+
+        except Exception as e:
+            api_logger.error(f"Failed to calculate error rate: {e}", exc_info=True)
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/alerts")
+async def get_alerts(
+    status: Optional[str] = Query(None, description="Filter by status: active, acknowledged, resolved"),
+    severity: Optional[str] = Query(None, description="Filter by severity: low, medium, high, critical"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of alerts to return")
+):
+    """Get system alerts with filtering."""
+    with safe_span("api_mcp_alerts") as span:
+        if status:
+            safe_set_attribute(span, "status_filter", status)
+        if severity:
+            safe_set_attribute(span, "severity_filter", severity)
+        safe_set_attribute(span, "limit", limit)
+
+        try:
+            # Direct database query
+            conn = await get_direct_db_connection()
+            try:
+                # Build query with filters
+                params = []
+                where_clauses = []
+
+                if status:
+                    params.append(status)
+                    where_clauses.append(f"status = ${len(params)}")
+                if severity:
+                    params.append(severity)
+                    where_clauses.append(f"severity = ${len(params)}")
+
+                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+                params.append(limit)
+
+                query = f"SELECT * FROM archon_mcp_alerts WHERE {where_sql} ORDER BY created_at DESC LIMIT ${len(params)}"
+
+                rows = await conn.fetch(query, *params)
+                alerts = [dict(row) for row in rows]
+            finally:
+                await conn.close()
+
+            # Calculate summary
+            active_count = sum(1 for a in alerts if a.get("status") == "active")
+            critical_count = sum(1 for a in alerts if a.get("severity") == "critical" and a.get("status") == "active")
+
+            response = {
+                "alerts": alerts,
+                "total": len(alerts),
+                "summary": {
+                    "active_alerts": active_count,
+                    "critical_active": critical_count,
+                    "acknowledged": sum(1 for a in alerts if a.get("status") == "acknowledged"),
+                    "resolved": sum(1 for a in alerts if a.get("status") == "resolved")
+                }
+            }
+
+            safe_set_attribute(span, "total_alerts", len(alerts))
+            safe_set_attribute(span, "active_alerts", active_count)
+
+            return response
+
+        except Exception as e:
+            api_logger.error(f"Failed to fetch alerts: {e}", exc_info=True)
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(
+    alert_id: str,
+    acknowledged_by: str = Body(..., embed=True)
+):
+    """Acknowledge an alert."""
+    with safe_span("api_mcp_alert_acknowledge") as span:
+        safe_set_attribute(span, "alert_id", alert_id)
+        safe_set_attribute(span, "acknowledged_by", acknowledged_by)
+
+        try:
+            # Direct database query
+            conn = await get_direct_db_connection()
+            try:
+                now = datetime.utcnow()
+                row = await conn.fetchrow(
+                    """
+                    UPDATE archon_mcp_alerts
+                    SET status = 'acknowledged',
+                        acknowledged_at = $1,
+                        acknowledged_by = $2
+                    WHERE alert_id = $3
+                    RETURNING *
+                    """,
+                    now, acknowledged_by, alert_id
+                )
+
+                if not row:
+                    raise HTTPException(status_code=404, detail="Alert not found")
+
+                return {"success": True, "alert": dict(row)}
+            finally:
+                await conn.close()
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            api_logger.error(f"Failed to acknowledge alert: {e}", exc_info=True)
+            safe_set_attribute(span, "error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/alerts/{alert_id}/resolve")
+async def resolve_alert(
+    alert_id: str,
+    resolved_by: str = Body(..., embed=True)
+):
+    """Resolve an alert."""
+    with safe_span("api_mcp_alert_resolve") as span:
+        safe_set_attribute(span, "alert_id", alert_id)
+        safe_set_attribute(span, "resolved_by", resolved_by)
+
+        try:
+            # Direct database query
+            conn = await get_direct_db_connection()
+            try:
+                now = datetime.utcnow()
+                row = await conn.fetchrow(
+                    """
+                    UPDATE archon_mcp_alerts
+                    SET status = 'resolved',
+                        resolved_at = $1,
+                        resolved_by = $2
+                    WHERE alert_id = $3
+                    RETURNING *
+                    """,
+                    now, resolved_by, alert_id
+                )
+
+                if not row:
+                    raise HTTPException(status_code=404, detail="Alert not found")
+
+                return {"success": True, "alert": dict(row)}
+            finally:
+                await conn.close()
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            api_logger.error(f"Failed to resolve alert: {e}", exc_info=True)
             safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e)) from e
 

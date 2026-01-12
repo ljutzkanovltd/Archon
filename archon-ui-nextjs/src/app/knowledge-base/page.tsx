@@ -11,6 +11,8 @@ import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
 import { RecrawlOptionsModal } from "@/components/KnowledgeBase/RecrawlOptionsModal";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlingProgress } from "@/components/KnowledgeBase/CrawlingProgress";
+import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
+import KnowledgeTableViewWithBulk from "@/components/KnowledgeBase/KnowledgeTableViewWithBulk";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import EmptyState from "@/components/common/EmptyState";
@@ -45,6 +47,9 @@ export default function KnowledgeBasePage() {
   const [searchPage, setSearchPage] = useState(1);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchPages, setSearchPages] = useState(0);
+
+  // View mode state
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
 
   useEffect(() => {
     loadSources();
@@ -294,6 +299,96 @@ export default function KnowledgeBasePage() {
     setSearchPage(1);
   };
 
+  /**
+   * Bulk re-crawl handler - Adds selected sources to crawl queue
+   * Uses default crawl depth from settings (Settings > Crawl > Default Max Depth)
+   */
+  const handleBulkRecrawl = async (selectedSources: KnowledgeSource[]) => {
+    try {
+      // Fetch default crawl settings
+      const settingsResponse = await fetch("http://localhost:8181/api/settings");
+      let crawlDepth = 3; // Fallback default
+
+      if (settingsResponse.ok) {
+        const settingsData = await settingsResponse.json();
+        crawlDepth = settingsData.data?.crawl?.default_max_depth || 3;
+      }
+
+      const sourceIds = selectedSources.map((s) => s.source_id);
+      const priorities = Object.fromEntries(
+        sourceIds.map((id) => [id, 100]) // High priority for all
+      );
+
+      const response = await fetch("http://localhost:8181/api/crawl-queue/add-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_ids: sourceIds,
+          priorities
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to add sources to queue");
+
+      const result = await response.json();
+
+      alert(
+        `✅ Added ${result.added_count} sources to crawl queue!\n\nBatch ID: ${result.batch_id}\nCrawl Depth: ${crawlDepth} (from settings)\n\nWatch the queue monitor below to see progress.`
+      );
+
+      // Refresh sources list
+      await loadSources();
+    } catch (error) {
+      console.error("Bulk re-crawl error:", error);
+      alert("❌ Failed to add sources to queue. Check console for details.");
+    }
+  };
+
+  /**
+   * Bulk delete handler - Deletes selected sources with confirmation
+   */
+  const handleBulkDelete = async (selectedSources: KnowledgeSource[]) => {
+    const count = selectedSources.length;
+    const sourceNames = selectedSources.map((s) => s.title).join(", ");
+
+    if (
+      !confirm(
+        `⚠️ Delete ${count} sources?\n\nSources: ${sourceNames}\n\nThis will remove all indexed documents and code examples. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const sourceIds = selectedSources.map((s) => s.source_id);
+
+      const response = await fetch("http://localhost:8181/api/sources/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_ids: sourceIds }),
+      });
+
+      if (!response.ok) throw new Error("Failed to delete sources");
+
+      const result = await response.json();
+
+      alert(
+        `✅ Deleted ${result.deleted_count} of ${result.total_requested} sources`
+      );
+
+      if (result.failed_count > 0) {
+        console.error("Failed deletions:", result.details.filter((d: any) => !d.success));
+        alert(`⚠️ Warning: Failed to delete ${result.failed_count} sources. Check console for details.`);
+      }
+
+      // Refresh sources list
+      await loadSources();
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      alert("❌ Failed to delete sources. Check console for details.");
+    }
+  };
+
   // ========== DATATABLE CONFIGURATION ==========
 
   const columns: DataTableColumn<KnowledgeSource>[] = [
@@ -532,6 +627,9 @@ export default function KnowledgeBasePage() {
       {/* Active Operations */}
       <CrawlingProgress className="mb-4" />
 
+      {/* Crawl Queue Monitor */}
+      <CrawlQueueMonitor sources={sources} className="mb-4" />
+
       {/* Search Mode Toggle and Content Search */}
       <div className="mb-6 rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         {/* Search Mode Toggle */}
@@ -667,7 +765,7 @@ export default function KnowledgeBasePage() {
         )}
       </div>
 
-      {/* Conditional Render: Empty State or DataTable */}
+      {/* Conditional Render: Empty State or Sources with Bulk Operations */}
       {!isLoading && sources.length === 0 ? (
         <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <EmptyState
@@ -685,33 +783,84 @@ export default function KnowledgeBasePage() {
           />
         </div>
       ) : (
-        <DataTable
-          data={sources}
-          columns={columns}
-          tableButtons={tableButtons}
-          rowButtons={rowButtons}
-          tableId="archon-knowledge-sources"
-          enableMultiSort={true}
-          showPrimaryAction={true}
-          viewMode="table"
-          customRender={(source) => (
-            <KnowledgeSourceCard
-              source={source}
+        <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          {/* Header with View Toggle and Add Button */}
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Knowledge Sources ({sources.length})
+            </h2>
+
+            <div className="flex items-center gap-3">
+              {/* View Toggle */}
+              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
+                <button
+                  onClick={() => setViewMode("table")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    viewMode === "table"
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-l-lg`}
+                  title="Table View"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    viewMode === "grid"
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
+                  title="Grid View"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Add Source Button */}
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <HiPlus className="h-5 w-5" />
+                Add Source
+              </button>
+            </div>
+          </div>
+
+          {/* View Content */}
+          {viewMode === "table" ? (
+            /* Table View with Bulk Operations */
+            <KnowledgeTableViewWithBulk
+              sources={sources}
               onView={handleView}
               onEdit={handleEdit}
               onDelete={handleDelete}
               onRecrawl={handleRecrawl}
+              onBulkRecrawl={handleBulkRecrawl}
+              onBulkDelete={handleBulkDelete}
+              searchTerm={searchQuery}
             />
+          ) : (
+            /* Grid View */
+            <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
+              {sources.map((source) => (
+                <KnowledgeSourceCard
+                  key={source.source_id}
+                  source={source}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onRecrawl={handleRecrawl}
+                />
+              ))}
+            </div>
           )}
-          showSearch
-          filterConfigs={filterConfigs}
-          showViewToggle={true}
-          showFilters={true}
-          showPagination
-          isLoading={isLoading}
-          emptyMessage="No sources found. Add your first source to get started!"
-          caption={`List of ${sources.length} knowledge sources`}
-        />
+        </div>
       )}
 
       {/* Add Source Dialog */}

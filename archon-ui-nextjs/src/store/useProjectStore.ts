@@ -58,12 +58,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   // Fetch all projects
   fetchProjects: async (params) => {
-    console.log('[Project Store] Fetching projects with params:', params);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Project Store] Fetching projects with params:', params);
+    }
     set({ isLoading: true, error: null });
 
     try {
       const response = await projectsApi.getAll(params);
-      console.log('[Project Store] API Response:', response);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Project Store] API Response:', response);
+      }
 
       set({
         projects: response.items,
@@ -75,7 +79,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         isLoading: false,
         error: null,
       });
-      console.log('[Project Store] Projects loaded:', response.items.length);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Project Store] Projects loaded:', response.items.length);
+      }
     } catch (error) {
       const apiError = error as ApiError;
       console.error('[Project Store] Error:', apiError);

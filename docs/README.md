@@ -35,8 +35,10 @@ docs/
 | Multi-Provider | [Centralized Provider Configuration](setup/CENTRALIZED_PROVIDER_CONFIGURATION.md) |
 
 ### Architecture
+- [Archon System Architecture](architecture/ARCHON_ARCHITECTURE.md) - **Comprehensive platform architecture**
 - [Network Architecture & Database Connection](architecture/NETWORK_ARCHITECTURE_AND_DATABASE_CONNECTION.md)
 - [Database Migration (2025-12)](architecture/DATABASE_MIGRATION_2025-12.md)
+- [MCP Session Architecture](MCP_SESSION_ARCHITECTURE.md) - Detailed session lifecycle
 
 ### Operations
 - [Backups](operations/BACKUPS.md)

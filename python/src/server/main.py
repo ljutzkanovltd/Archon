@@ -32,6 +32,7 @@ from .api_routes.pages_api import router as pages_router
 from .api_routes.progress_api import router as progress_router
 from .api_routes.projects_api import router as projects_router
 from .api_routes.providers_api import router as providers_router
+from .api_routes.sync_api import router as sync_router
 from .api_routes.version_api import router as version_router
 
 # Import modular API routers
@@ -141,6 +142,26 @@ async def lifespan(app: FastAPI):
         # MCP Client functionality removed from architecture
         # Agents now use MCP tools directly
 
+        # Start crawl queue worker
+        try:
+            from .services.crawling.queue_worker import get_queue_worker
+
+            # Check if queue worker is enabled
+            from .utils import get_supabase_client
+            supabase = get_supabase_client()
+            result = supabase.table("archon_settings").select("value").eq("key", "QUEUE_WORKER_ENABLED").execute()
+            worker_enabled = result.data[0]["value"] == "true" if result.data else True
+
+            if worker_enabled:
+                queue_worker = get_queue_worker()
+                await queue_worker.start()
+                api_logger.info("✅ Crawl queue worker started")
+            else:
+                api_logger.info("⏸️  Crawl queue worker disabled (QUEUE_WORKER_ENABLED=false)")
+        except Exception as e:
+            api_logger.warning(f"⚠️  Could not start crawl queue worker: {e}")
+            # Non-fatal - API still works without queue worker
+
         # Mark initialization as complete
         _initialization_complete = True
         api_logger.info("🎉 Archon backend started successfully!")
@@ -156,6 +177,18 @@ async def lifespan(app: FastAPI):
     api_logger.info("🛑 Shutting down Archon backend...")
 
     try:
+        # Stop crawl queue worker
+        try:
+            from .services.crawling.queue_worker import get_queue_worker
+
+            queue_worker = get_queue_worker()
+            if queue_worker.is_running:
+                api_logger.info("Stopping crawl queue worker...")
+                await queue_worker.stop(timeout=60)
+                api_logger.info("✅ Crawl queue worker stopped")
+        except Exception as e:
+            api_logger.warning(f"Could not stop crawl queue worker: {e}")
+
         # MCP Client cleanup not needed
 
         # Disconnect Redis cache
@@ -236,6 +269,7 @@ app.include_router(internal_router)
 app.include_router(backup_router)  # Backup status for monitoring dashboards
 app.include_router(bug_report_router)
 app.include_router(providers_router)
+app.include_router(sync_router)  # Database synchronization API
 app.include_router(version_router)
 app.include_router(migration_router)
 

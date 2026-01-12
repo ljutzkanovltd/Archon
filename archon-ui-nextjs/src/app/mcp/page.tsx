@@ -1,11 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { usePageTitle, useMcpStatus, useMcpConfig, useMcpClients, useMcpSessionInfo, useMcpUsageStats } from "@/hooks";
 import { HiServer } from "react-icons/hi";
-import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart, ToolExecutionHistory, SessionTimeline, McpAnalytics, McpLogsViewer, SessionHealthMetrics } from "@/components/MCP";
+import { McpConfigSection, McpStatusBar, McpClientList, UsageStatsCard, UsageByToolChart, ToolExecutionHistory, SessionTimeline, McpAnalytics, McpLogsViewer, SessionHealthMetrics, ViewToggle, UnifiedActivityView, ViewMode } from "@/components/MCP";
 
 export default function McpPage() {
   usePageTitle("MCP Status", "Archon");
+
+  // View mode state for switching between API/MCP/Unified views
+  const [viewMode, setViewMode] = useState<ViewMode>("unified");
 
   // Fetch real MCP data with polling
   const { data: status, isLoading: statusLoading } = useMcpStatus();
@@ -48,7 +52,12 @@ export default function McpPage() {
         </p>
       </div>
 
-      {/* Server Status Bar */}
+      {/* View Mode Toggle */}
+      <div className="mb-6">
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+      </div>
+
+      {/* Server Status Bar - Always visible */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${status.status === "running" ? "bg-green-500 animate-pulse" : "bg-red-500"}`}></div>
@@ -57,21 +66,30 @@ export default function McpPage() {
         <McpStatusBar status={status} sessionInfo={sessionInfo} config={config} />
       </div>
 
-      {/* Session Health Metrics */}
+      {/* Unified Activity View - Show for all modes */}
       <div className="mb-6">
-        <SessionHealthMetrics />
+        <UnifiedActivityView viewMode={viewMode} />
       </div>
 
-      {/* Connected Clients */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
-          Connected Clients
-        </h2>
-        <McpClientList clients={clients} />
-      </div>
+      {/* Session Health Metrics - Show for MCP and Unified modes */}
+      {(viewMode === "mcp" || viewMode === "unified") && (
+        <div className="mb-6">
+          <SessionHealthMetrics />
+        </div>
+      )}
 
-      {/* Tool Execution History - Show for each connected client */}
-      {clients.length > 0 && (
+      {/* Connected Clients - Show for MCP and Unified modes */}
+      {(viewMode === "mcp" || viewMode === "unified") && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+            Connected Clients
+          </h2>
+          <McpClientList clients={clients} />
+        </div>
+      )}
+
+      {/* Tool Execution History - Show for MCP and Unified modes */}
+      {(viewMode === "mcp" || viewMode === "unified") && clients.length > 0 && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
             Tool Execution History
@@ -90,8 +108,8 @@ export default function McpPage() {
         </div>
       )}
 
-      {/* Session Timeline - Visual timeline for each connected client */}
-      {clients.length > 0 && (
+      {/* Session Timeline - Show for MCP and Unified modes */}
+      {(viewMode === "mcp" || viewMode === "unified") && clients.length > 0 && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
             Session Timeline
@@ -110,18 +128,20 @@ export default function McpPage() {
         </div>
       )}
 
-      {/* Analytics Dashboard - Expandable comprehensive analytics */}
+      {/* Analytics Dashboard - Show for all modes */}
       <div className="mb-6">
         <McpAnalytics days={30} compare={true} />
       </div>
 
-      {/* Logs Viewer - Detailed log inspection with virtualization */}
-      <div className="mb-6">
-        <McpLogsViewer initialLevel="all" />
-      </div>
+      {/* Logs Viewer - Show for MCP and Unified modes */}
+      {(viewMode === "mcp" || viewMode === "unified") && (
+        <div className="mb-6">
+          <McpLogsViewer initialLevel="all" />
+        </div>
+      )}
 
-      {/* Usage Statistics */}
-      {usageStats && (
+      {/* Usage Statistics - Show for API and Unified modes */}
+      {(viewMode === "api" || viewMode === "unified") && usageStats && (
         <div className="mb-6">
           <UsageStatsCard
             summary={usageStats.summary}
@@ -131,8 +151,8 @@ export default function McpPage() {
         </div>
       )}
 
-      {/* Usage by Tool */}
-      {usageStats && (
+      {/* Usage by Tool - Show for API and Unified modes */}
+      {(viewMode === "api" || viewMode === "unified") && usageStats && (
         <div className="mb-6">
           <UsageByToolChart
             byTool={usageStats.by_tool}

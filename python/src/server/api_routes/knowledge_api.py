@@ -1490,6 +1490,104 @@ async def delete_source(source_id: str):
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+@router.post("/sources/bulk-delete")
+async def bulk_delete_sources(request: Request):
+    """
+    Delete multiple sources and all their associated data in a single operation.
+
+    Request body:
+    {
+        "source_ids": ["source-id-1", "source-id-2", ...]
+    }
+
+    Returns:
+    {
+        "success": true,
+        "deleted_count": 5,
+        "failed_count": 0,
+        "details": [
+            {"source_id": "...", "success": true, "message": "..."},
+            ...
+        ]
+    }
+    """
+    try:
+        body = await request.json()
+        source_ids = body.get("source_ids", [])
+
+        if not source_ids or not isinstance(source_ids, list):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "source_ids must be a non-empty list"}
+            )
+
+        safe_logfire_info(f"Bulk delete sources | count={len(source_ids)}")
+
+        # Use SourceManagementService
+        from ..services.source_management_service import SourceManagementService
+        source_service = SourceManagementService(get_supabase_client())
+
+        # Track results
+        details = []
+        deleted_count = 0
+        failed_count = 0
+
+        # Delete each source
+        for source_id in source_ids:
+            try:
+                success, result_data = source_service.delete_source(source_id)
+
+                if success:
+                    deleted_count += 1
+                    details.append({
+                        "source_id": source_id,
+                        "success": True,
+                        "message": f"Deleted successfully"
+                    })
+                    safe_logfire_info(f"Bulk delete: source deleted | source_id={source_id}")
+                else:
+                    failed_count += 1
+                    error_msg = result_data.get("error", "Unknown error")
+                    details.append({
+                        "source_id": source_id,
+                        "success": False,
+                        "error": error_msg
+                    })
+                    safe_logfire_error(
+                        f"Bulk delete: source deletion failed | source_id={source_id} | error={error_msg}"
+                    )
+            except Exception as e:
+                failed_count += 1
+                details.append({
+                    "source_id": source_id,
+                    "success": False,
+                    "error": str(e)
+                })
+                safe_logfire_error(
+                    f"Bulk delete: exception deleting source | source_id={source_id} | error={str(e)}"
+                )
+
+        result = {
+            "success": True,
+            "deleted_count": deleted_count,
+            "failed_count": failed_count,
+            "total_requested": len(source_ids),
+            "details": details
+        }
+
+        safe_logfire_info(
+            f"Bulk delete completed | deleted={deleted_count} | failed={failed_count} | total={len(source_ids)}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to bulk delete sources | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
 @router.get("/database/metrics")
 async def get_database_metrics():
     """Get database metrics and statistics."""
@@ -1960,4 +2058,789 @@ async def get_cache_stats():
         }
     except Exception as e:
         safe_logfire_error(f"Failed to get cache stats | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# =====================================================
+# Crawl Queue Management API Endpoints
+# =====================================================
+
+class AddToBatchRequest(BaseModel):
+    """Request model for adding sources to crawl queue."""
+    source_ids: list[str]
+    priority: int = 50
+    created_by: str = "system"
+
+
+class QueueItemResponse(BaseModel):
+    """Response model for queue item."""
+    item_id: str
+    batch_id: str | None
+    source_id: str
+    status: str
+    priority: int
+    retry_count: int
+    max_retries: int
+    error_message: str | None
+    error_type: str | None
+    requires_human_review: bool
+    created_at: str
+    started_at: str | None
+    completed_at: str | None
+    next_retry_at: str | None
+
+
+@router.post("/crawl-queue/add-batch")
+async def add_batch_to_queue(request: AddToBatchRequest):
+    """
+    Add multiple sources to the crawl queue for batch processing.
+
+    This endpoint creates a new batch and adds the specified sources to the queue.
+    Sources will be processed according to their priority (higher = more urgent).
+
+    Request body:
+    - source_ids: List of source IDs to add to queue
+    - priority: Priority level (default: 50, llms.txt sources: 100, sitemap sources: 50)
+    - created_by: User or system that created the batch (default: "system")
+
+    Returns:
+    - success: Boolean indicating success
+    - batch_id: UUID of the created batch
+    - total_added: Number of sources added
+    - item_ids: List of queue item UUIDs
+    """
+    try:
+        from ..services.crawling.queue_manager import get_queue_manager
+
+        queue_manager = get_queue_manager()
+        result = await queue_manager.add_to_queue(
+            source_ids=request.source_ids,
+            priority=request.priority,
+            created_by=request.created_by
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail={"error": result.get("error", "Failed to add sources to queue")}
+            )
+
+        safe_logfire_info(
+            f"Added batch to queue | batch_id={result['batch_id']} | "
+            f"sources={result['total_added']} | priority={request.priority}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to add batch to queue | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/crawl-queue/status")
+async def get_queue_status():
+    """
+    Get crawl queue statistics.
+
+    Returns counts for each queue status:
+    - total: Total queue items
+    - pending: Items waiting to be processed
+    - running: Items currently being processed
+    - completed: Successfully completed items
+    - failed: Failed items (not yet at max retries)
+    - cancelled: Manually cancelled items
+    - requires_review: Items needing human review (reached max retries)
+    """
+    try:
+        from ..services.crawling.queue_manager import get_queue_manager
+
+        queue_manager = get_queue_manager()
+        result = await queue_manager.get_queue_stats()
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail={"error": result.get("error", "Failed to get queue stats")}
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to get queue status | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/crawl-queue/items")
+async def list_queue_items(
+    status: str | None = Query(None, description="Filter by status"),
+    requires_review: bool | None = Query(None, description="Filter by human review flag"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum items to return")
+):
+    """
+    List queue items with optional filtering.
+
+    Query parameters:
+    - status: Filter by status (pending, running, completed, failed, cancelled)
+    - requires_review: Filter items needing human review (true/false)
+    - limit: Maximum number of items to return (default: 50, max: 200)
+
+    Returns list of queue items matching the filters.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Build query
+        query = supabase.table("archon_crawl_queue").select("*")
+
+        if status:
+            query = query.eq("status", status)
+
+        if requires_review is not None:
+            query = query.eq("requires_human_review", requires_review)
+
+        query = query.order("created_at", desc=True).limit(limit)
+
+        # Execute query
+        result = query.execute()
+
+        items = result.data if result.data else []
+
+        safe_logfire_info(
+            f"Listed queue items | status={status} | "
+            f"requires_review={requires_review} | count={len(items)}"
+        )
+
+        return {
+            "success": True,
+            "items": items,
+            "count": len(items)
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to list queue items | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/retry/{item_id}")
+async def retry_queue_item(item_id: str):
+    """
+    Manually retry a failed queue item.
+
+    This resets the item to 'pending' status and clears error information,
+    allowing it to be picked up by the queue worker for another attempt.
+
+    Path parameters:
+    - item_id: UUID of the queue item to retry
+
+    Returns the updated queue item.
+    """
+    try:
+        from ..services.crawling.queue_manager import get_queue_manager
+
+        queue_manager = get_queue_manager()
+
+        # Reset item to pending status
+        result = await queue_manager.update_status(
+            item_id=item_id,
+            status="pending"
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail={"error": result.get("error", "Failed to retry queue item")}
+            )
+
+        # Clear error fields
+        supabase = get_supabase_client()
+        supabase.table("archon_crawl_queue").update({
+            "error_message": None,
+            "error_type": None,
+            "error_details": None,
+            "requires_human_review": False
+        }).eq("item_id", item_id).execute()
+
+        safe_logfire_info(f"Manually retried queue item | item_id={item_id}")
+
+        return {
+            "success": True,
+            "message": "Queue item reset to pending status",
+            "item": result.get("item")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to retry queue item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.delete("/crawl-queue/{item_id}")
+async def delete_queue_item(item_id: str):
+    """
+    Remove an item from the crawl queue.
+
+    This permanently deletes the queue item from the database.
+    Use with caution - this action cannot be undone.
+
+    Path parameters:
+    - item_id: UUID of the queue item to delete
+
+    Returns success confirmation.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Delete the item
+        result = supabase.table("archon_crawl_queue").delete().eq("item_id", item_id).execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "Queue item not found"}
+            )
+
+        safe_logfire_info(f"Deleted queue item | item_id={item_id}")
+
+        return {
+            "success": True,
+            "message": "Queue item deleted successfully",
+            "deleted_item_id": item_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to delete queue item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/crawl-queue/batch/{batch_id}/progress")
+async def get_batch_progress(batch_id: str):
+    """
+    Get progress for a specific batch.
+
+    Path parameters:
+    - batch_id: UUID of the batch
+
+    Returns detailed progress including:
+    - total: Total sources in batch
+    - completed: Number of completed sources
+    - failed: Number of failed sources
+    - running: Number currently processing
+    - pending: Number waiting to be processed
+    - progress_percent: Completion percentage
+    """
+    try:
+        from ..services.crawling.queue_manager import get_queue_manager
+
+        queue_manager = get_queue_manager()
+        result = await queue_manager.get_batch_progress(batch_id)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=404 if "not found" in result.get("error", "").lower() else 500,
+                detail={"error": result.get("error", "Failed to get batch progress")}
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to get batch progress | batch_id={batch_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# =====================================================
+# Crawl Queue Worker Control Endpoints
+# =====================================================
+
+@router.get("/crawl-queue/worker/health")
+async def get_worker_health():
+    """
+    Get crawl queue worker health status.
+
+    Returns:
+    - is_running: Whether worker is running
+    - is_paused: Whether worker is paused
+    - active_crawls: Number of active crawl operations
+    - batch_size: Max sources processed concurrently
+    - poll_interval: Queue polling interval in seconds
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        status = queue_worker.get_status()
+
+        return {
+            "success": True,
+            "worker_status": status
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to get worker health | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/worker/pause")
+async def pause_worker():
+    """
+    Pause the crawl queue worker.
+
+    The worker will stop processing new items but will complete current operations.
+    The background loop continues running but skips queue polling.
+
+    Returns success confirmation.
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        await queue_worker.pause()
+
+        safe_logfire_info("Crawl queue worker paused via API")
+
+        return {
+            "success": True,
+            "message": "Queue worker paused successfully",
+            "worker_status": queue_worker.get_status()
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to pause worker | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/worker/resume")
+async def resume_worker():
+    """
+    Resume the crawl queue worker after pause.
+
+    The worker will start processing queue items again on the next poll cycle.
+
+    Returns success confirmation.
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        await queue_worker.resume()
+
+        safe_logfire_info("Crawl queue worker resumed via API")
+
+        return {
+            "success": True,
+            "message": "Queue worker resumed successfully",
+            "worker_status": queue_worker.get_status()
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to resume worker | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# =====================================================
+# Human-in-the-Loop Failure Review Endpoints
+# =====================================================
+
+class ReviewItemDetail(BaseModel):
+    """Detailed information about a failed queue item for review."""
+    item_id: str
+    source_id: str
+    source_url: str
+    source_display_name: str
+    status: str
+    retry_count: int
+    max_retries: int
+    error_message: str | None
+    error_type: str | None
+    error_details: dict | None
+    requires_human_review: bool
+    created_at: str
+    started_at: str | None
+    last_retry_at: str | None
+    next_retry_at: str | None
+    suggested_actions: list[str]
+
+
+def _suggest_resolution_actions(error_type: str | None, error_message: str | None) -> list[str]:
+    """
+    Suggest resolution actions based on error type and message.
+
+    Args:
+        error_type: Categorized error type
+        error_message: Error message text
+
+    Returns:
+        List of suggested actions
+    """
+    suggestions = []
+
+    if not error_type or not error_message:
+        return ["Review error details and retry manually"]
+
+    error_msg_lower = error_message.lower() if error_message else ""
+
+    if error_type == "network":
+        suggestions.extend([
+            "Check if the source URL is accessible",
+            "Verify network connectivity",
+            "Wait a few minutes and retry (temporary network issue)"
+        ])
+    elif error_type == "rate_limit":
+        suggestions.extend([
+            "Wait 15-30 minutes before retrying",
+            "Check if source has strict rate limiting policies",
+            "Consider crawling during off-peak hours"
+        ])
+    elif error_type == "timeout":
+        suggestions.extend([
+            "Increase CRAWL_PAGE_TIMEOUT setting",
+            "Check if source is slow to respond",
+            "Retry with lower max_depth to reduce crawl time"
+        ])
+    elif error_type == "parse_error":
+        suggestions.extend([
+            "Verify source URL returns valid HTML",
+            "Check if source requires JavaScript rendering",
+            "Manually inspect source structure"
+        ])
+    elif "api key" in error_msg_lower or "authentication" in error_msg_lower:
+        suggestions.extend([
+            "Verify embedding provider API key in Settings",
+            "Check if API key has sufficient credits/quota",
+            "Ensure API key has correct permissions"
+        ])
+    elif "provider" in error_msg_lower:
+        suggestions.extend([
+            "Check embedding provider configuration in Settings",
+            "Verify provider service is operational",
+            "Consider switching to alternative provider"
+        ])
+    else:
+        suggestions.extend([
+            "Review detailed error message",
+            "Check crawler logs for more context",
+            "Retry manually or skip if issue persists"
+        ])
+
+    return suggestions
+
+
+@router.get("/crawl-queue/review")
+async def list_items_for_review(
+    limit: int = Query(50, ge=1, le=200, description="Maximum items to return")
+):
+    """
+    List all queue items requiring human review.
+
+    Items are flagged for review after reaching max retries (typically 3 attempts).
+    Each item includes error details and suggested resolution actions.
+
+    Query parameters:
+    - limit: Maximum number of items to return (default: 50, max: 200)
+
+    Returns list of items with:
+    - Basic item info (id, source_id, status, retry_count)
+    - Error information (error_message, error_type, error_details)
+    - Source details (url, display_name)
+    - Suggested resolution actions
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Fetch items requiring review
+        result = (
+            supabase.table("archon_crawl_queue")
+            .select("*")
+            .eq("requires_human_review", True)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        items = result.data if result.data else []
+
+        # Enrich with source details and suggestions
+        enriched_items = []
+        for item in items:
+            # Get source details
+            source_result = (
+                supabase.table("archon_sources")
+                .select("source_url, source_display_name")
+                .eq("source_id", item["source_id"])
+                .single()
+                .execute()
+            )
+
+            source = source_result.data if source_result.data else {}
+
+            # Generate suggested actions
+            suggestions = _suggest_resolution_actions(
+                item.get("error_type"),
+                item.get("error_message")
+            )
+
+            enriched_items.append({
+                **item,
+                "source_url": source.get("source_url", "Unknown"),
+                "source_display_name": source.get("source_display_name", item["source_id"]),
+                "suggested_actions": suggestions
+            })
+
+        safe_logfire_info(f"Listed {len(enriched_items)} items for review")
+
+        return {
+            "success": True,
+            "items": enriched_items,
+            "count": len(enriched_items)
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to list items for review | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/crawl-queue/review/{item_id}")
+async def get_review_item_details(item_id: str):
+    """
+    Get detailed information about a specific item requiring review.
+
+    Path parameters:
+    - item_id: UUID of the queue item
+
+    Returns detailed item information including:
+    - Full error details and stack traces
+    - Retry history (timestamps, attempts)
+    - Source metadata
+    - Suggested resolution actions
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get queue item
+        item_result = (
+            supabase.table("archon_crawl_queue")
+            .select("*")
+            .eq("item_id", item_id)
+            .single()
+            .execute()
+        )
+
+        if not item_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": f"Queue item {item_id} not found"}
+            )
+
+        item = item_result.data
+
+        # Get source details
+        source_result = (
+            supabase.table("archon_sources")
+            .select("*")
+            .eq("source_id", item["source_id"])
+            .single()
+            .execute()
+        )
+
+        source = source_result.data if source_result.data else {}
+
+        # Generate suggested actions
+        suggestions = _suggest_resolution_actions(
+            item.get("error_type"),
+            item.get("error_message")
+        )
+
+        # Build detailed response
+        detail = ReviewItemDetail(
+            item_id=item["item_id"],
+            source_id=item["source_id"],
+            source_url=source.get("source_url", "Unknown"),
+            source_display_name=source.get("source_display_name", item["source_id"]),
+            status=item["status"],
+            retry_count=item["retry_count"],
+            max_retries=item["max_retries"],
+            error_message=item.get("error_message"),
+            error_type=item.get("error_type"),
+            error_details=item.get("error_details"),
+            requires_human_review=item["requires_human_review"],
+            created_at=item["created_at"],
+            started_at=item.get("started_at"),
+            last_retry_at=item.get("last_retry_at"),
+            next_retry_at=item.get("next_retry_at"),
+            suggested_actions=suggestions
+        )
+
+        safe_logfire_info(f"Retrieved review details | item_id={item_id}")
+
+        return {
+            "success": True,
+            "item": detail.dict()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to get review item details | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/review/{item_id}/retry")
+async def retry_review_item(item_id: str):
+    """
+    Manually retry a failed item after review.
+
+    This resets the item to 'pending' status, clears error information,
+    and resets retry count to 0, giving it a fresh start.
+
+    Path parameters:
+    - item_id: UUID of the queue item to retry
+
+    Returns the updated queue item.
+    """
+    try:
+        supabase = get_supabase_client()
+        from ..services.crawling.queue_manager import get_queue_manager
+
+        queue_manager = get_queue_manager()
+
+        # Reset item to pending with retry count = 0
+        update_result = (
+            supabase.table("archon_crawl_queue")
+            .update({
+                "status": "pending",
+                "retry_count": 0,
+                "error_message": None,
+                "error_type": None,
+                "error_details": None,
+                "requires_human_review": False,
+                "next_retry_at": None,
+                "last_retry_at": None
+            })
+            .eq("item_id", item_id)
+            .execute()
+        )
+
+        if not update_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": f"Queue item {item_id} not found"}
+            )
+
+        safe_logfire_info(f"✅ Manually retried review item (reset retry count) | item_id={item_id}")
+
+        return {
+            "success": True,
+            "message": "Item reset to pending status with fresh retry count",
+            "item": update_result.data[0]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to retry review item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/review/{item_id}/skip")
+async def skip_review_item(item_id: str):
+    """
+    Mark a failed item as permanently failed (skip).
+
+    This sets the status to 'cancelled' and keeps the requires_human_review flag,
+    removing it from the active queue without deleting the record.
+
+    Path parameters:
+    - item_id: UUID of the queue item to skip
+
+    Returns confirmation.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Update to cancelled status
+        update_result = (
+            supabase.table("archon_crawl_queue")
+            .update({
+                "status": "cancelled",
+                "requires_human_review": True  # Keep flag for audit trail
+            })
+            .eq("item_id", item_id)
+            .execute()
+        )
+
+        if not update_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": f"Queue item {item_id} not found"}
+            )
+
+        safe_logfire_info(f"⏭️  Skipped review item (marked as cancelled) | item_id={item_id}")
+
+        return {
+            "success": True,
+            "message": "Item marked as permanently failed (cancelled)",
+            "item": update_result.data[0]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to skip review item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/review/{item_id}/resolve")
+async def resolve_review_item(item_id: str):
+    """
+    Mark a review item as resolved without retrying.
+
+    This is used when the issue was resolved externally (e.g., source was crawled manually,
+    or the source is no longer needed). Sets status to 'completed' and clears review flag.
+
+    Path parameters:
+    - item_id: UUID of the queue item to resolve
+
+    Returns confirmation.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Update to completed status
+        update_result = (
+            supabase.table("archon_crawl_queue")
+            .update({
+                "status": "completed",
+                "requires_human_review": False,
+                "completed_at": datetime.utcnow().isoformat()
+            })
+            .eq("item_id", item_id)
+            .execute()
+        )
+
+        if not update_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": f"Queue item {item_id} not found"}
+            )
+
+        safe_logfire_info(f"✅ Resolved review item (marked as completed) | item_id={item_id}")
+
+        return {
+            "success": True,
+            "message": "Item marked as resolved (completed)",
+            "item": update_result.data[0]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to resolve review item | item_id={item_id} | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})

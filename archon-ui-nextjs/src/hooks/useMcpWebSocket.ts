@@ -141,7 +141,9 @@ export function useMcpWebSocket(options: UseMcpWebSocketOptions = {}) {
 
       ws.onopen = () => {
         if (!mountedRef.current) return;
-        console.log('[WebSocket] Connected to', url);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[WebSocket] Connected to', url);
+        }
         setIsConnected(true);
         setError(null);
         setUsingFallback(false);
@@ -174,14 +176,18 @@ export function useMcpWebSocket(options: UseMcpWebSocketOptions = {}) {
 
       ws.onclose = () => {
         if (!mountedRef.current) return;
-        console.log('[WebSocket] Disconnected');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[WebSocket] Disconnected');
+        }
         setIsConnected(false);
         onConnectionChange?.(false);
 
         // Attempt reconnection if enabled
         if (autoReconnect && reconnectAttempts.current < maxReconnectAttempts) {
           const delay = reconnectDelay * Math.pow(2, reconnectAttempts.current);
-          console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
+          }
 
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttempts.current += 1;
@@ -189,7 +195,9 @@ export function useMcpWebSocket(options: UseMcpWebSocketOptions = {}) {
           }, delay);
         } else if (useFallback) {
           // Max reconnect attempts reached, fall back to polling
-          console.log('[WebSocket] Max reconnect attempts reached, falling back to polling');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[WebSocket] Max reconnect attempts reached, falling back to polling');
+          }
           setUsingFallback(true);
         }
       };

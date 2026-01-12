@@ -1,10 +1,10 @@
 "use client";
 
-import { useMcpSessionHealth } from "@/hooks";
-import { HiCheckCircle, HiExclamationCircle, HiClock, HiUsers, HiTrendingUp, HiTrendingDown } from "react-icons/hi";
+import { useMcpWebSocket } from "@/hooks";
+import { HiCheckCircle, HiExclamationCircle, HiClock, HiUsers, HiTrendingUp, HiTrendingDown, HiWifi } from "react-icons/hi";
 
 export function SessionHealthMetrics() {
-  const { data: health, isLoading } = useMcpSessionHealth();
+  const { data: health, isLoading, isConnected, usingFallback, reconnect } = useMcpWebSocket();
 
   if (isLoading || !health) {
     return (
@@ -16,6 +16,23 @@ export function SessionHealthMetrics() {
           <div className="h-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
           <div className="h-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
         </div>
+      </div>
+    );
+  }
+
+  // Validate health data structure
+  if (!health.status_breakdown || !health.age_distribution || !health.connection_health || !health.recent_activity) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[SessionHealthMetrics] Invalid health data structure:', health);
+    }
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h2 className="text-xl font-bold text-red-900 dark:text-red-300 mb-4">
+          Invalid Health Data
+        </h2>
+        <p className="text-red-600 dark:text-red-400 text-sm">
+          Received incomplete health data from server. Please check backend API.
+        </p>
       </div>
     );
   }
@@ -36,9 +53,49 @@ export function SessionHealthMetrics() {
       {/* Session Health Metrics Header */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="p-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
-            Session Health Metrics
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Session Health Metrics
+            </h2>
+
+            {/* Connection Status Indicator */}
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <HiWifi className="w-4 h-4 text-green-500" />
+                  <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                    Live
+                  </span>
+                </div>
+              ) : usingFallback ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <HiClock className="w-4 h-4 text-yellow-500 animate-pulse" />
+                  <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                    Polling (10s)
+                  </span>
+                  <button
+                    onClick={() => reconnect()}
+                    className="ml-1 text-xs underline hover:no-underline"
+                  >
+                    Retry WS
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <HiExclamationCircle className="w-4 h-4 text-red-500" />
+                  <span className="text-xs font-medium text-red-700 dark:text-red-300">
+                    Disconnected
+                  </span>
+                  <button
+                    onClick={() => reconnect()}
+                    className="ml-1 text-xs underline hover:no-underline"
+                  >
+                    Reconnect
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Status Breakdown */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -122,10 +179,14 @@ export function SessionHealthMetrics() {
               <div className="bg-white dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Duration</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {Math.floor(connection_health.avg_duration_seconds / 60)}m
+                  {connection_health.avg_duration_seconds != null
+                    ? `${Math.floor(connection_health.avg_duration_seconds / 60)}m`
+                    : 'N/A'}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {connection_health.avg_duration_seconds}s
+                  {connection_health.avg_duration_seconds != null
+                    ? `${connection_health.avg_duration_seconds}s`
+                    : ''}
                 </p>
               </div>
 
@@ -140,13 +201,15 @@ export function SessionHealthMetrics() {
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Disconnect Rate</p>
                 <div className="flex items-baseline">
                   <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {connection_health.disconnect_rate_percent}%
+                    {connection_health.disconnect_rate_percent != null
+                      ? `${connection_health.disconnect_rate_percent}%`
+                      : 'N/A'}
                   </p>
-                  {connection_health.disconnect_rate_percent > 50 ? (
+                  {connection_health.disconnect_rate_percent != null && connection_health.disconnect_rate_percent > 50 ? (
                     <HiTrendingUp className="w-5 h-5 text-red-500 ml-2" />
-                  ) : (
+                  ) : connection_health.disconnect_rate_percent != null ? (
                     <HiTrendingDown className="w-5 h-5 text-green-500 ml-2" />
-                  )}
+                  ) : null}
                 </div>
               </div>
 

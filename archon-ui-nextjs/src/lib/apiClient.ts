@@ -48,7 +48,10 @@ const API_BASE_URL = typeof window !== 'undefined'
   ? "" // Browser: relative paths work with Next.js proxy
   : (process.env.API_SERVER_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181");
 
-console.log('[API Client] Base URL:', API_BASE_URL, '(context:', typeof window !== 'undefined' ? 'browser' : 'server', ')');
+// Debug logging only in development and server-side
+if (process.env.NODE_ENV === 'development' && typeof window === 'undefined') {
+  console.log('[API Client] Base URL:', API_BASE_URL || '(empty - using Next.js proxy)');
+}
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,

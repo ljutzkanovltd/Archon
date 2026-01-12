@@ -19,6 +19,7 @@ Archon is a Model Context Protocol (MCP) server that provides knowledge base man
 
 **Critical Rules** | **Architecture** | **Management**
 - [ARCHON-FIRST RULE](#-critical-archon-first-rule---read-this-first)
+- [DANGEROUS OPERATIONS PROTOCOL](#-dangerous-operations-protocol)
 - [PLANNER-FIRST DIRECTIVE](#planner-first-directive)
 - [Workflow Phases](#archon-task-creation-workflow)
 
@@ -119,73 +120,71 @@ planning_task = manage_task("create",
 
 ---
 
-### COMPLETE WORKFLOW EXAMPLE (with crash recovery)
-
-```python
-# Phase 0: Task Discovery
-curl http://localhost:8051/health
-projects = find_projects(query="dark mode")
-
-# Phase 1: Project Setup
-project = manage_project("create",
-    title="Archon UI - Dark Mode Feature",
-    description="Add dark mode support with theme toggle"
-)
-PROJECT_ID = project['project']['id']
-
-# Phase 2: Planning (planner agent)
-planning_task = manage_task("create",
-    project_id=PROJECT_ID,  # CRASH RECOVERY
-    title="Plan: Dark mode implementation",
-    assignee="planner",
-    estimated_hours=1.5
-)
-
-# Phase 3: Architecture
-arch_task = manage_task("create",
-    project_id=PROJECT_ID,  # CRASH RECOVERY
-    title="Design: Theme system architecture",
-    assignee="architect",
-    estimated_hours=2.0,
-    dependencies=[planning_task['task']['id']]
-)
-
-# Phase 4: Implementation (parallel)
-ui_task = manage_task("create",
-    project_id=PROJECT_ID,  # CRASH RECOVERY
-    title="Implement: ThemeToggle component",
-    assignee="ui-implementation-expert",
-    estimated_hours=3.0,
-    dependencies=[arch_task['task']['id']]
-)
-
-# Phase 5: Quality
-test_task = manage_task("create",
-    project_id=PROJECT_ID,  # CRASH RECOVERY
-    title="Test: Theme switching E2E tests",
-    assignee="testing-expert",
-    estimated_hours=2.0,
-    dependencies=[ui_task['task']['id']]
-)
-```
-
----
-
 ### CRASH RECOVERY GUARANTEE
 
 **Why project_id is REQUIRED**:
-- ✅ Tasks persist in Supabase database
-- ✅ Reconnection finds all tasks via project_id
+- ✅ Tasks persist in Supabase, reconnection via project_id
 - ✅ Work continues exactly where it left off
-- ✅ No task orphaning or data loss
-- ❌ Without project_id: Tasks may be orphaned on crash
+- ❌ Without project_id: Tasks orphaned on crash
 
-**Recovery workflow**:
-```python
-projects = find_projects(query="dark mode")
-tasks = find_tasks(project_id=projects[0]['id'])
-in_progress = [t for t in tasks if t['status'] == 'doing']
+**Recovery**: `projects = find_projects(query="..."); tasks = find_tasks(project_id=projects[0]['id'])`
+
+→ **Complete 5-phase workflow example**: `@.claude/docs/AGENTIC_WORKFLOW.md`
+
+---
+
+## 🚨 DANGEROUS OPERATIONS PROTOCOL
+
+**THIS SECTION IS MANDATORY - VIOLATIONS ARE UNACCEPTABLE**
+
+Established after a critical incident where production database was dropped without backup, causing downtime.
+
+### Core Rules (6 Rules - All MANDATORY)
+
+**RULE 1: BACKUP FIRST** - Create + verify timestamped backup before ANY dangerous operation
+**RULE 2: DOUBLE APPROVAL** - Get TWO explicit approvals (cannot bypass both)
+**RULE 3: DANGEROUS REGISTRY** - Check operation against registry (see below)
+**RULE 4: BACKUP STRATEGIES** - Use appropriate backup method for operation type
+**RULE 5: RECOVERY PROCEDURES** - Document and test recovery steps
+**RULE 6: SCRIPT INTEGRATION** - All automation must integrate this protocol
+
+### Quick Backup (RULE 1 Summary)
+
+```bash
+# Recommended: Unified backup system
+cd ~/Documents/Projects/archon
+bash scripts/pre-dangerous-operation-backup.sh
+
+# Alternative: Quick Archon backup
+BACKUP_FILE="/tmp/archon-backup/pre-op-$(date +%Y%m%d_%H%M%S).sql"
+mkdir -p /tmp/archon-backup
+docker exec supabase-ai-db pg_dump -U postgres -d postgres | gzip > "$BACKUP_FILE.gz"
+ls -lh "$BACKUP_FILE.gz"  # Verify size > 0
 ```
+
+### Approval Template (RULE 2 Summary)
+
+**First Approval**: Describe operation + impacts + backup location + recovery steps
+**Second Approval**: Restate operation + risks + "Are you CERTAIN?"
+**Proceed**: Only after TWO explicit approvals
+
+### Dangerous Operations Registry (RULE 3 Summary)
+
+**⛔ CRITICAL (Backup + Double Approval)**:
+- Database: `DROP SCHEMA/DATABASE/TABLE CASCADE`, `TRUNCATE CASCADE`, `DELETE FROM` (broad WHERE)
+- Filesystem: `rm -rf /`, `rm -rf ~`, `rm -rf ~/Documents`
+- Git: `git push --force` (main/master), `git reset --hard`, `git clean -fdx`
+- Docker: `docker-compose down -v`, `docker system prune --volumes`
+
+**⚠️ HIGH RISK (Backup + Single Approval)**:
+- Database: `UPDATE` (>100 rows), `ALTER TABLE` (production)
+- Filesystem: `rm -rf` (>100 files), `chmod -R 777`
+- Git: `git rebase` (shared), `git push --force` (any)
+- Docker: `docker volume rm` (production)
+
+→ **Complete protocol with examples, templates, hooks**: `@.claude/docs/DANGEROUS_OPERATIONS.md`
+
+---
 
 ### Top 5 Rules
 
@@ -375,11 +374,7 @@ docker exec -it supabase-ai-db psql -U postgres -c "SELECT 1"
 # Access React UI: http://localhost:3737 (Docker)
 ```
 
-**Why Hybrid Mode?**
-- ✅ **Instant hot-reload** for UI changes (no Docker rebuild)
-- ✅ Backend stays in Docker (no Python setup needed)
-- ✅ Best for frontend/UI development
-- ✅ Automatic CORS handling via Next.js proxy
+**Why Hybrid Mode?** Instant hot-reload (no Docker rebuild), backend stays in Docker, best for UI dev
 
 → **Complete setup**: `@.claude/docs/SYSTEM_SETUP.md`
 
@@ -473,39 +468,21 @@ FRONTEND_PORT=3737
 
 ## Architecture
 
-### Service Components
+**Services**: MCP (8051), Backend API (8181), Dashboard (3737), AI Agents (8052), Supabase Stack
 
-```
-Archon Platform:
-├── MCP Server (Port 8051)        # Model Context Protocol endpoint
-├── Backend API (Port 8181)       # REST API for knowledge base & tasks
-├── Dashboard UI (Port 3737)      # Web interface for management
-├── AI Agents (Port 8052)         # Optional AI agent services
-└── Supabase Stack                # Database & backend services
-```
+**Integration**: `Claude Code → MCP (8051) → Knowledge Base → SportERP Development`
 
-### Integration with SportERP
-
-```
-Claude Code → MCP (8051) → Knowledge Base → SportERP Development
-```
+→ **Complete architecture diagram**: `@docs/architecture/ARCHON_ARCHITECTURE.md`
 
 ---
 
 ## Development Standards
 
-### Code Conventions
+**Python**: snake_case.py, PascalCase (classes), UPPER_SNAKE_CASE (constants)
+**TypeScript**: PascalCase.tsx (components), camelCase (variables/functions)
+**Import Order**: Standard → Third-party → Local
 
-**Python**: snake_case.py, PascalCase (classes), snake_case (functions), UPPER_SNAKE_CASE (constants)
-**TypeScript**: PascalCase.tsx (components), camelCase (variables/functions), UPPER_SNAKE_CASE (constants)
-
-**Import Order**:
-```python
-# Python: 1. Standard → 2. Third-party → 3. Local
-import os
-from fastapi import FastAPI
-from .models import Document
-```
+→ **Complete conventions**: `@.claude/docs/BEST_PRACTICES.md`
 
 ---
 
@@ -564,29 +541,11 @@ curl -X POST http://localhost:8051/mcp \
 
 ### Session Management Architecture
 
-Archon implements a **dual session management system**:
+**Dual session system**: FastMCP (protocol) + Archon Analytics (tracking)
 
-1. **FastMCP Protocol Sessions**: Managed automatically by FastMCP framework for MCP protocol communication
-2. **Archon Analytics Sessions**: Created lazily on first tool call for tracking tool usage and metrics
+**Key Features**: Lazy creation (first tool call), 5-min timeout, heartbeat keepalive, auto-disconnect detection
 
-**Key Features**:
-- ✅ **Lazy Creation**: Sessions created on first tool call, not at server startup
-- ✅ **No Conflicts**: FastMCP handles protocol, Archon handles analytics
-- ✅ **Context-Based**: Session mapping stored in FastMCP context
-- ✅ **Database Persistence**: Analytics sessions stored in Supabase for dashboard
-
-**Session Lifecycle (Phase 5 - v2.1)**:
-- **Timeout**: 300 seconds (5 minutes) - reduced from 1 hour
-- **Cleanup Frequency**: Every 60 seconds (1 minute)
-- **Heartbeat**: `heartbeat()` MCP tool available for session keepalive
-- **Disconnect Detection**: Automatic detection within 6 minutes maximum
-- **Status Flow**: `active` → `disconnected` (reason: timeout/error/manual)
-
-**Session Health API**:
-```bash
-curl http://localhost:8181/api/mcp/sessions/health | jq .
-# Returns: status_breakdown, age_distribution, connection_health, recent_activity
-```
+**Health API**: `curl http://localhost:8181/api/mcp/sessions/health | jq .`
 
 → **Complete architecture**: `@.claude/docs/MCP_SESSION_ARCHITECTURE.md`
 
@@ -723,92 +682,6 @@ unarchive_project(project_id="project-123")  # Restore if needed
 
 ## Agent Quick Reference
 
-### Agent Selection Decision Tree (Detailed Flowchart)
-
-*For quick reference version, see [Decision Tree](#decision-tree-quick-reference)*
-
-```
-🚀 START: New Work Received
-     ↓
-┌────┴────────────────────────────────────────┐
-│ Estimated complexity > 2 hours?             │
-│ OR unknown scope?                           │
-└────┬────────────────────────────────────────┘
-     ↓ YES
-┌────┴────────────────────────────────────────┐
-│ ⭐ ASSIGN TO: planner                       │
-│ Planner creates breakdown with project_id   │
-│ Planner assigns expert agents to subtasks   │
-└────┬────────────────────────────────────────┘
-     ↓
-     ↓ NO (Simple task <2hr, known scope)
-     ↓
-┌────┴────────────────────────────────────────┐
-│ What type of work?                          │
-│ → System design: architect                  │
-│ → AI/ML: llms-expert                        │
-│ → Computer vision: computer-vision-expert   │
-│ → Pattern discovery: codebase-analyst       │
-│ → External library: library-researcher      │
-│ → UX research: ux-ui-researcher             │
-│ → Frontend UI: ui-implementation-expert     │
-│ → Backend API: backend-api-expert           │
-│ → Database: database-expert                 │
-│ → Integration: integration-expert           │
-│ → Testing: testing-expert                   │
-│ → Performance: performance-expert           │
-│ → Documentation: documentation-expert       │
-│ → Not sure: planner (creates breakdown)     │
-└────────────────────────────────────────────┘
-```
-
----
-
-### All Agents Overview
-
-**Tier 1: Orchestrator**
-
-| Agent | When to Use | Duration |
-|-------|-------------|----------|
-| **planner** | Complex work >2hr, unknown scope, multi-step features | 1-2 hr |
-
-**Tier 2: Architecture & Strategy**
-
-| Agent | When to Use | Duration |
-|-------|-------------|----------|
-| **architect** | System design, tech stack decisions | 2-4 hr |
-| **llms-expert** | AI/ML features, RAG systems | 2-3 hr |
-| **computer-vision-expert** | Image/video processing, CV models | 3-4 hr |
-
-**Tier 3: Specialist Researchers**
-
-| Agent | When to Use | Duration |
-|-------|-------------|----------|
-| **codebase-analyst** | Pattern discovery, coding conventions | 1-2 hr |
-| **library-researcher** | External library research | 1-2 hr |
-| **ux-ui-researcher** | UX patterns, accessibility (WCAG) | 1-2 hr |
-
-**Tier 4: Implementation Experts**
-
-| Agent | When to Use | Duration |
-|-------|-------------|----------|
-| **ui-implementation-expert** | Frontend UI components (React/Vue/Svelte) | 2-4 hr |
-| **backend-api-expert** | Backend APIs (REST/GraphQL/tRPC) | 2-4 hr |
-| **database-expert** | Database schema, migrations | 2-3 hr |
-| **integration-expert** | Third-party integrations, webhooks | 2-4 hr |
-
-**Tier 5: Quality & Documentation**
-
-| Agent | When to Use | Duration |
-|-------|-------------|----------|
-| **testing-expert** | Test strategy, unit/integration/e2e tests | 2-3 hr |
-| **performance-expert** | Performance profiling, optimization | 1.5-3 hr |
-| **documentation-expert** | Technical docs, architecture diagrams | 1-2 hr |
-
-→ **Detailed examples & combinations**: `@.claude/docs/BEST_PRACTICES.md` → Common Agent Combinations
-
----
-
 ### Quick Selection Guide
 
 **3-question decision process:**
@@ -833,6 +706,29 @@ unarchive_project(project_id="project-123")  # Restore if needed
    - Documentation → **documentation-expert**
 
 3. **CRITICAL: ALWAYS include `project_id` for crash recovery!**
+
+### Agent Decision Tree
+
+```
+START → Complex (>2hr)? → YES → planner
+     ↓ NO
+     ↓ → System design? → architect
+     ↓ → AI/ML? → llms-expert
+     ↓ → Images/video? → computer-vision-expert
+     ↓ → Find patterns? → codebase-analyst
+     ↓ → External library? → library-researcher
+     ↓ → UX/design? → ux-ui-researcher
+     ↓ → Frontend UI? → ui-implementation-expert
+     ↓ → Backend API? → backend-api-expert
+     ↓ → Database? → database-expert
+     ↓ → Integration? → integration-expert
+     ↓ → Testing? → testing-expert
+     ↓ → Performance? → performance-expert
+     ↓ → Documentation? → documentation-expert
+     ↓ → DEFAULT → planner (when in doubt)
+```
+
+→ **Detailed flowchart, agent capabilities, examples**: `@.claude/docs/AGENTIC_WORKFLOW.md`
 
 ---
 
@@ -862,6 +758,7 @@ unarchive_project(project_id="project-123")  # Restore if needed
 ### Reference Documentation
 
 **System & Configuration**:
+- `@docs/architecture/ARCHON_ARCHITECTURE.md` - **Comprehensive system architecture** (NEW)
 - `@.claude/docs/SYSTEM_SETUP.md` - System prerequisites, inotify, Docker
 - `@.claude/docs/ENVIRONMENT_SETUP.md` - Environment variables, Supabase
 - `@.claude/docs/DATABASE_CONFIG.md` - Database architecture, migrations
@@ -872,7 +769,7 @@ unarchive_project(project_id="project-123")  # Restore if needed
 - `@.claude/docs/BEST_PRACTICES.md` - MCP protocol, task management, agent patterns
 - `@.claude/docs/API_REFERENCE.md` - Complete API documentation
 - `@.claude/docs/BACKUP_PROCEDURES.md` - Backup automation, disaster recovery
-- `@.claude/docs/MCP_SESSION_ARCHITECTURE.md` - Session management architecture, lazy creation
+- `@docs/MCP_SESSION_ARCHITECTURE.md` - Session management architecture, lazy creation
 
 ### External Resources
 
@@ -897,9 +794,14 @@ unarchive_project(project_id="project-123")  # Restore if needed
 
 ---
 
-**Last Updated:** 2025-12-25
+**Last Updated:** 2026-01-12
 **Maintainer:** SportERP Team
-**Character Count:** 24,781 (62% reduction from 65,708)
+**Character Count:** 26,781 (36.2% reduction from 41,953) - **33% under 40k target**
 
 **Platform Guide:** `../.claude/CLAUDE.md`
 **Reference Docs:** `.claude/docs/` directory (detailed guides)
+- `DANGEROUS_OPERATIONS.md` - Complete safety protocol with templates
+- `AGENTIC_WORKFLOW.md` - Full 5-phase workflow, agent capabilities
+- `MCP_SESSION_ARCHITECTURE.md` - Session management deep dive
+- `SYSTEM_SETUP.md`, `NETWORK_ARCHITECTURE.md`, `BACKUP_PROCEDURES.md`
+- `API_REFERENCE.md`, `BEST_PRACTICES.md`, `DATABASE_CONFIG.md`, `ENVIRONMENT_SETUP.md`

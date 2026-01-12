@@ -34,6 +34,13 @@ const nextConfig: NextConfig = {
     });
 
     return [
+      // Keep credentials endpoint in Next.js (don't proxy to backend)
+      // This allows the Next.js API route at /api/credentials/[key] to handle requests
+      {
+        source: "/api/credentials/:path*",
+        destination: "/api/credentials/:path*",
+      },
+      // Proxy all other API requests to backend server
       {
         source: "/api/:path*",
         destination: `${backendUrl}/api/:path*`,

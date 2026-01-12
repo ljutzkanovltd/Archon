@@ -62,12 +62,16 @@ export const useTaskStore = create<TaskStore>((set) => ({
   pagination: { page: 1, per_page: 10, total: 0 },
 
   fetchTasks: async (params) => {
-    console.log('[Task Store] Fetching tasks with params:', params);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Task Store] Fetching tasks with params:', params);
+    }
     set({ isLoading: true, error: null });
     try {
       const response = await tasksApi.getAll(params);
-      console.log('[Task Store] API Response:', response);
-      console.log('[Task Store] Tasks loaded:', response.items.length);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Task Store] API Response:', response);
+        console.log('[Task Store] Tasks loaded:', response.items.length);
+      }
       set({
         tasks: response.items,
         pagination: {

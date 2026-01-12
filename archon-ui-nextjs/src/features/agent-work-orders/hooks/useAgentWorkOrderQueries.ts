@@ -20,6 +20,17 @@ import type {
 const STALE_TIME_INSTANT = 0; // Always refetch (SSE updates)
 const STALE_TIME_NORMAL = 30000; // 30 seconds
 
+// Check if agent work orders service is available
+// Port 8053 is optional - only available if AI agents microservice is running
+const isServiceAvailable = (): boolean => {
+  // If explicitly disabled via env var, skip checks
+  if (process.env.NEXT_PUBLIC_DISABLE_AGENT_WORK_ORDERS === 'true') {
+    return false;
+  }
+  // Service is available if URL is configured or we're in development
+  return !!process.env.NEXT_PUBLIC_AGENT_WORK_ORDERS_URL || process.env.NODE_ENV === 'development';
+};
+
 /**
  * Query key factory for agent work orders
  * Provides consistent query keys for cache management
@@ -46,6 +57,8 @@ export function useWorkOrders(statusFilter?: AgentWorkOrderStatus) {
     queryKey: agentWorkOrderKeys.list(statusFilter),
     queryFn: () => agentWorkOrdersService.listWorkOrders(statusFilter),
     staleTime: STALE_TIME_INSTANT,
+    enabled: isServiceAvailable(), // Only fetch if service is available
+    retry: false, // Don't retry connection errors
   });
 }
 
