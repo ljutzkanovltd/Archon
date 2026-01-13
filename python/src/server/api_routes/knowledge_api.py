@@ -2296,6 +2296,87 @@ async def retry_queue_item(item_id: str):
         raise
     except Exception as e:
         safe_logfire_error(f"Failed to retry queue item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)}")
+
+
+@router.post("/crawl-queue/{item_id}/stop")
+async def stop_queue_item(item_id: str):
+    """
+    Stop a queue item without deleting it (non-destructive).
+
+    This sets the item status to 'cancelled', which:
+    - Stops the item from being processed if pending
+    - Marks running items as cancelled (worker will handle gracefully)
+    - Preserves the item in database for history/audit purposes
+
+    Only pending or running items can be stopped. Completed or failed items
+    cannot be stopped as they are already in a terminal state.
+
+    Path parameters:
+    - item_id: UUID of the queue item to stop
+
+    Returns:
+    - success: Boolean indicating success
+    - message: Status message
+    - item: Updated queue item object
+
+    Raises:
+    - 404: Queue item not found
+    - 400: Invalid state transition (item is not pending/running)
+    - 500: Internal server error
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get current item status
+        result = supabase.table("archon_crawl_queue").select("*").eq("item_id", item_id).execute()
+
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "Queue item not found"}
+            )
+
+        item = result.data[0]
+        current_status = item.get("status")
+
+        # Validate state transition - only allow stopping pending or running items
+        if current_status not in ["pending", "running"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Cannot stop item with status '{current_status}'. Only pending or running items can be stopped.",
+                    "current_status": current_status,
+                    "allowed_statuses": ["pending", "running"]
+                }
+            )
+
+        # Update status to cancelled
+        update_result = supabase.table("archon_crawl_queue").update({
+            "status": "cancelled",
+            "completed_at": "now()"  # Mark completion time
+        }).eq("item_id", item_id).execute()
+
+        if not update_result.data:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "Failed to update item status"}
+            )
+
+        updated_item = update_result.data[0]
+
+        safe_logfire_info(f"Stopped queue item | item_id={item_id} | previous_status={current_status}")
+
+        return {
+            "success": True,
+            "message": f"Queue item stopped successfully (was {current_status})",
+            "item": updated_item
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to stop queue item | item_id={item_id} | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
