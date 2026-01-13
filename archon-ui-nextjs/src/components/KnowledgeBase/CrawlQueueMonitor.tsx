@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { HiRefresh, HiClock, HiCheckCircle, HiXCircle, HiPlay, HiPause } from "react-icons/hi";
+import { HiRefresh, HiClock, HiCheckCircle, HiXCircle, HiPlay, HiPause, HiStop } from "react-icons/hi";
 import { KnowledgeSource } from "@/lib/types";
 
 interface QueueItem {
@@ -135,6 +135,31 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
     } catch (error) {
       console.error("Failed to resume worker:", error);
       alert("❌ Failed to resume worker. Please try again.");
+    }
+  };
+
+  // Stop a running queue item
+  const handleStopItem = async (itemId: string) => {
+    if (!confirm("⚠️ Stop this crawl?\n\nProgress will be lost and the item will be marked as cancelled.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8181/api/crawl-queue/${itemId}/stop`, {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("✅ Crawl stopped successfully. The item has been cancelled.");
+        await loadQueue(); // Refresh queue
+      } else {
+        throw new Error(data.error || "Failed to stop item");
+      }
+    } catch (error) {
+      console.error("Failed to stop item:", error);
+      alert("❌ Failed to stop crawl. Please try again.");
     }
   };
 
@@ -467,6 +492,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getErrorMessage={getErrorMessage}
                         onRetry={handleRetry}
                         onCancel={handleCancel}
+                        onStop={handleStopItem}
                       />
                     ))}
                   </div>
@@ -496,6 +522,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getErrorMessage={getErrorMessage}
                         onRetry={handleRetry}
                         onCancel={handleCancel}
+                        onStop={handleStopItem}
                       />
                     ))}
                     {pendingItems.length > 10 && (
@@ -530,6 +557,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getErrorMessage={getErrorMessage}
                         onRetry={handleRetry}
                         onCancel={handleCancel}
+                        onStop={handleStopItem}
                       />
                     ))}
                   </div>
@@ -559,6 +587,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getErrorMessage={getErrorMessage}
                         onRetry={handleRetry}
                         onCancel={handleCancel}
+                        onStop={handleStopItem}
                       />
                     ))}
                   </div>
@@ -591,6 +620,7 @@ interface QueueItemCardProps {
   getErrorMessage: (item: QueueItem) => { friendly: string; technical: string };
   onRetry: (itemId: string) => Promise<void>;
   onCancel: (itemId: string) => Promise<void>;
+  onStop: (itemId: string) => Promise<void>;
 }
 
 function QueueItemCard({
@@ -604,6 +634,7 @@ function QueueItemCard({
   getErrorMessage,
   onRetry,
   onCancel,
+  onStop,
 }: QueueItemCardProps) {
   const isHighPriority = item.priority >= 200;
   const progress = item.status === "running" ? calculateProgress(item) : 0;
@@ -653,16 +684,27 @@ function QueueItemCard({
 
             {/* Progress bar for running items */}
             {item.status === "running" && (
-              <div className="mt-3">
+              <div className="mt-3 space-y-2">
                 <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                   <div
                     className="h-2 rounded-full bg-blue-500 transition-all duration-300"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <div className="mt-1 flex justify-between text-xs text-gray-600 dark:text-gray-400">
-                  <span>{progress}% complete</span>
-                  <span>ETA: {eta}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2 text-xs text-gray-600 dark:text-gray-400">
+                    <span>{progress}% complete</span>
+                    <span>•</span>
+                    <span>ETA: {eta}</span>
+                  </div>
+                  <button
+                    onClick={() => onStop(item.item_id)}
+                    className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
+                    title="Stop this crawl"
+                  >
+                    <HiStop className="h-4 w-4" />
+                    Stop
+                  </button>
                 </div>
               </div>
             )}
