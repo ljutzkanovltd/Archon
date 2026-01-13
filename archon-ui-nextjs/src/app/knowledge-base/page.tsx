@@ -10,7 +10,6 @@ import { AddSourceDialog } from "@/components/KnowledgeBase/AddSourceDialog";
 import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
 import { RecrawlOptionsModal } from "@/components/KnowledgeBase/RecrawlOptionsModal";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
-import { CrawlingProgress } from "@/components/KnowledgeBase/CrawlingProgress";
 import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
 import KnowledgeTableViewWithBulk from "@/components/KnowledgeBase/KnowledgeTableViewWithBulk";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
@@ -39,7 +38,7 @@ export default function KnowledgeBasePage() {
   const [metricsLoading, setMetricsLoading] = useState(false);
 
   // Content search state
-  const [searchMode, setSearchMode] = useState<"sources" | "content">("sources");
+  const [searchMode, setSearchMode] = useState<"sources" | "content">("content");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -202,20 +201,36 @@ export default function KnowledgeBasePage() {
   };
 
   /**
-   * Performs the actual recrawl with user-selected options.
+   * Performs the actual recrawl via queue system with high priority.
    */
   const handleRecrawlConfirm = async (options: RecrawlOptions) => {
     if (!recrawlSource) return;
 
     try {
-      const response = await knowledgeBaseApi.recrawl(recrawlSource.source_id, options);
-      if (response.success) {
+      // Route through queue system with high priority for immediate processing
+      const response = await fetch("http://localhost:8181/api/crawl-queue/add-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_ids: [recrawlSource.source_id],
+          priority: 200  // High priority for single-page re-crawls
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
         alert(
-          `Recrawl started successfully! Operation ID: ${response.data?.operation_id}`
+          `✅ Source added to crawl queue with high priority!\n\n` +
+          `Batch ID: ${data.batch_id}\n` +
+          `Sources: ${data.total_added}\n\n` +
+          `Check progress in the Crawl Queue Monitor below.\n` +
+          `Processing will start within 2-3 seconds.`
         );
         await loadSources();
+        setRecrawlSource(null);  // Close modal
       } else {
-        throw new Error(response.error || "Failed to start recrawl");
+        throw new Error(data.error || "Failed to add to queue");
       }
     } catch (err) {
       throw err; // Let modal handle the error display
@@ -624,146 +639,8 @@ export default function KnowledgeBasePage() {
         </div>
       </div>
 
-      {/* Active Operations */}
-      <CrawlingProgress className="mb-4" />
-
-      {/* Crawl Queue Monitor */}
-      <CrawlQueueMonitor sources={sources} className="mb-4" />
-
-      {/* Search Mode Toggle and Content Search */}
-      <div className="mb-6 rounded-lg border-2 border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        {/* Search Mode Toggle */}
-        <div className="mb-4 flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Search Mode:
-          </span>
-          <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
-            <button
-              onClick={() => handleSearchModeChange("sources")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                searchMode === "sources"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              } rounded-l-lg border-r border-gray-300 dark:border-gray-600`}
-            >
-              Source Titles
-            </button>
-            <button
-              onClick={() => handleSearchModeChange("content")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                searchMode === "content"
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              } rounded-r-lg`}
-            >
-              Page Content
-            </button>
-          </div>
-        </div>
-
-        {/* Content Search UI */}
-        {searchMode === "content" && (
-          <div>
-            <div className="mb-4 flex gap-2">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleContentSearch(1)}
-                placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-              />
-              <button
-                onClick={() => handleContentSearch(1)}
-                disabled={searchLoading || !searchQuery.trim()}
-                className="rounded-lg bg-blue-600 px-6 py-2 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {searchLoading ? "Searching..." : "Search"}
-              </button>
-            </div>
-
-            {/* Search Results */}
-            {searchError && (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:bg-red-900/20 dark:text-red-400">
-                <p className="font-semibold">Search Error</p>
-                <p className="text-sm">{searchError}</p>
-              </div>
-            )}
-
-            {searchResults.length > 0 && (
-              <div>
-                <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-                  Found {searchTotal} results in {searchPages} pages
-                </div>
-                <div className="space-y-4">
-                  {searchResults.map((result, index) => (
-                    <div
-                      key={result.id || index}
-                      className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
-                    >
-                      <div className="mb-2 flex items-start justify-between">
-                        <a
-                          href={result.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-                        >
-                          {result.url}
-                        </a>
-                        <div className="flex gap-2">
-                          <span className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                            {result.match_type}
-                          </span>
-                          <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-                            {Math.round(result.similarity * 100)}% match
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
-                        {result.content}
-                      </p>
-                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Chunk #{result.chunk_number}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Pagination */}
-                {searchPages > 1 && (
-                  <div className="mt-4 flex items-center justify-center gap-2">
-                    <button
-                      onClick={() => handleContentSearch(searchPage - 1)}
-                      disabled={searchPage === 1 || searchLoading}
-                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      Previous
-                    </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      Page {searchPage} of {searchPages}
-                    </span>
-                    <button
-                      onClick={() => handleContentSearch(searchPage + 1)}
-                      disabled={searchPage === searchPages || searchLoading}
-                      className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
-                <p className="text-gray-600 dark:text-gray-400">
-                  No results found for &quot;{searchQuery}&quot;
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Unified Progress Tracking - Queue-Based System */}
+      <CrawlQueueMonitor sources={sources} className="mb-6" />
 
       {/* Data Table with Bulk Operations Support */}
       {!isLoading && sources.length === 0 ? (
@@ -783,35 +660,216 @@ export default function KnowledgeBasePage() {
           />
         </div>
       ) : viewMode === "grid" ? (
-        /* Grid View: Use DataTable for consistency */
-        <DataTable
-          data={sources}
-          columns={columns}
-          tableButtons={tableButtons}
-          rowButtons={rowButtons}
-          tableId="archon-knowledge-sources-grid"
-          viewMode="grid"
-          customRender={(source) => (
-            <KnowledgeSourceCard
-              key={source.source_id}
-              source={source}
-              onView={handleView}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onRecrawl={handleRecrawl}
-            />
-          )}
-          showSearch={searchMode === "sources"}
-          showViewToggle={true}
-          showFilters={true}
-          filterConfigs={filterConfigs}
-          showPagination
-          isLoading={isLoading}
-          emptyMessage="No sources found. Create your first source to get started!"
-          caption={`Grid view of ${sources.length} knowledge sources`}
-          keyExtractor={(source) => source.source_id}
-          className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
-        />
+        /* Grid View: Wrapped with consistent header and search */
+        <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          {/* DataTable-style Header */}
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Knowledge Sources ({sources.length})
+            </h2>
+            <div className="flex items-center gap-3">
+              {/* View Toggle */}
+              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
+                <button
+                  onClick={() => setViewMode("table")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    viewMode === "table"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-l-lg`}
+                  title="Table View"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    viewMode === "grid"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
+                  title="Grid View"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+              </div>
+              {/* Search Mode Toggle */}
+              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
+                <button
+                  onClick={() => handleSearchModeChange("sources")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    searchMode === "sources"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-l-lg`}
+                  title="Search source titles"
+                >
+                  Titles
+                </button>
+                <button
+                  onClick={() => handleSearchModeChange("content")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    searchMode === "content"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
+                  title="Search page content"
+                >
+                  Content
+                </button>
+              </div>
+              {/* Add Source Button */}
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:bg-brand-500 dark:hover:bg-brand-600"
+              >
+                <HiPlus className="h-5 w-5" />
+                Add Source
+              </button>
+            </div>
+          </div>
+
+          {/* Search Bar */}
+          <div className="px-6">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && searchMode === "content") {
+                    handleContentSearch(1);
+                  }
+                }}
+                placeholder={
+                  searchMode === "sources"
+                    ? "Search source titles..."
+                    : "Search within crawled pages (e.g., 'authentication JWT tokens')..."
+                }
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+              />
+              {searchMode === "content" && (
+                <button
+                  onClick={() => handleContentSearch(1)}
+                  disabled={searchLoading || !searchQuery.trim()}
+                  className="rounded-lg bg-brand-600 px-6 py-2 text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
+                >
+                  {searchLoading ? "Searching..." : "Search"}
+                </button>
+              )}
+            </div>
+
+            {/* Content Search Results (only in content mode) */}
+            {searchMode === "content" && (
+              <div className="mt-4">
+                {searchError && (
+                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    <p className="font-semibold">Search Error</p>
+                    <p className="text-sm">{searchError}</p>
+                  </div>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                      Found {searchTotal} results in {searchPages} pages
+                    </div>
+                    <div className="space-y-4">
+                      {searchResults.map((result, index) => (
+                        <div
+                          key={result.id || index}
+                          className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                        >
+                          <div className="mb-2 flex items-start justify-between">
+                            <a
+                              href={result.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
+                            >
+                              {result.url}
+                            </a>
+                            <div className="flex gap-2">
+                              <span className="rounded bg-brand-100 px-2 py-1 text-xs font-medium text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
+                                {result.match_type}
+                              </span>
+                              <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                                {Math.round(result.similarity * 100)}% match
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                            {result.content}
+                          </p>
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Chunk #{result.chunk_number}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {searchPages > 1 && (
+                      <div className="mt-4 flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleContentSearch(searchPage - 1)}
+                          disabled={searchPage === 1 || searchLoading}
+                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Page {searchPage} of {searchPages}
+                        </span>
+                        <button
+                          onClick={() => handleContentSearch(searchPage + 1)}
+                          disabled={searchPage === searchPages || searchLoading}
+                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-gray-600 dark:text-gray-400">
+                      No results found for &quot;{searchQuery}&quot;
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Grid Content - Filter sources by searchQuery when in "sources" mode */}
+          <div className="px-6 pb-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {sources
+                .filter((source) => {
+                  if (searchMode === "sources" && searchQuery) {
+                    return source.title.toLowerCase().includes(searchQuery.toLowerCase());
+                  }
+                  return true;
+                })
+                .map((source) => (
+                  <KnowledgeSourceCard
+                    key={source.source_id}
+                    source={source}
+                    onView={handleView}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onRecrawl={handleRecrawl}
+                  />
+                ))}
+            </div>
+          </div>
+        </div>
       ) : (
         /* Table View: Use KnowledgeTableViewWithBulk with DataTable-style wrapper */
         <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
@@ -827,7 +885,7 @@ export default function KnowledgeBasePage() {
                   onClick={() => setViewMode("table")}
                   className={`px-3 py-2 text-sm font-medium transition-colors ${
                     viewMode === "table"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
                       : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                   } rounded-l-lg`}
                   title="Table View"
@@ -840,7 +898,7 @@ export default function KnowledgeBasePage() {
                   onClick={() => setViewMode("grid")}
                   className={`px-3 py-2 text-sm font-medium transition-colors ${
                     viewMode === "grid"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
                       : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                   } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
                   title="Grid View"
@@ -850,15 +908,158 @@ export default function KnowledgeBasePage() {
                   </svg>
                 </button>
               </div>
+              {/* Search Mode Toggle */}
+              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
+                <button
+                  onClick={() => handleSearchModeChange("sources")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    searchMode === "sources"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-l-lg`}
+                  title="Search source titles"
+                >
+                  Titles
+                </button>
+                <button
+                  onClick={() => handleSearchModeChange("content")}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    searchMode === "content"
+                      ? "bg-brand-600 text-white dark:bg-brand-500"
+                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
+                  title="Search page content"
+                >
+                  Content
+                </button>
+              </div>
               {/* Add Source Button */}
               <button
                 onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:bg-brand-500 dark:hover:bg-brand-600"
               >
                 <HiPlus className="h-5 w-5" />
                 Add Source
               </button>
             </div>
+          </div>
+
+          {/* Search Bar */}
+          <div className="px-6">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    if (searchMode === "content") {
+                      handleContentSearch(1);
+                    }
+                    // For "sources" mode, the searchTerm prop will filter the table
+                  }
+                }}
+                placeholder={
+                  searchMode === "sources"
+                    ? "Search source titles..."
+                    : "Search within crawled pages (e.g., 'authentication JWT tokens')..."
+                }
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+              />
+              {searchMode === "content" && (
+                <button
+                  onClick={() => handleContentSearch(1)}
+                  disabled={searchLoading || !searchQuery.trim()}
+                  className="rounded-lg bg-brand-600 px-6 py-2 text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
+                >
+                  {searchLoading ? "Searching..." : "Search"}
+                </button>
+              )}
+            </div>
+
+            {/* Content Search Results */}
+            {searchMode === "content" && (
+              <div className="mt-4">
+                {searchError && (
+                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    <p className="font-semibold">Search Error</p>
+                    <p className="text-sm">{searchError}</p>
+                  </div>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                      Found {searchTotal} results in {searchPages} pages
+                    </div>
+                    <div className="space-y-4">
+                      {searchResults.map((result, index) => (
+                        <div
+                          key={result.id || index}
+                          className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                        >
+                          <div className="mb-2 flex items-start justify-between">
+                            <a
+                              href={result.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
+                            >
+                              {result.url}
+                            </a>
+                            <div className="flex gap-2">
+                              <span className="rounded bg-brand-100 px-2 py-1 text-xs font-medium text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
+                                {result.match_type}
+                              </span>
+                              <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                                {Math.round(result.similarity * 100)}% match
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                            {result.content}
+                          </p>
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Chunk #{result.chunk_number}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Pagination */}
+                    {searchPages > 1 && (
+                      <div className="mt-4 flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleContentSearch(searchPage - 1)}
+                          disabled={searchPage === 1 || searchLoading}
+                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Page {searchPage} of {searchPages}
+                        </span>
+                        <button
+                          onClick={() => handleContentSearch(searchPage + 1)}
+                          disabled={searchPage === searchPages || searchLoading}
+                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-gray-600 dark:text-gray-400">
+                      No results found for &quot;{searchQuery}&quot;
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Table Content with Bulk Operations */}
@@ -870,7 +1071,7 @@ export default function KnowledgeBasePage() {
             onRecrawl={handleRecrawl}
             onBulkRecrawl={handleBulkRecrawl}
             onBulkDelete={handleBulkDelete}
-            searchTerm={searchQuery}
+            searchTerm={searchMode === "sources" ? searchQuery : ""}
           />
         </div>
       )}
