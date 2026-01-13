@@ -13,6 +13,15 @@ interface QueueItem {
   retry_count: number;
   max_retries: number;
   error_message: string | null;
+  error_type: string | null;
+  error_details: {
+    validation_result?: {
+      pages_count: number;
+      chunks_count: number;
+      code_examples_count: number;
+      error?: string;
+    };
+  } | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -65,6 +74,78 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
     }
   };
 
+  // Retry a failed queue item
+  const handleRetry = async (itemId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8181/api/crawl-queue/retry/${itemId}`, {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("✅ Item reset to pending and will be retried shortly.");
+        await loadQueue(); // Refresh queue
+      } else {
+        throw new Error(data.error || "Failed to retry");
+      }
+    } catch (error) {
+      console.error("Failed to retry:", error);
+      alert("❌ Failed to retry item. Please try again.");
+    }
+  };
+
+  // Cancel a queue item
+  const handleCancel = async (itemId: string) => {
+    if (!confirm("Are you sure you want to cancel this crawl?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8181/api/crawl-queue/${itemId}`, {
+        method: "DELETE"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("✅ Item cancelled successfully.");
+        await loadQueue(); // Refresh queue
+      } else {
+        throw new Error(data.error || "Failed to cancel");
+      }
+    } catch (error) {
+      console.error("Failed to cancel:", error);
+      alert("❌ Failed to cancel item. Please try again.");
+    }
+  };
+
+  // Get user-friendly error message based on error type
+  const getErrorMessage = (item: QueueItem): { friendly: string; technical: string } => {
+    if (!item.error_message) {
+      return { friendly: "", technical: "" };
+    }
+
+    const errorType = item.error_type || "unknown";
+
+    // User-friendly error messages with actionable guidance
+    const errorMessages: Record<string, string> = {
+      "validation_failed": "⚠️ Crawl completed but no data was created. The site may require authentication, have anti-scraping protection, or the content format may be incompatible with our parser.",
+      "network": "🌐 Network error occurred. The site may be temporarily unavailable or experiencing connectivity issues. This will be retried automatically.",
+      "rate_limit": "⏱️ Rate limit exceeded. The site is throttling our requests. Retrying with exponential backoff to respect rate limits.",
+      "parse_error": "📄 Unable to parse page content. The page structure may be incompatible with our parser, or the content may be dynamically loaded via JavaScript.",
+      "timeout": "⏰ Crawl timed out. The site may be slow, unresponsive, or the content is very large. This will be retried automatically.",
+      "other": "❌ An unexpected error occurred during crawling."
+    };
+
+    const friendlyMessage = errorMessages[errorType] || errorMessages["other"];
+
+    return {
+      friendly: friendlyMessage,
+      technical: item.error_message
+    };
+  };
+
   useEffect(() => {
     loadQueue();
   }, []);
@@ -87,6 +168,15 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
 
   const completedItems = items
     .filter(item => item.status === "completed")
+    .sort((a, b) => {
+      // Sort by completion time desc (most recent first)
+      if (!a.completed_at) return 1;
+      if (!b.completed_at) return -1;
+      return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime();
+    });
+
+  const failedItems = items
+    .filter(item => item.status === "failed")
     .sort((a, b) => {
       // Sort by completion time desc (most recent first)
       if (!a.completed_at) return 1;
@@ -268,6 +358,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         formatDate={formatDate}
                         calculateProgress={calculateProgress}
                         calculateETA={calculateETA}
+                        getErrorMessage={getErrorMessage}
+                        onRetry={handleRetry}
+                        onCancel={handleCancel}
                       />
                     ))}
                   </div>
@@ -294,6 +387,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         formatDate={formatDate}
                         calculateProgress={calculateProgress}
                         calculateETA={calculateETA}
+                        getErrorMessage={getErrorMessage}
+                        onRetry={handleRetry}
+                        onCancel={handleCancel}
                       />
                     ))}
                     {pendingItems.length > 10 && (
@@ -305,7 +401,36 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                 </div>
               )}
 
-              {/* Section 3: Recently Completed (BOTTOM) */}
+              {/* Section 3: Failed Items (ATTENTION REQUIRED) */}
+              {failedItems.length > 0 && (
+                <div className="rounded-lg border-2 border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/10">
+                  <div className="mb-3 flex items-center gap-2">
+                    <HiXCircle className="h-5 w-5 text-red-500" />
+                    <h4 className="text-sm font-semibold text-red-900 dark:text-red-100">
+                      ❌ Failed Items - Attention Required ({failedItems.length}/{stats.failed})
+                    </h4>
+                  </div>
+                  <div className="space-y-2">
+                    {failedItems.map((item) => (
+                      <QueueItemCard
+                        key={item.item_id}
+                        item={item}
+                        source={sourceMap.get(item.source_id)}
+                        getStatusIcon={getStatusIcon}
+                        getStatusColor={getStatusColor}
+                        formatDate={formatDate}
+                        calculateProgress={calculateProgress}
+                        calculateETA={calculateETA}
+                        getErrorMessage={getErrorMessage}
+                        onRetry={handleRetry}
+                        onCancel={handleCancel}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section 4: Recently Completed (BOTTOM) */}
               {completedItems.length > 0 && (
                 <div>
                   <div className="mb-3 flex items-center gap-2 px-2">
@@ -325,6 +450,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         formatDate={formatDate}
                         calculateProgress={calculateProgress}
                         calculateETA={calculateETA}
+                        getErrorMessage={getErrorMessage}
+                        onRetry={handleRetry}
+                        onCancel={handleCancel}
                       />
                     ))}
                   </div>
@@ -332,7 +460,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               )}
 
               {/* Empty state */}
-              {runningItems.length === 0 && pendingItems.length === 0 && completedItems.length === 0 && (
+              {runningItems.length === 0 && pendingItems.length === 0 && failedItems.length === 0 && completedItems.length === 0 && (
                 <div className="p-8 text-center text-gray-600 dark:text-gray-400">
                   Queue is empty
                 </div>
@@ -354,6 +482,9 @@ interface QueueItemCardProps {
   formatDate: (dateString: string | null) => string;
   calculateProgress: (item: QueueItem) => number;
   calculateETA: (item: QueueItem) => string;
+  getErrorMessage: (item: QueueItem) => { friendly: string; technical: string };
+  onRetry: (itemId: string) => Promise<void>;
+  onCancel: (itemId: string) => Promise<void>;
 }
 
 function QueueItemCard({
@@ -364,10 +495,14 @@ function QueueItemCard({
   formatDate,
   calculateProgress,
   calculateETA,
+  getErrorMessage,
+  onRetry,
+  onCancel,
 }: QueueItemCardProps) {
   const isHighPriority = item.priority >= 200;
   const progress = item.status === "running" ? calculateProgress(item) : 0;
   const eta = item.status === "running" ? calculateETA(item) : "";
+  const errorInfo = item.status === "failed" ? getErrorMessage(item) : null;
 
   return (
     <div className={`rounded-lg border bg-white p-3 dark:bg-gray-800 ${
@@ -433,9 +568,73 @@ function QueueItemCard({
           {item.completed_at && <div>Completed: {formatDate(item.completed_at)}</div>}
         </div>
       </div>
-      {item.error_message && (
-        <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400">
-          <span className="font-medium">Error:</span> {item.error_message}
+      {/* Enhanced Error Display for Failed Items */}
+      {item.status === "failed" && errorInfo && (
+        <div className="mt-3 space-y-2">
+          {/* User-Friendly Error Message */}
+          <div className="rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+            <div className="text-sm font-medium text-red-900 dark:text-red-100">
+              {errorInfo.friendly}
+            </div>
+
+            {/* Validation Details (if validation failed) */}
+            {item.error_details?.validation_result && (
+              <div className="mt-2 rounded bg-yellow-50 p-2 text-xs dark:bg-yellow-900/20">
+                <div className="font-medium text-yellow-900 dark:text-yellow-100">
+                  📊 Validation Details:
+                </div>
+                <div className="mt-1 text-yellow-800 dark:text-yellow-200">
+                  📄 Pages: {item.error_details.validation_result.pages_count} |
+                  📦 Chunks: {item.error_details.validation_result.chunks_count} |
+                  💻 Code Examples: {item.error_details.validation_result.code_examples_count}
+                </div>
+                {item.error_details.validation_result.error && (
+                  <div className="mt-1 text-yellow-700 dark:text-yellow-300">
+                    {item.error_details.validation_result.error}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Technical Error Message (collapsible) */}
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-red-700 hover:text-red-900 dark:text-red-400 dark:hover:text-red-200">
+                Show technical details
+              </summary>
+              <div className="mt-1 rounded bg-red-100 p-2 text-xs font-mono text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                {errorInfo.technical}
+              </div>
+            </details>
+
+            {/* Action Buttons */}
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => onRetry(item.item_id)}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+              >
+                🔁 Retry Now
+              </button>
+              <button
+                onClick={() => onCancel(item.item_id)}
+                className="rounded-lg bg-gray-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-500 dark:hover:bg-gray-600"
+              >
+                ✖️ Cancel
+              </button>
+            </div>
+
+            {/* Retry Information */}
+            {item.retry_count > 0 && item.retry_count < item.max_retries && (
+              <div className="mt-2 text-xs text-orange-700 dark:text-orange-400">
+                ℹ️ This item will be automatically retried.
+                Attempts: {item.retry_count}/{item.max_retries}
+              </div>
+            )}
+            {item.retry_count >= item.max_retries && (
+              <div className="mt-2 text-xs text-red-700 dark:text-red-400">
+                ⚠️ Maximum retry attempts reached. Manual intervention required.
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
