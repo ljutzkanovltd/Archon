@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { HiRefresh, HiClock, HiCheckCircle, HiXCircle, HiPlay } from "react-icons/hi";
+import { HiRefresh, HiClock, HiCheckCircle, HiXCircle, HiPlay, HiPause } from "react-icons/hi";
 import { KnowledgeSource } from "@/lib/types";
 
 interface QueueItem {
@@ -47,6 +47,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   const [isLoading, setIsLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [workerStatus, setWorkerStatus] = useState<"idle" | "running" | "paused">("running");
 
   // Create source lookup map
   const sourceMap = new Map(sources.map(s => [s.source_id, s]));
@@ -71,6 +72,69 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
       console.error("Failed to load queue:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Load worker status from health endpoint
+  const loadWorkerStatus = async () => {
+    try {
+      const response = await fetch("http://localhost:8181/api/crawl-queue/worker/health");
+
+      if (response.ok) {
+        const data = await response.json();
+        // Update worker status based on health check response
+        if (data.status === "running" || data.is_running) {
+          setWorkerStatus("running");
+        } else if (data.status === "paused") {
+          setWorkerStatus("paused");
+        } else {
+          setWorkerStatus("idle");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load worker status:", error);
+    }
+  };
+
+  // Pause the queue worker
+  const handlePauseWorker = async () => {
+    try {
+      const response = await fetch("http://localhost:8181/api/crawl-queue/worker/pause", {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setWorkerStatus("paused");
+        alert("✅ Queue worker paused. No new items will be processed.");
+      } else {
+        throw new Error(data.error || "Failed to pause worker");
+      }
+    } catch (error) {
+      console.error("Failed to pause worker:", error);
+      alert("❌ Failed to pause worker. Please try again.");
+    }
+  };
+
+  // Resume the queue worker
+  const handleResumeWorker = async () => {
+    try {
+      const response = await fetch("http://localhost:8181/api/crawl-queue/worker/resume", {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setWorkerStatus("running");
+        alert("✅ Queue worker resumed. Processing will continue.");
+      } else {
+        throw new Error(data.error || "Failed to resume worker");
+      }
+    } catch (error) {
+      console.error("Failed to resume worker:", error);
+      alert("❌ Failed to resume worker. Please try again.");
     }
   };
 
@@ -148,6 +212,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
 
   useEffect(() => {
     loadQueue();
+    loadWorkerStatus();
   }, []);
 
   useEffect(() => {
@@ -301,6 +366,47 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               <span className="rounded-full bg-red-200 px-3 py-1 text-xs font-medium text-red-700 dark:bg-red-900 dark:text-red-300">
                 {stats.failed} Failed
               </span>
+            )}
+          </div>
+
+          {/* Worker status indicator */}
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
+              workerStatus === "running"
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : workerStatus === "paused"
+                ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${
+                workerStatus === "running"
+                  ? "bg-green-500 animate-pulse"
+                  : workerStatus === "paused"
+                  ? "bg-orange-500"
+                  : "bg-gray-500"
+              }`} />
+              Worker: {workerStatus === "running" ? "Active" : workerStatus === "paused" ? "Paused" : "Idle"}
+            </span>
+          </div>
+
+          {/* Pause/Resume buttons */}
+          <div className="flex gap-1">
+            {workerStatus === "running" ? (
+              <button
+                onClick={handlePauseWorker}
+                className="rounded-lg bg-orange-500 p-2 text-white transition-colors hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700"
+                title="Pause Worker"
+              >
+                <HiPause className="h-5 w-5" />
+              </button>
+            ) : (
+              <button
+                onClick={handleResumeWorker}
+                className="rounded-lg bg-green-500 p-2 text-white transition-colors hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+                title="Resume Worker"
+              >
+                <HiPlay className="h-5 w-5" />
+              </button>
             )}
           </div>
 
