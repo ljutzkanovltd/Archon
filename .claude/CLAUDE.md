@@ -139,16 +139,32 @@ planning_task = manage_task("create",
 
 Established after a critical incident where production database was dropped without backup, causing downtime.
 
-### Core Rules (6 Rules - All MANDATORY)
+### MANDATORY PRE-OPERATION CHECKLIST
 
-**RULE 1: BACKUP FIRST** - Create + verify timestamped backup before ANY dangerous operation
-**RULE 2: DOUBLE APPROVAL** - Get TWO explicit approvals (cannot bypass both)
-**RULE 3: DANGEROUS REGISTRY** - Check operation against registry (see below)
-**RULE 4: BACKUP STRATEGIES** - Use appropriate backup method for operation type
-**RULE 5: RECOVERY PROCEDURES** - Document and test recovery steps
-**RULE 6: SCRIPT INTEGRATION** - All automation must integrate this protocol
+**BEFORE running ANY command with these keywords, STOP and complete this checklist:**
 
-### Quick Backup (RULE 1 Summary)
+**Trigger Keywords:**
+- `DELETE`, `TRUNCATE`, `DROP`, `ALTER TABLE`, `UPDATE` (broad)
+- `docker restart`, `docker-compose down`, `docker stop`
+- `rm -rf` (>10 files), `chmod -R`
+- `git push --force`, `git reset --hard`, `git rebase`
+
+**CHECKLIST (ALL must be checked before proceeding):**
+- [ ] **Is this operation in Dangerous Operations Registry?** (Check below)
+- [ ] **Have I created a backup?** (Run backup command)
+- [ ] **Have I verified backup exists and size > 0?** (ls -lh backup file)
+- [ ] **Have I described operation to user with:**
+  - Exact command to be run
+  - Risk level (CRITICAL/HIGH RISK)
+  - What could go wrong
+  - Backup location
+  - Recovery procedure
+- [ ] **Have I received EXPLICIT user approval?** (Must see "YES" or "APPROVED")
+- [ ] **For CRITICAL operations: Did I get SECOND approval?** (Re-state operation)
+
+**If ANY checkbox is unchecked → MUST ask user before proceeding**
+
+### Quick Backup Command (Use This)
 
 ```bash
 # Recommended: Unified backup system
@@ -162,27 +178,41 @@ docker exec supabase-ai-db pg_dump -U postgres -d postgres | gzip > "$BACKUP_FIL
 ls -lh "$BACKUP_FILE.gz"  # Verify size > 0
 ```
 
-### Approval Template (RULE 2 Summary)
+### Approval Request Template (Copy This)
 
-**First Approval**: Describe operation + impacts + backup location + recovery steps
-**Second Approval**: Restate operation + risks + "Are you CERTAIN?"
-**Proceed**: Only after TWO explicit approvals
+```
+⚠️ DANGEROUS OPERATION APPROVAL REQUIRED
 
-### Dangerous Operations Registry (RULE 3 Summary)
+**Operation:** [DELETE/RESTART/DROP/etc]
+**Command:** [exact command]
+**Risk Level:** [CRITICAL/HIGH RISK from registry below]
+**Impact:** [what will be deleted/modified/restarted]
+**Backup Status:** [CREATED at /path/to/backup.sql.gz, size: XXX MB]
+**Recovery:** [how to restore from backup]
 
-**⛔ CRITICAL (Backup + Double Approval)**:
+**Do you approve this operation? (YES/NO required)**
+```
+
+### Dangerous Operations Registry
+
+**⛔ CRITICAL (Backup + Double Approval Required)**:
 - Database: `DROP SCHEMA/DATABASE/TABLE CASCADE`, `TRUNCATE CASCADE`, `DELETE FROM` (broad WHERE)
 - Filesystem: `rm -rf /`, `rm -rf ~`, `rm -rf ~/Documents`
 - Git: `git push --force` (main/master), `git reset --hard`, `git clean -fdx`
 - Docker: `docker-compose down -v`, `docker system prune --volumes`
 
-**⚠️ HIGH RISK (Backup + Single Approval)**:
-- Database: `UPDATE` (>100 rows), `ALTER TABLE` (production)
-- Filesystem: `rm -rf` (>100 files), `chmod -R 777`
-- Git: `git rebase` (shared), `git push --force` (any)
-- Docker: `docker volume rm` (production)
+**⚠️ HIGH RISK (Backup + Single Approval Required)**:
+- Database: `UPDATE` (>100 rows), `ALTER TABLE` (production), `DELETE FROM` (specific WHERE)
+- Filesystem: `rm -rf` (>10 files), `chmod -R 777`
+- Git: `git rebase` (shared), `git push --force` (any branch)
+- Docker: `docker restart`, `docker stop`, `docker volume rm`
 
-→ **Complete protocol with examples, templates, hooks**: `@.claude/docs/DANGEROUS_OPERATIONS.md`
+**✅ SAFE (No approval needed)**:
+- Read operations: `SELECT`, `ls`, `cat`, `grep`, `docker ps`, `git status`, `git log`
+- Non-destructive: `docker logs`, `curl` (GET), `echo`, `pwd`
+
+→ **Complete protocol**: `@.claude/docs/OPERATION_SAFETY_CHECKLIST.md`
+→ **Full examples & hooks**: `@.claude/docs/DANGEROUS_OPERATIONS.md`
 
 ---
 
