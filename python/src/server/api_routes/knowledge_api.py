@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
 # Basic validation - simplified inline version
@@ -29,6 +29,7 @@ from ..services.embeddings.provider_error_adapters import ProviderErrorFactory
 from ..services.embeddings.redis_cache import get_embedding_cache
 from ..services.knowledge import DatabaseMetricsService, KnowledgeItemService, KnowledgeSummaryService
 from ..services.search.rag_service import RAGService
+from ..services.settings_service import settings_service
 from ..services.storage import DocumentStorageService
 from ..utils import get_supabase_client
 from ..utils.document_processing import extract_text_from_document
@@ -822,11 +823,30 @@ async def refresh_knowledge_item(source_id: str, request: RefreshRequest | None 
                     "This may be a file upload or manually created item that cannot be recrawled."
                 }
             )
-        # Use request parameters if provided, otherwise fall back to stored metadata
-        stored_knowledge_type = metadata.get("knowledge_type", "technical")
+        # Fetch default crawl settings from database
+        try:
+            all_settings = await settings_service.get_all_settings()
+            crawl_settings = all_settings.get("crawl", {})
+            safe_logfire_info(
+                f"Fetched crawl settings | default_max_depth={crawl_settings.get('default_max_depth')} | "
+                f"extract_code_examples={crawl_settings.get('extract_code_examples')}"
+            )
+        except Exception as e:
+            safe_logfire_error(f"Failed to fetch crawl settings, using hardcoded defaults | error={e}")
+            crawl_settings = {
+                "default_max_depth": 3,
+                "extract_code_examples": True,
+                "default_crawl_type": "technical"
+            }
+
+        # Use request parameters if provided, otherwise fall back to stored metadata,
+        # then fall back to settings defaults
+        stored_knowledge_type = metadata.get("knowledge_type") or crawl_settings.get("default_crawl_type", "technical")
         stored_tags = metadata.get("tags", [])
-        stored_max_depth = metadata.get("max_depth", 2)
-        stored_extract_code = metadata.get("extract_code_examples", True)
+        stored_max_depth = metadata.get("max_depth") or crawl_settings.get("default_max_depth", 3)
+        stored_extract_code = metadata.get("extract_code_examples")
+        if stored_extract_code is None:
+            stored_extract_code = crawl_settings.get("extract_code_examples", True)
 
         # Override with request values when provided
         knowledge_type = (
@@ -2316,6 +2336,128 @@ async def delete_queue_item(item_id: str):
         raise
     except Exception as e:
         safe_logfire_error(f"Failed to delete queue item | item_id={item_id} | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/crawl-queue/diagnostics/{source_id}")
+async def get_queue_diagnostics(source_id: str):
+    """
+    Get comprehensive crawl diagnostics for a source.
+
+    This endpoint provides complete troubleshooting information including:
+    - Complete crawl history (all queue items for this source)
+    - Validation results (success/failure details)
+    - Data counts (pages, chunks, code examples created)
+    - Error messages and retry information
+
+    Path parameters:
+    - source_id: ID of the source to diagnose
+
+    Returns:
+    - success: Boolean indicating success
+    - source_id: The source ID that was queried
+    - queue_history: List of all queue items for this source (chronological)
+    - data_counts: Object with pages, chunks, code_examples counts
+    - validation_status: Object with has_pages, has_chunks, passed flags
+    - latest_crawl: Most recent queue item (if any)
+    - error_summary: Aggregated error information (if any failures)
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # 1. Get all queue items for this source (newest first)
+        queue_result = (
+            supabase.table("archon_crawl_queue")
+            .select("*")
+            .eq("source_id", source_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+        queue_items = queue_result.data if queue_result.data else []
+
+        # 2. Get data counts for this source
+        pages_result = (
+            supabase.table("archon_page_metadata")
+            .select("id", count="exact")
+            .eq("source_id", source_id)
+            .execute()
+        )
+        pages_count = pages_result.count if pages_result.count else 0
+
+        chunks_result = (
+            supabase.table("archon_crawled_pages")
+            .select("id", count="exact")
+            .eq("source_id", source_id)
+            .execute()
+        )
+        chunks_count = chunks_result.count if chunks_result.count else 0
+
+        code_result = (
+            supabase.table("archon_code_examples")
+            .select("id", count="exact")
+            .eq("source_id", source_id)
+            .execute()
+        )
+        code_count = code_result.count if code_result.count else 0
+
+        # 3. Validation status
+        validation_passed = pages_count > 0 and chunks_count > 0
+
+        # 4. Latest crawl info
+        latest_crawl = queue_items[0] if queue_items else None
+
+        # 5. Error summary (aggregate errors from failed items)
+        failed_items = [item for item in queue_items if item.get("status") == "failed"]
+        error_summary = None
+        if failed_items:
+            error_types = {}
+            for item in failed_items:
+                error_type = item.get("error_type", "unknown")
+                if error_type not in error_types:
+                    error_types[error_type] = {
+                        "count": 0,
+                        "example_message": item.get("error_message", ""),
+                        "latest_occurrence": item.get("completed_at") or item.get("updated_at")
+                    }
+                error_types[error_type]["count"] += 1
+
+            error_summary = {
+                "total_failures": len(failed_items),
+                "error_types": error_types,
+                "requires_human_review": any(
+                    item.get("requires_human_review", False) for item in failed_items
+                )
+            }
+
+        safe_logfire_info(
+            f"Retrieved queue diagnostics | source_id={source_id} | "
+            f"queue_items={len(queue_items)} | pages={pages_count} | "
+            f"chunks={chunks_count} | code={code_count} | passed={validation_passed}"
+        )
+
+        return {
+            "success": True,
+            "source_id": source_id,
+            "queue_history": queue_items,
+            "data_counts": {
+                "pages": pages_count,
+                "chunks": chunks_count,
+                "code_examples": code_count
+            },
+            "validation_status": {
+                "has_pages": pages_count > 0,
+                "has_chunks": chunks_count > 0,
+                "passed": validation_passed
+            },
+            "latest_crawl": latest_crawl,
+            "error_summary": error_summary
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to get queue diagnostics | source_id={source_id} | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
