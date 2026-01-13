@@ -7,7 +7,6 @@ export { default as KnowledgeListHeader } from "./KnowledgeListHeader";
 export { default as KnowledgeTypeFilter } from "./KnowledgeTypeFilter";
 export { default as KnowledgeTagsFilter } from "./KnowledgeTagsFilter";
 export { default as KnowledgeTableView } from "./KnowledgeTableView";
-export { default as KnowledgeTableViewWithBulk } from "./KnowledgeTableViewWithBulk";
 export { default as KnowledgeGridView } from "./KnowledgeGridView";
 export { KnowledgeSourceCard } from "./KnowledgeSourceCard";
 export { AddSourceDialog } from "./AddSourceDialog";

@@ -11,12 +11,71 @@ import { EditSourceDialog } from "@/components/KnowledgeBase/EditSourceDialog";
 import { RecrawlOptionsModal } from "@/components/KnowledgeBase/RecrawlOptionsModal";
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
-import KnowledgeTableViewWithBulk from "@/components/KnowledgeBase/KnowledgeTableViewWithBulk";
-import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
+import { BulkActionsBar } from "@/components/KnowledgeBase/BulkActionsBar";
+import {
+  DataTable,
+  DataTableColumn,
+  DataTableButton,
+  FilterConfig,
+  DataTableProvider,
+  useSelection,
+} from "@/components/common/DataTable";
+import { DataTableList } from "@/components/common/DataTable/DataTableList";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import EmptyState from "@/components/common/EmptyState";
 import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow } from "date-fns";
+
+/**
+ * Wrapper component that uses DataTable's selection hooks to render bulk actions
+ * Must be inside DataTableProvider to access selection context
+ */
+interface KnowledgeTableWithBulkActionsProps {
+  sources: KnowledgeSource[];
+  onBulkRecrawl: (sources: KnowledgeSource[]) => Promise<void>;
+  onBulkDelete: (sources: KnowledgeSource[]) => Promise<void>;
+}
+
+function KnowledgeTableWithBulkActions({
+  sources,
+  onBulkRecrawl,
+  onBulkDelete,
+}: KnowledgeTableWithBulkActionsProps) {
+  const { selectedIds, clearSelection } = useSelection();
+
+  // Get selected sources from selection state
+  const selectedSourceIds = Array.from(selectedIds);
+  const selectedSources = sources.filter((s) =>
+    selectedSourceIds.includes(s.source_id)
+  );
+
+  const handleBulkRecrawl = async () => {
+    await onBulkRecrawl(selectedSources);
+    clearSelection();
+  };
+
+  const handleBulkDelete = async () => {
+    await onBulkDelete(selectedSources);
+    clearSelection();
+  };
+
+  return (
+    <>
+      {/* Bulk Actions Bar - shown when items selected */}
+      {selectedSources.length > 0 && (
+        <BulkActionsBar
+          selectedCount={selectedSources.length}
+          onRecrawl={handleBulkRecrawl}
+          onDelete={handleBulkDelete}
+          onClear={clearSelection}
+        />
+      )}
+
+      {/* Data Table */}
+      <DataTableList />
+    </>
+  );
+}
 
 export default function KnowledgeBasePage() {
   usePageTitle("Knowledge Base", "Archon");
@@ -1062,17 +1121,36 @@ export default function KnowledgeBasePage() {
             )}
           </div>
 
-          {/* Table Content with Bulk Operations */}
-          <KnowledgeTableViewWithBulk
-            sources={sources}
-            onView={handleView}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onRecrawl={handleRecrawl}
-            onBulkRecrawl={handleBulkRecrawl}
-            onBulkDelete={handleBulkDelete}
-            searchTerm={searchMode === "sources" ? searchQuery : ""}
-          />
+          {/* Table Content with Bulk Operations - Using DataTable */}
+          <DataTableProvider
+            data={sources.filter((source) => {
+              // Filter by search query when in "sources" mode
+              if (searchMode === "sources" && searchQuery) {
+                return source.title.toLowerCase().includes(searchQuery.toLowerCase());
+              }
+              return true;
+            })}
+            columns={columns}
+            rowButtons={rowButtons}
+            keyExtractor={(item: KnowledgeSource) => item.source_id}
+            viewMode="table"
+            emptyMessage={
+              searchQuery && searchMode === "sources"
+                ? `No sources match "${searchQuery}"`
+                : "No knowledge sources"
+            }
+            initialPagination={{
+              page: 1,
+              per_page: 50,
+              total: sources.length,
+            }}
+          >
+            <KnowledgeTableWithBulkActions
+              sources={sources}
+              onBulkRecrawl={handleBulkRecrawl}
+              onBulkDelete={handleBulkDelete}
+            />
+          </DataTableProvider>
         </div>
       )}
 

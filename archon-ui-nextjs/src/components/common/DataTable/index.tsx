@@ -397,6 +397,7 @@ function DataTableWithPreferences<T = any>({
 
 // Re-export context and hooks for external use
 export {
+  DataTableProvider,
   useDataTableContext,
   useDataTableProps,
   useDataTableState,

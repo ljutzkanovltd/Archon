@@ -13,9 +13,9 @@ const CREDENTIALS: Record<string, boolean | string> = {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { key: string } }
+  { params }: { params: Promise<{ key: string }> }
 ) {
-  const { key } = params;
+  const { key } = await params;
 
   // Check if credential exists
   if (key in CREDENTIALS) {
