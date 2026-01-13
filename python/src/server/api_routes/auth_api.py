@@ -5,6 +5,7 @@ Provides endpoints for user authentication (login, logout, registration).
 """
 
 import re
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
@@ -18,6 +19,8 @@ from ..auth.jwt_utils import create_access_token, hash_password, verify_password
 from ..models.organization import OrganizationMemberRole
 from ..models.user import UserResponse
 from ..utils.db_utils import get_direct_db_connection
+from ..utils.email_service import EmailServiceError, send_email
+from ..utils.email_templates import password_reset_email
 from ..utils.email_validation import EmailValidationError, validate_email
 from ..utils.password_validation import PasswordValidationError, validate_password
 
@@ -38,6 +41,17 @@ class RegisterResponse(BaseModel):
     token_type: str
     user: dict
     organization: dict
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Forgot password request schema"""
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Forgot password response schema"""
+    message: str
+    email: str
 
 
 @router.post("/login")
@@ -266,7 +280,7 @@ async def register(request: Request, data: RegisterRequest):
 
     Creates:
     1. New user account in archon_users
-    2. User profile in archon_user_profiles
+    2. User profile in archon_user_profiles (auto-created by database trigger)
     3. Default organization in archon_organizations (named "{Full Name}'s Organization")
     4. Organization membership with Owner role
 
@@ -386,27 +400,11 @@ async def register(request: Request, data: RegisterRequest):
         user_id = user["id"]
 
         # =====================================================================
-        # Step 6: Create User Profile
+        # Step 6: User Profile Auto-Created by Database Trigger
         # =====================================================================
-        profile_query = """
-            INSERT INTO archon_user_profiles (
-                user_id, timezone, language, theme_preference, date_format,
-                email_notifications, desktop_notifications,
-                created_at, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-            RETURNING id
-        """
-        await conn.execute(
-            profile_query,
-            user_id,
-            "UTC",  # Default timezone
-            "en",  # Default language
-            "system",  # Default theme (follows system preference)
-            "YYYY-MM-DD",  # Default date format
-            True,  # Email notifications enabled by default
-            False,  # Desktop notifications disabled by default
-        )
+        # Note: The trigger_auto_create_profile trigger automatically creates
+        # a user profile with default values when a user is inserted.
+        # No manual profile creation needed here.
 
         # =====================================================================
         # Step 7: Generate Organization Slug
@@ -435,13 +433,12 @@ async def register(request: Request, data: RegisterRequest):
 
         org_query = """
             INSERT INTO archon_organizations (
-                name, slug, owner_id, is_active, max_members,
+                name, slug, owner_id, is_active,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-            RETURNING id, name, slug, owner_id, description, logo_url,
-                     primary_color, secondary_color, is_active, max_members,
-                     created_at, updated_at
+            VALUES ($1, $2, $3, $4, NOW(), NOW())
+            RETURNING id, name, slug, owner_id, description, avatar_url,
+                     settings, is_active, created_at, updated_at
         """
         organization = await conn.fetchrow(
             org_query,
@@ -449,7 +446,6 @@ async def register(request: Request, data: RegisterRequest):
             slug,
             user_id,
             True,  # is_active
-            50,  # max_members default
         )
 
         org_id = organization["id"]
@@ -459,10 +455,10 @@ async def register(request: Request, data: RegisterRequest):
         # =====================================================================
         member_query = """
             INSERT INTO archon_organization_members (
-                organization_id, user_id, role, invited_by, invited_at,
-                joined_at, is_active, created_at, updated_at
+                organization_id, user_id, role, invited_by,
+                joined_at, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())
             RETURNING id
         """
         await conn.execute(
@@ -471,7 +467,6 @@ async def register(request: Request, data: RegisterRequest):
             user_id,
             OrganizationMemberRole.OWNER.value,
             user_id,  # Self-invited (initial setup)
-            True,  # is_active
         )
 
         # =====================================================================
@@ -508,7 +503,6 @@ async def register(request: Request, data: RegisterRequest):
                 "slug": organization["slug"],
                 "owner_id": str(organization["owner_id"]),
                 "is_active": organization["is_active"],
-                "max_members": organization["max_members"],
                 "created_at": organization["created_at"].isoformat(),
             },
         }
@@ -522,5 +516,167 @@ async def register(request: Request, data: RegisterRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}",
         )
+    finally:
+        await conn.close()
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(request: Request, data: ForgotPasswordRequest):
+    """
+    Initiate password reset process by sending reset email.
+
+    **Request Body:**
+    - `email`: User's email address
+
+    **Response:**
+    - `message`: Success message (always returned for security)
+    - `email`: Email address (masked)
+
+    **Security Features:**
+    - Always returns success (prevents email enumeration)
+    - Generates unique UUID token
+    - Token expires in 1 hour
+    - Stores IP address and user agent for audit
+    - Rate limiting recommended (see slowapi configuration)
+
+    **Process:**
+    1. Validate email format
+    2. Check if user exists (silently)
+    3. Generate secure reset token (UUID)
+    4. Store token with 1-hour expiration
+    5. Send password reset email
+    6. Return success (even if email doesn't exist)
+
+    **Error Handling:**
+    - Email service errors are logged but not exposed to user
+    - Always returns 200 OK for security
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8181/api/auth/forgot-password \\
+      -H "Content-Type: application/json" \\
+      -d '{"email": "user@example.com"}'
+    ```
+    """
+    conn = await get_direct_db_connection()
+    try:
+        # ==================================================================
+        # Step 1: Validate Email Format
+        # ==================================================================
+        try:
+            validated_email = validate_email(data.email)
+        except EmailValidationError:
+            # Return success even if email is invalid (prevent enumeration)
+            return {
+                "message": "If this email exists, a password reset link has been sent.",
+                "email": data.email[:3] + "***@" + data.email.split('@')[1] if '@' in data.email else "***",
+            }
+
+        # ==================================================================
+        # Step 2: Check if User Exists
+        # ==================================================================
+        user_query = """
+            SELECT id, email, full_name, is_active
+            FROM archon_users
+            WHERE email = $1
+        """
+        user = await conn.fetchrow(user_query, validated_email)
+
+        if not user:
+            # Return success even if user doesn't exist (prevent enumeration)
+            return {
+                "message": "If this email exists, a password reset link has been sent.",
+                "email": validated_email[:3] + "***@" + validated_email.split('@')[1],
+            }
+
+        # Check if account is active
+        if not user["is_active"]:
+            # Return success but don't send email for disabled accounts
+            return {
+                "message": "If this email exists, a password reset link has been sent.",
+                "email": validated_email[:3] + "***@" + validated_email.split('@')[1],
+            }
+
+        # ==================================================================
+        # Step 3: Generate Reset Token
+        # ==================================================================
+        reset_token = str(uuid.uuid4())
+        expires_at = datetime.utcnow() + timedelta(hours=1)
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent", "Unknown")
+
+        # ==================================================================
+        # Step 4: Store Token in Database
+        # ==================================================================
+        token_query = """
+            INSERT INTO archon_password_reset_tokens (
+                user_id, token, expires_at, ip_address, user_agent,
+                created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+            RETURNING id, token, expires_at
+        """
+        token_record = await conn.fetchrow(
+            token_query,
+            user["id"],
+            reset_token,
+            expires_at,
+            client_ip,
+            user_agent,
+        )
+
+        # ==================================================================
+        # Step 5: Send Password Reset Email
+        # ==================================================================
+        # Construct reset link (adjust base URL as needed)
+        base_url = request.base_url
+        reset_link = f"{base_url}reset-password?token={reset_token}"
+
+        try:
+            # Generate email HTML
+            email_html = password_reset_email(
+                user_name=user["full_name"],
+                reset_link=reset_link,
+                reset_code=None,  # Optional: could add 6-digit code as alternative
+                expiry_minutes=60,
+            )
+
+            # Send email
+            await send_email(
+                to_email=user["email"],
+                to_name=user["full_name"],
+                subject="Password Reset Request - Archon",
+                html_content=email_html,
+            )
+
+            logger.info(
+                f"Password reset email sent successfully: "
+                f"user_id={user['id']}, email={user['email']}"
+            )
+
+        except EmailServiceError as e:
+            # Log error but don't expose to user (security)
+            logger.error(
+                f"Failed to send password reset email: "
+                f"user_id={user['id']}, error={str(e)}"
+            )
+            # Still return success to prevent information disclosure
+
+        except Exception as e:
+            # Catch any unexpected errors
+            logger.error(
+                f"Unexpected error sending password reset email: "
+                f"user_id={user['id']}, error={str(e)}"
+            )
+            # Still return success to prevent information disclosure
+
+        # ==================================================================
+        # Step 6: Return Success Response
+        # ==================================================================
+        # Always return success (even if email failed) for security
+        return {
+            "message": "If this email exists, a password reset link has been sent.",
+            "email": validated_email[:3] + "***@" + validated_email.split('@')[1],
+        }
+
     finally:
         await conn.close()
