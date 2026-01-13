@@ -123,10 +123,10 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
   if (!isOpen || !source) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="flex h-[90vh] w-[90vw] max-w-7xl rounded-lg bg-white shadow-xl dark:bg-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+      <div className="flex flex-col md:flex-row h-full md:h-[90vh] w-full md:w-[90vw] max-w-7xl rounded-lg bg-white shadow-xl dark:bg-gray-800 overflow-hidden">
         {/* Sidebar */}
-        <div className="flex w-96 flex-col border-r border-gray-200 dark:border-gray-700">
+        <div className="flex w-full md:w-96 flex-col border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700 max-h-[40vh] md:max-h-none">
           {/* Header */}
           <div className="border-b border-gray-200 p-4 dark:border-gray-700">
             <div className="mb-4 flex items-center justify-between">
@@ -142,47 +142,50 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 sm:gap-2">
               <button
                 onClick={() => {
                   setActiveTab("pages");
                   setSelectedCode(null); // Clear code selection when switching to pages
                 }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${
+                className={`flex flex-1 items-center justify-center gap-1.5 sm:gap-2 rounded-lg px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium touch-manipulation ${
                   activeTab === "pages"
                     ? "bg-brand-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 }`}
               >
-                <HiDocument className="h-4 w-4" />
-                Documents ({totalChunks})
+                <HiDocument className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Documents</span>
+                <span className="sm:hidden">Docs</span>
+                <span className="text-xs">({totalChunks})</span>
               </button>
               <button
                 onClick={() => {
                   setActiveTab("code");
                   setSelectedPage(null); // Clear page selection when switching to code
                 }}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${
+                className={`flex flex-1 items-center justify-center gap-1.5 sm:gap-2 rounded-lg px-2 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium touch-manipulation ${
                   activeTab === "code"
                     ? "bg-brand-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 }`}
               >
-                <HiCode className="h-4 w-4" />
-                Code Examples ({totalCodeExamples})
+                <HiCode className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Code</span>
+                <span className="text-xs">({totalCodeExamples})</span>
               </button>
             </div>
 
             {/* Search */}
-            <div className="mt-4">
+            <div className="mt-3 sm:mt-4">
               <div className="relative">
-                <HiSearch className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                <HiSearch className="absolute left-2 sm:left-3 top-1/2 h-4 w-4 sm:h-5 sm:w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Search ${activeTab}...`}
-                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-8 sm:pl-10 pr-3 sm:pr-4 text-xs sm:text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 />
               </div>
             </div>

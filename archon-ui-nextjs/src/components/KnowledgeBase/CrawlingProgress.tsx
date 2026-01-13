@@ -274,36 +274,36 @@ function OperationCard({ operation, onStop, onPause, onResume }: OperationCardPr
             </span>
           </div>
         </div>
-        <div className="ml-4 flex items-center gap-2">
+        <div className="ml-2 sm:ml-4 flex flex-wrap items-center gap-1.5 sm:gap-2">
           {operation.status === "paused" ? (
             <button
               onClick={handleResume}
               disabled={isResuming}
-              className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg bg-green-50 px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium text-green-700 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 touch-manipulation min-h-[40px]"
               title="Resume operation"
             >
-              <HiPlay className="h-4 w-4" />
-              {isResuming ? "Resuming..." : "Resume"}
+              <HiPlay className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">{isResuming ? "Resuming..." : "Resume"}</span>
             </button>
           ) : (
             <>
               <button
                 onClick={handlePause}
                 disabled={isPausing}
-                className="flex items-center gap-2 rounded-lg bg-yellow-50 px-3 py-1.5 text-sm font-medium text-yellow-700 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/30"
+                className="flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg bg-yellow-50 px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium text-yellow-700 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/30 touch-manipulation min-h-[40px]"
                 title="Pause operation"
               >
-                <HiPause className="h-4 w-4" />
-                {isPausing ? "Pausing..." : "Pause"}
+                <HiPause className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{isPausing ? "Pausing..." : "Pause"}</span>
               </button>
               <button
                 onClick={handleStop}
                 disabled={isStopping}
-                className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                className="flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg bg-red-50 px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 touch-manipulation min-h-[40px]"
                 title="Stop operation"
               >
-                <HiStop className="h-4 w-4" />
-                {isStopping ? "Stopping..." : "Stop"}
+                <HiStop className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{isStopping ? "Stopping..." : "Stop"}</span>
               </button>
             </>
           )}

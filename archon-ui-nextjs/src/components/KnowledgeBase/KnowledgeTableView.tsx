@@ -112,30 +112,30 @@ export default function KnowledgeTableView({
               </div>
             </th>
 
-            {/* Type */}
-            <th scope="col" className="px-4 py-3">
+            {/* Type - Hidden on mobile */}
+            <th scope="col" className="hidden sm:table-cell px-4 py-3">
               Type
             </th>
 
-            {/* Source */}
-            <th scope="col" className="px-4 py-3">
+            {/* Source - Hidden on mobile */}
+            <th scope="col" className="hidden md:table-cell px-4 py-3">
               Source
             </th>
 
-            {/* Docs Count */}
-            <th scope="col" className="px-4 py-3">
+            {/* Docs Count - Hidden on mobile */}
+            <th scope="col" className="hidden lg:table-cell px-4 py-3 text-center">
               Docs
             </th>
 
-            {/* Examples Count */}
-            <th scope="col" className="px-4 py-3">
+            {/* Examples Count - Hidden on mobile */}
+            <th scope="col" className="hidden lg:table-cell px-4 py-3 text-center">
               Examples
             </th>
 
-            {/* Created - Sortable */}
+            {/* Created - Sortable, Hidden on mobile */}
             <th
               scope="col"
-              className="px-4 py-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600"
+              className="hidden md:table-cell px-4 py-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600"
               onClick={() => handleSort("created_at")}
               title="Sort by Created"
             >
@@ -208,8 +208,8 @@ export default function KnowledgeTableView({
                       </div>
                     </td>
 
-                    {/* Type */}
-                    <td className="px-4 py-3">
+                    {/* Type - Hidden on mobile */}
+                    <td className="hidden sm:table-cell px-4 py-3">
                       <span
                         className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${getKnowledgeTypeColor(
                           knowledgeType
@@ -219,8 +219,8 @@ export default function KnowledgeTableView({
                       </span>
                     </td>
 
-                    {/* Source URL */}
-                    <td className="px-4 py-3">
+                    {/* Source URL - Hidden on mobile */}
+                    <td className="hidden md:table-cell px-4 py-3">
                       {url && (
                         <a
                           href={url}
@@ -234,22 +234,22 @@ export default function KnowledgeTableView({
                       )}
                     </td>
 
-                    {/* Docs Count */}
-                    <td className="px-4 py-3 text-center">
+                    {/* Docs Count - Hidden on mobile */}
+                    <td className="hidden lg:table-cell px-4 py-3 text-center">
                       <span className="inline-flex items-center justify-center w-8 h-8 text-xs font-semibold text-gray-700 bg-gray-100 rounded-full dark:bg-gray-700 dark:text-gray-300">
                         {source.documents_count || 0}
                       </span>
                     </td>
 
-                    {/* Examples Count */}
-                    <td className="px-4 py-3 text-center">
+                    {/* Examples Count - Hidden on mobile */}
+                    <td className="hidden lg:table-cell px-4 py-3 text-center">
                       <span className="inline-flex items-center justify-center w-8 h-8 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full dark:bg-brand-900/20 dark:text-brand-400">
                         {source.code_examples_count || 0}
                       </span>
                     </td>
 
-                    {/* Created */}
-                    <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
+                    {/* Created - Hidden on mobile */}
+                    <td className="hidden md:table-cell px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
                       {formatDate(source.created_at)}
                     </td>
 
