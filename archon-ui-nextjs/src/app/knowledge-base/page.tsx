@@ -12,6 +12,8 @@ import { RecrawlOptionsModal } from "@/components/KnowledgeBase/RecrawlOptionsMo
 import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
 import { BulkActionsBar } from "@/components/KnowledgeBase/BulkActionsBar";
+import { KnowledgeBaseHeader } from "@/components/KnowledgeBase/KnowledgeBaseHeader";
+import { SearchModeToggle } from "@/components/KnowledgeBase/SearchModeToggle";
 import {
   DataTable,
   DataTableColumn,
@@ -44,7 +46,7 @@ export default function KnowledgeBasePage() {
   const [metricsLoading, setMetricsLoading] = useState(false);
 
   // Content search state
-  const [searchMode, setSearchMode] = useState<"sources" | "content">("content");
+  const [searchMode, setSearchMode] = useState<"titles" | "content">("titles");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -312,7 +314,7 @@ export default function KnowledgeBasePage() {
     }
   };
 
-  const handleSearchModeChange = (mode: "sources" | "content") => {
+  const handleSearchModeChange = (mode: "titles" | "content") => {
     setSearchMode(mode);
     setSearchQuery("");
     setSearchResults([]);
@@ -567,14 +569,7 @@ export default function KnowledgeBasePage() {
       />
 
       {/* Page Header */}
-      <div className="mb-6">
-        <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">
-          Knowledge Base
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Manage and explore indexed documentation and code examples
-        </p>
-      </div>
+      <KnowledgeBaseHeader />
 
       {/* Stats Cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
@@ -648,6 +643,13 @@ export default function KnowledgeBasePage() {
       {/* Unified Progress Tracking - Queue-Based System */}
       <CrawlQueueMonitor sources={sources} className="mb-6" />
 
+      {/* Search Mode Toggle - Choose between Titles and Content search */}
+      <SearchModeToggle
+        mode={searchMode}
+        onChange={setSearchMode}
+        className="mb-6"
+      />
+
       {/* Data Table with Bulk Operations Support */}
       {!isLoading && sources.length === 0 ? (
         <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
@@ -666,99 +668,24 @@ export default function KnowledgeBasePage() {
           />
         </div>
       ) : viewMode === "grid" ? (
-        /* Grid View: Wrapped with consistent header and search */
+        /* Grid View: Using DataTable's built-in controls */
         <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          {/* DataTable-style Header */}
-          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Knowledge Sources ({sources.length})
-            </h2>
-            <div className="flex items-center gap-3">
-              {/* View Toggle */}
-              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
-                <button
-                  onClick={() => setViewMode("table")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    viewMode === "table"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-l-lg`}
-                  title="Table View"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    viewMode === "grid"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
-                  title="Grid View"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-              </div>
-              {/* Search Mode Toggle */}
-              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
-                <button
-                  onClick={() => handleSearchModeChange("sources")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    searchMode === "sources"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-l-lg`}
-                  title="Search source titles"
-                >
-                  Titles
-                </button>
-                <button
-                  onClick={() => handleSearchModeChange("content")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    searchMode === "content"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
-                  title="Search page content"
-                >
-                  Content
-                </button>
-              </div>
-              {/* Add Source Button */}
-              <button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:bg-brand-500 dark:hover:bg-brand-600"
-              >
-                <HiPlus className="h-5 w-5" />
-                Add Source
-              </button>
-            </div>
-          </div>
-
-          {/* Search Bar */}
-          <div className="px-6">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter" && searchMode === "content") {
-                    handleContentSearch(1);
-                  }
-                }}
-                placeholder={
-                  searchMode === "sources"
-                    ? "Search source titles..."
-                    : "Search within crawled pages (e.g., 'authentication JWT tokens')..."
-                }
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-              />
-              {searchMode === "content" && (
+          {/* Content Search Bar - Only shown in content mode */}
+          {searchMode === "content" && (
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handleContentSearch(1);
+                    }
+                  }}
+                  placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                />
                 <button
                   onClick={() => handleContentSearch(1)}
                   disabled={searchLoading || !searchQuery.trim()}
@@ -766,11 +693,9 @@ export default function KnowledgeBasePage() {
                 >
                   {searchLoading ? "Searching..." : "Search"}
                 </button>
-              )}
-            </div>
+              </div>
 
-            {/* Content Search Results (only in content mode) */}
-            {searchMode === "content" && (
+              {/* Content Search Results */}
               <div className="mt-4">
                 {searchError && (
                   <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -850,129 +775,49 @@ export default function KnowledgeBasePage() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Grid Content - Filter sources by searchQuery when in "sources" mode */}
-          <div className="px-6 pb-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {sources
-                .filter((source) => {
-                  if (searchMode === "sources" && searchQuery) {
-                    return source.title.toLowerCase().includes(searchQuery.toLowerCase());
-                  }
-                  return true;
-                })
-                .map((source) => (
-                  <KnowledgeSourceCard
-                    key={source.source_id}
-                    source={source}
-                    onView={handleView}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onRecrawl={handleRecrawl}
-                  />
-                ))}
             </div>
+          )}
+
+          {/* Grid Content - Simple grid without DataTable wrapper */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {sources
+              .filter((source) => {
+                if (searchMode === "titles" && searchQuery) {
+                  return source.title.toLowerCase().includes(searchQuery.toLowerCase());
+                }
+                return true;
+              })
+              .map((source) => (
+                <KnowledgeSourceCard
+                  key={source.source_id}
+                  source={source}
+                  onView={handleView}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onRecrawl={handleRecrawl}
+                />
+              ))}
           </div>
         </div>
       ) : (
-        /* Table View: Use KnowledgeTableViewWithBulk with DataTable-style wrapper */
-        <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          {/* DataTable-style Header */}
-          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Knowledge Sources ({sources.length})
-            </h2>
-            <div className="flex items-center gap-3">
-              {/* View Toggle */}
-              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
-                <button
-                  onClick={() => setViewMode("table")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    viewMode === "table"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-l-lg`}
-                  title="Table View"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    viewMode === "grid"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
-                  title="Grid View"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-              </div>
-              {/* Search Mode Toggle */}
-              <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600">
-                <button
-                  onClick={() => handleSearchModeChange("sources")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    searchMode === "sources"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-l-lg`}
-                  title="Search source titles"
-                >
-                  Titles
-                </button>
-                <button
-                  onClick={() => handleSearchModeChange("content")}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    searchMode === "content"
-                      ? "bg-brand-600 text-white dark:bg-brand-500"
-                      : "bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  } rounded-r-lg border-l border-gray-300 dark:border-gray-600`}
-                  title="Search page content"
-                >
-                  Content
-                </button>
-              </div>
-              {/* Add Source Button */}
-              <button
-                onClick={() => setIsAddDialogOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:bg-brand-500 dark:hover:bg-brand-600"
-              >
-                <HiPlus className="h-5 w-5" />
-                Add Source
-              </button>
-            </div>
-          </div>
-
-          {/* Search Bar */}
-          <div className="px-6">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter") {
-                    if (searchMode === "content") {
+        /* Table View: Use DataTable with built-in controls */
+        <div className="space-y-4">
+          {/* Content Search Bar - Only shown in content mode */}
+          {searchMode === "content" && (
+            <div className="rounded-lg border-2 border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
                       handleContentSearch(1);
                     }
-                    // For "sources" mode, the searchTerm prop will filter the table
-                  }
-                }}
-                placeholder={
-                  searchMode === "sources"
-                    ? "Search source titles..."
-                    : "Search within crawled pages (e.g., 'authentication JWT tokens')..."
-                }
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-              />
-              {searchMode === "content" && (
+                  }}
+                  placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                />
                 <button
                   onClick={() => handleContentSearch(1)}
                   disabled={searchLoading || !searchQuery.trim()}
@@ -980,11 +825,9 @@ export default function KnowledgeBasePage() {
                 >
                   {searchLoading ? "Searching..." : "Search"}
                 </button>
-              )}
-            </div>
+              </div>
 
-            {/* Content Search Results */}
-            {searchMode === "content" && (
+              {/* Content Search Results */}
               <div className="mt-4">
                 {searchError && (
                   <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -1065,33 +908,25 @@ export default function KnowledgeBasePage() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Table Content with Bulk Operations - Using DataTable with Native Bulk Selection */}
+          {/* DataTable - Table view with built-in controls */}
           <DataTable
-            data={sources.filter((source) => {
-              // Filter by search query when in "sources" mode
-              if (searchMode === "sources" && searchQuery) {
-                return source.title.toLowerCase().includes(searchQuery.toLowerCase());
-              }
-              return true;
-            })}
+            data={sources}
             columns={columns}
             rowButtons={rowButtons}
+            tableButtons={tableButtons}
             keyExtractor={(item: KnowledgeSource) => item.source_id}
             viewMode="table"
-            emptyMessage={
-              searchQuery && searchMode === "sources"
-                ? `No sources match "${searchQuery}"`
-                : "No knowledge sources"
-            }
+            emptyMessage="No knowledge sources"
             initialPage={1}
             initialPerPage={50}
             totalItems={sources.length}
-            showHeader={false}
-            showSearch={false}
+            showSearch={searchMode === "titles"}
+            showViewToggle={false}
             showPagination={false}
+            filterConfigs={filterConfigs}
             enableSelection={true}
             renderBulkActions={(selectedSources, clearSelection) => (
               <BulkActionsBar
