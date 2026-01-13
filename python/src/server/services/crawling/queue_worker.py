@@ -46,6 +46,7 @@ class CrawlQueueWorker:
         # Configuration from database settings
         self._batch_size = 5  # Will be loaded from settings
         self._poll_interval = 30  # Will be loaded from settings
+        self._high_priority_poll_interval = 5  # Fast polling for high-priority items
         self._retry_delays = [60, 300, 900]  # Will be loaded from settings
 
     async def _load_settings(self):
@@ -64,6 +65,7 @@ class CrawlQueueWorker:
             # Apply settings with defaults
             self._batch_size = int(settings.get("QUEUE_BATCH_SIZE", "5"))
             self._poll_interval = int(settings.get("QUEUE_WORKER_INTERVAL", "30"))
+            self._high_priority_poll_interval = int(settings.get("QUEUE_HIGH_PRIORITY_INTERVAL", "5"))
 
             # Parse retry delays from JSON array
             retry_delays_str = settings.get("QUEUE_RETRY_DELAYS", "[60, 300, 900]")
@@ -71,7 +73,9 @@ class CrawlQueueWorker:
 
             safe_logfire_info(
                 f"Loaded queue worker settings | batch_size={self._batch_size} | "
-                f"poll_interval={self._poll_interval}s | retry_delays={self._retry_delays}"
+                f"poll_interval={self._poll_interval}s | "
+                f"high_priority_interval={self._high_priority_poll_interval}s | "
+                f"retry_delays={self._retry_delays}"
             )
 
         except Exception as e:
@@ -163,7 +167,8 @@ class CrawlQueueWorker:
             "is_paused": self.is_paused,
             "active_crawls": len(self._active_crawls),
             "batch_size": self._batch_size,
-            "poll_interval": self._poll_interval
+            "poll_interval": self._poll_interval,
+            "high_priority_poll_interval": self._high_priority_poll_interval
         }
 
     async def _worker_loop(self):
@@ -199,8 +204,24 @@ class CrawlQueueWorker:
                 else:
                     safe_logfire_info(f"No items in queue, sleeping for {self._poll_interval}s...")
 
-                # Sleep before next poll
-                await asyncio.sleep(self._poll_interval)
+                # Dynamic polling: use faster interval if high-priority items are pending
+                has_high_priority = any(
+                    item.get("priority", 0) >= 200
+                    for item in pending_items
+                )
+
+                sleep_interval = (
+                    self._high_priority_poll_interval
+                    if has_high_priority
+                    else self._poll_interval
+                )
+
+                if has_high_priority:
+                    safe_logfire_info(
+                        f"🚀 High-priority items detected, using fast polling ({sleep_interval}s)"
+                    )
+
+                await asyncio.sleep(sleep_interval)
 
             except asyncio.CancelledError:
                 safe_logfire_info("Worker loop cancelled")
