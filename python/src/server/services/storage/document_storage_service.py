@@ -159,6 +159,14 @@ async def add_documents_to_supabase(
         total_batches = (len(contents) + batch_size - 1) // batch_size
         total_chunks_stored = 0
 
+        # ENHANCED LOGGING: Document storage start
+        # Extract source_id from first metadata if available
+        first_source_id = metadatas[0].get("source_id", "unknown") if metadatas else "unknown"
+        search_logger.info(
+            f"🔧 Starting document storage | source_id={first_source_id} | "
+            f"total_contents={len(contents)} | total_batches={total_batches} | batch_size={batch_size}"
+        )
+
         # Process in batches to avoid memory issues
         for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
             # Check for cancellation before each batch
@@ -311,11 +319,23 @@ async def add_documents_to_supabase(
 
             wrapper_func = make_embedding_progress_wrapper(current_progress, batch_num)
 
+            # ENHANCED LOGGING: Before embedding generation
+            search_logger.info(
+                f"📊 Batch {batch_num}/{total_batches}: Generating embeddings | "
+                f"contents_count={len(contextual_contents)} | provider={provider}"
+            )
+
             # Pass progress callback for rate limiting updates
             result = await create_embeddings_batch(
                 contextual_contents,
                 provider=provider,
                 progress_callback=wrapper_func if progress_callback else None
+            )
+
+            # ENHANCED LOGGING: After embedding generation
+            search_logger.info(
+                f"✅ Batch {batch_num}/{total_batches}: Embeddings generated | "
+                f"success_count={result.success_count} | failure_count={result.failure_count}"
             )
 
             # Log any failures
@@ -350,8 +370,9 @@ async def add_documents_to_supabase(
                     llm_chat_model = "gpt-4o-mini"  # Default fallback
 
             if not batch_embeddings:
-                search_logger.warning(
-                    f"Skipping batch {batch_num} - no successful embeddings created"
+                search_logger.error(
+                    f"❌ Batch {batch_num}/{total_batches}: SKIPPING - No successful embeddings created | "
+                    f"input_count={len(contextual_contents)} | provider={provider}"
                 )
                 completed_batches += 1
                 continue
@@ -419,6 +440,13 @@ async def add_documents_to_supabase(
 
             # Insert batch with retry logic - no progress reporting
 
+            # ENHANCED LOGGING: Before database insertion
+            batch_source_id = batch_data[0].get("source_id", "unknown") if batch_data else "unknown"
+            search_logger.info(
+                f"💾 Batch {batch_num}/{total_batches}: Inserting to archon_crawled_pages | "
+                f"batch_data_count={len(batch_data)} | source_id={batch_source_id}"
+            )
+
             max_retries = 3
             retry_delay = 1.0
 
@@ -441,6 +469,12 @@ async def add_documents_to_supabase(
                 try:
                     client.table("archon_crawled_pages").insert(batch_data).execute()
                     total_chunks_stored += len(batch_data)
+
+                    # ENHANCED LOGGING: After successful insertion
+                    search_logger.info(
+                        f"✅ Batch {batch_num}/{total_batches}: Successfully inserted | "
+                        f"chunks_inserted={len(batch_data)} | total_stored={total_chunks_stored}"
+                    )
 
                     # Increment completed batches and report simple progress
                     completed_batches += 1
@@ -470,13 +504,16 @@ async def add_documents_to_supabase(
                 except Exception as e:
                     if retry < max_retries - 1:
                         search_logger.warning(
-                            f"Error inserting batch (attempt {retry + 1}/{max_retries}): {e}"
+                            f"⚠️  Batch {batch_num}/{total_batches}: Insert failed (attempt {retry + 1}/{max_retries}) | "
+                            f"error={type(e).__name__}: {str(e)[:200]}"
                         )
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff
                     else:
                         search_logger.error(
-                            f"Failed to insert batch after {max_retries} attempts: {e}"
+                            f"❌ Batch {batch_num}/{total_batches}: Insert FAILED after {max_retries} attempts | "
+                            f"error={type(e).__name__}: {str(e)[:200]} | "
+                            f"batch_data_count={len(batch_data)} | source_id={batch_source_id}"
                         )
                         # Try individual inserts as last resort
                         successful_inserts = 0
@@ -538,5 +575,12 @@ async def add_documents_to_supabase(
         span.set_attribute("success", True)
         span.set_attribute("total_processed", len(contents))
         span.set_attribute("total_stored", total_chunks_stored)
+
+        # ENHANCED LOGGING: Final summary
+        search_logger.info(
+            f"🎉 Document storage COMPLETE | source_id={first_source_id} | "
+            f"total_chunks_stored={total_chunks_stored} | total_processed={len(contents)} | "
+            f"batches_completed={total_batches}"
+        )
 
         return {"chunks_stored": total_chunks_stored}

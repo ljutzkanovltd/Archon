@@ -317,10 +317,45 @@ class CrawlQueueWorker:
             if crawl_task:
                 await crawl_task
 
-            # Update status to completed
-            await self.queue_manager.update_status(item_id, "completed")
+            # VALIDATION: Verify that crawl actually created data before marking as completed
+            validation_result = await self._validate_crawl_completion(source_id)
 
-            safe_logfire_info(f"✅ Completed queue item | item_id={item_id} | source_id={source_id}")
+            if validation_result["success"]:
+                # Update status to completed only if validation passed
+                await self.queue_manager.update_status(item_id, "completed")
+                safe_logfire_info(
+                    f"✅ Completed queue item with validation | item_id={item_id} | "
+                    f"source_id={source_id} | pages={validation_result['pages_count']} | "
+                    f"code_examples={validation_result['code_examples_count']}"
+                )
+            else:
+                # Validation failed - mark as failed with detailed error
+                error_message = (
+                    f"Crawl validation failed: {validation_result['error']}. "
+                    f"Pages: {validation_result['pages_count']}, "
+                    f"Code examples: {validation_result['code_examples_count']}"
+                )
+
+                await self.queue_manager.update_status(
+                    item_id=item_id,
+                    status="failed",
+                    error_message=error_message,
+                    error_type="validation_failed",
+                    error_details={
+                        "validation_result": validation_result,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
+
+                safe_logfire_error(
+                    f"❌ Crawl validation failed | item_id={item_id} | source_id={source_id} | "
+                    f"pages={validation_result['pages_count']} | "
+                    f"code_examples={validation_result['code_examples_count']} | "
+                    f"error={validation_result['error']}"
+                )
+
+                # Don't raise exception - we've handled the failure by marking it as failed
+                return
 
         except Exception as e:
             safe_logfire_error(
@@ -392,6 +427,111 @@ class CrawlQueueWorker:
         except Exception as e:
             safe_logfire_error(f"Error deleting existing data | source_id={source_id} | error={str(e)}")
             # Don't raise - continue with crawl even if deletion fails
+
+    async def _validate_crawl_completion(self, source_id: str) -> Dict[str, Any]:
+        """
+        Validate that a crawl actually created data before marking as completed.
+
+        Checks:
+        1. Pages created in archon_page_metadata
+        2. Chunks created in archon_crawled_pages
+        3. Code examples created in archon_code_examples (if applicable)
+
+        Args:
+            source_id: Source ID to validate
+
+        Returns:
+            Dict with keys:
+            - success: bool (True if validation passed)
+            - pages_count: int (number of pages created)
+            - chunks_count: int (number of chunks created)
+            - code_examples_count: int (number of code examples)
+            - error: str (error message if validation failed, empty if success)
+        """
+        # ENHANCED LOGGING: Start validation
+        safe_logfire_info(f"🔍 Starting crawl validation | source_id={source_id}")
+
+        try:
+            # Count pages in archon_page_metadata
+            pages_result = (
+                self.supabase.table("archon_page_metadata")
+                .select("id", count="exact")
+                .eq("source_id", source_id)
+                .execute()
+            )
+            pages_count = pages_result.count if pages_result.count is not None else 0
+            safe_logfire_info(f"  📄 Pages count: {pages_count}")
+
+            # Count chunks in archon_crawled_pages
+            chunks_result = (
+                self.supabase.table("archon_crawled_pages")
+                .select("id", count="exact")
+                .eq("source_id", source_id)
+                .execute()
+            )
+            chunks_count = chunks_result.count if chunks_result.count is not None else 0
+            safe_logfire_info(f"  📦 Chunks count: {chunks_count}")
+
+            # Count code examples in archon_code_examples
+            code_result = (
+                self.supabase.table("archon_code_examples")
+                .select("id", count="exact")
+                .eq("source_id", source_id)
+                .execute()
+            )
+            code_examples_count = code_result.count if code_result.count is not None else 0
+            safe_logfire_info(f"  💻 Code examples count: {code_examples_count}")
+
+            # Validation logic: At minimum, we need at least 1 page created
+            if pages_count == 0:
+                safe_logfire_error(
+                    f"❌ Validation FAILED: No pages created | source_id={source_id}"
+                )
+                return {
+                    "success": False,
+                    "pages_count": pages_count,
+                    "chunks_count": chunks_count,
+                    "code_examples_count": code_examples_count,
+                    "error": "No pages were created during crawl"
+                }
+
+            # If pages exist but no chunks, that's also a problem
+            if chunks_count == 0:
+                safe_logfire_error(
+                    f"❌ Validation FAILED: Pages created but no chunks | "
+                    f"source_id={source_id} | pages={pages_count}"
+                )
+                return {
+                    "success": False,
+                    "pages_count": pages_count,
+                    "chunks_count": chunks_count,
+                    "code_examples_count": code_examples_count,
+                    "error": "Pages created but no chunks indexed"
+                }
+
+            # Success - we have pages and chunks
+            safe_logfire_info(
+                f"✅ Validation PASSED | source_id={source_id} | "
+                f"pages={pages_count} | chunks={chunks_count} | code_examples={code_examples_count}"
+            )
+
+            return {
+                "success": True,
+                "pages_count": pages_count,
+                "chunks_count": chunks_count,
+                "code_examples_count": code_examples_count,
+                "error": ""
+            }
+
+        except Exception as e:
+            safe_logfire_error(f"Validation query failed | source_id={source_id} | error={str(e)}")
+            return {
+                "success": False,
+                "pages_count": 0,
+                "chunks_count": 0,
+                "code_examples_count": 0,
+                "error": f"Validation query error: {str(e)}"
+            }
 
     def _categorize_error(self, error: Exception) -> str:
         """
