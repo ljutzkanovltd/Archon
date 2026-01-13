@@ -138,6 +138,64 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
     }
   };
 
+  // Stop the queue worker and all running items
+  const handleStopWorker = async () => {
+    if (!confirm("⚠️ Stop queue worker?\n\nThis will:\n- Pause the worker\n- Cancel all running crawls\n- Mark running items as cancelled\n\nAre you sure?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8181/api/crawl-queue/worker/stop", {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setWorkerStatus("paused");
+        alert(`✅ Queue worker stopped. ${data.items_cancelled || 0} running items cancelled.`);
+        await loadQueue(); // Refresh queue
+      } else {
+        throw new Error(data.error || "Failed to stop worker");
+      }
+    } catch (error) {
+      console.error("Failed to stop worker:", error);
+      alert("❌ Failed to stop worker. Please try again.");
+    }
+  };
+
+  // Clear completed and failed items from the queue
+  const handleClearCompleted = async () => {
+    const completedCount = (stats?.completed || 0) + (stats?.failed || 0);
+
+    if (completedCount === 0) {
+      alert("ℹ️ No completed or failed items to clear.");
+      return;
+    }
+
+    if (!confirm(`🗑️ Clear ${completedCount} completed/failed items from queue?\n\nThis cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8181/api/crawl-queue/clear-completed", {
+        method: "POST"
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`✅ Cleared ${data.removed_count || completedCount} items from queue.`);
+        await loadQueue(); // Refresh queue
+      } else {
+        throw new Error(data.error || "Failed to clear completed items");
+      }
+    } catch (error) {
+      console.error("Failed to clear completed items:", error);
+      alert("❌ Failed to clear items. Please try again.");
+    }
+  };
+
   // Stop a running queue item
   const handleStopItem = async (itemId: string) => {
     if (!confirm("⚠️ Stop this crawl?\n\nProgress will be lost and the item will be marked as cancelled.")) {
@@ -414,50 +472,85 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
             </span>
           </div>
 
-          {/* Pause/Resume buttons */}
-          <div className="flex gap-1">
+          {/* Worker Control Buttons */}
+          <div className="flex items-center gap-2 border-l border-gray-300 pl-4 dark:border-gray-600">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">CONTROLS:</span>
             {workerStatus === "running" ? (
               <button
                 onClick={handlePauseWorker}
-                className="rounded-lg bg-orange-500 p-2 text-white transition-colors hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700"
-                title="Pause Worker"
+                className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700"
+                title="Pause Worker - No new items will be processed"
               >
-                <HiPause className="h-5 w-5" />
+                <span className="flex items-center gap-1.5">
+                  <HiPause className="h-4 w-4" />
+                  Pause
+                </span>
               </button>
             ) : (
               <button
                 onClick={handleResumeWorker}
-                className="rounded-lg bg-green-500 p-2 text-white transition-colors hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
-                title="Resume Worker"
+                className="rounded-lg bg-green-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+                title="Resume Worker - Processing will continue"
               >
-                <HiPlay className="h-5 w-5" />
+                <span className="flex items-center gap-1.5">
+                  <HiPlay className="h-4 w-4" />
+                  Resume
+                </span>
               </button>
             )}
+
+            <button
+              onClick={handleStopWorker}
+              className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
+              title="Stop Worker - Pause worker and cancel all running items"
+            >
+              <span className="flex items-center gap-1.5">
+                <HiStop className="h-4 w-4" />
+                Stop
+              </span>
+            </button>
+
+            <button
+              onClick={handleClearCompleted}
+              disabled={(stats?.completed || 0) + (stats?.failed || 0) === 0}
+              className="rounded-lg bg-gray-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-600 dark:hover:bg-gray-700"
+              title="Clear Completed - Remove completed and failed items from queue"
+            >
+              <span className="flex items-center gap-1.5">
+                <HiXCircle className="h-4 w-4" />
+                Clear
+              </span>
+            </button>
           </div>
 
           {/* Auto-refresh toggle */}
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <div className="relative inline-block h-5 w-9">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="peer sr-only"
-              />
-              <div className="h-5 w-9 rounded-full bg-gray-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-brand-500 peer-checked:after:translate-x-4 dark:bg-gray-600"></div>
-            </div>
-            <span className={autoRefresh ? "text-brand-600 dark:text-brand-400" : ""}>
-              Auto
-            </span>
-          </label>
+          <div className="flex items-center gap-3 border-l border-gray-300 pl-4 dark:border-gray-600">
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <div className="relative inline-block h-5 w-9">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="h-5 w-9 rounded-full bg-gray-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-brand-500 peer-checked:after:translate-x-4 dark:bg-gray-600"></div>
+              </div>
+              <span className={`text-xs font-medium ${autoRefresh ? "text-brand-600 dark:text-brand-400" : ""}`}>
+                Auto-refresh: {autoRefresh ? "ON" : "OFF"}
+              </span>
+            </label>
 
-          <button
-            onClick={loadQueue}
-            className="rounded-lg p-2 hover:bg-brand-100 dark:hover:bg-brand-900/40"
-            title="Refresh"
-          >
-            <HiRefresh className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-          </button>
+            {/* Manual refresh button - only show when auto-refresh is disabled */}
+            {!autoRefresh && (
+              <button
+                onClick={loadQueue}
+                className="rounded-lg p-2 hover:bg-brand-100 dark:hover:bg-brand-900/40"
+                title="Refresh Queue"
+              >
+                <HiRefresh className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
