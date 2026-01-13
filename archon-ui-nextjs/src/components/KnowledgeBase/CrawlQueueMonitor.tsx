@@ -72,7 +72,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   useEffect(() => {
     if (!autoRefresh) return;
 
-    const interval = setInterval(loadQueue, 2000); // Refresh every 2 seconds
+    const interval = setInterval(loadQueue, 1000); // Refresh every 1 second for real-time updates
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
@@ -133,6 +133,36 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
     if (!dateString) return "—";
     const date = new Date(dateString);
     return date.toLocaleTimeString();
+  };
+
+  // Calculate progress percentage for running items
+  const calculateProgress = (item: QueueItem): number => {
+    if (!item.started_at) return 0;
+    if (item.completed_at) return 100;
+
+    // Estimate based on time elapsed (rough heuristic: assume 1 minute average)
+    const elapsed = Date.now() - new Date(item.started_at).getTime();
+    const estimatedTotal = 60000; // 1 minute in milliseconds
+    const progress = Math.min(Math.round((elapsed / estimatedTotal) * 100), 95);
+    return progress;
+  };
+
+  // Calculate ETA for running items
+  const calculateETA = (item: QueueItem): string => {
+    if (!item.started_at) return "Unknown";
+    if (item.completed_at) return "Done";
+
+    const progress = calculateProgress(item);
+    if (progress === 0) return "Starting...";
+    if (progress >= 95) return "< 1m";
+
+    const elapsed = Date.now() - new Date(item.started_at).getTime();
+    const remaining = (elapsed / progress) * (100 - progress);
+    const seconds = Math.round(remaining / 1000);
+
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.round(seconds / 60);
+    return `${minutes}m`;
   };
 
   return (
@@ -220,11 +250,11 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
             <div className="space-y-4 p-4">
               {/* Section 1: Actively Crawling (TOP - Max 5) */}
               {runningItems.length > 0 && (
-                <div>
-                  <div className="mb-2 flex items-center gap-2 px-2">
+                <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/10">
+                  <div className="mb-3 flex items-center gap-2">
                     <HiPlay className="h-5 w-5 animate-pulse text-blue-500" />
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                      Actively Crawling ({runningItems.length})
+                    <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                      🔄 Actively Crawling ({runningItems.length}/{stats.running})
                     </h4>
                   </div>
                   <div className="space-y-2">
@@ -236,6 +266,8 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getStatusIcon={getStatusIcon}
                         getStatusColor={getStatusColor}
                         formatDate={formatDate}
+                        calculateProgress={calculateProgress}
+                        calculateETA={calculateETA}
                       />
                     ))}
                   </div>
@@ -245,14 +277,14 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {/* Section 2: Pending (MIDDLE) */}
               {pendingItems.length > 0 && (
                 <div>
-                  <div className="mb-2 flex items-center gap-2 px-2">
+                  <div className="mb-3 flex items-center gap-2 px-2">
                     <HiClock className="h-5 w-5 text-gray-500" />
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                      Pending Queue ({pendingItems.length})
+                      ⏳ Pending Queue ({pendingItems.length}/{stats.pending})
                     </h4>
                   </div>
                   <div className="space-y-2">
-                    {pendingItems.map((item) => (
+                    {pendingItems.slice(0, 10).map((item) => (
                       <QueueItemCard
                         key={item.item_id}
                         item={item}
@@ -260,16 +292,23 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getStatusIcon={getStatusIcon}
                         getStatusColor={getStatusColor}
                         formatDate={formatDate}
+                        calculateProgress={calculateProgress}
+                        calculateETA={calculateETA}
                       />
                     ))}
+                    {pendingItems.length > 10 && (
+                      <div className="text-center text-xs text-gray-500 dark:text-gray-400">
+                        + {pendingItems.length - 10} more...
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Section 3: Completed (BOTTOM) */}
+              {/* Section 3: Recently Completed (BOTTOM) */}
               {completedItems.length > 0 && (
                 <div>
-                  <div className="mb-2 flex items-center gap-2 px-2">
+                  <div className="mb-3 flex items-center gap-2 px-2">
                     <HiCheckCircle className="h-5 w-5 text-green-500" />
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
                       Recently Completed ({completedItems.length})
@@ -284,6 +323,8 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         getStatusIcon={getStatusIcon}
                         getStatusColor={getStatusColor}
                         formatDate={formatDate}
+                        calculateProgress={calculateProgress}
+                        calculateETA={calculateETA}
                       />
                     ))}
                   </div>
@@ -311,6 +352,8 @@ interface QueueItemCardProps {
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
   formatDate: (dateString: string | null) => string;
+  calculateProgress: (item: QueueItem) => number;
+  calculateETA: (item: QueueItem) => string;
 }
 
 function QueueItemCard({
@@ -319,15 +362,32 @@ function QueueItemCard({
   getStatusIcon,
   getStatusColor,
   formatDate,
+  calculateProgress,
+  calculateETA,
 }: QueueItemCardProps) {
+  const isHighPriority = item.priority >= 200;
+  const progress = item.status === "running" ? calculateProgress(item) : 0;
+  const eta = item.status === "running" ? calculateETA(item) : "";
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+    <div className={`rounded-lg border bg-white p-3 dark:bg-gray-800 ${
+      isHighPriority
+        ? "border-l-4 border-l-amber-500 border-t border-r border-b border-gray-200 dark:border-gray-700"
+        : "border border-gray-200 dark:border-gray-700"
+    }`}>
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
           {getStatusIcon(item.status)}
-          <div>
-            <div className="font-medium text-gray-900 dark:text-white">
-              {source?.title || `Source ${item.source_id.slice(0, 8)}`}
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-gray-900 dark:text-white">
+                {source?.title || `Source ${item.source_id.slice(0, 8)}`}
+              </span>
+              {isHighPriority && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  🚀 High Priority
+                </span>
+              )}
             </div>
             <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
               {source?.url}
@@ -338,15 +398,33 @@ function QueueItemCard({
               >
                 {item.status.toUpperCase()}
               </span>
-              <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                Priority: {item.priority}
-              </span>
+              {!isHighPriority && (
+                <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                  Priority: {item.priority}
+                </span>
+              )}
               {item.retry_count > 0 && (
                 <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
                   Retry {item.retry_count}/{item.max_retries}
                 </span>
               )}
             </div>
+
+            {/* Progress bar for running items */}
+            {item.status === "running" && (
+              <div className="mt-3">
+                <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                  <div
+                    className="h-2 rounded-full bg-blue-500 transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="mt-1 flex justify-between text-xs text-gray-600 dark:text-gray-400">
+                  <span>{progress}% complete</span>
+                  <span>ETA: {eta}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="text-right text-xs text-gray-600 dark:text-gray-400">
