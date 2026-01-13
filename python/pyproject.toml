@@ -63,6 +63,7 @@ server = [
     "python-dotenv>=1.0.0",
     "dnspython>=2.4.0",
     "zxcvbn>=4.4.28",
+    "aiosmtplib>=3.0.0",  # Email service SMTP support
     # OPTIONAL: Docker SDK only needed for legacy Docker socket monitoring mode
     # Uncomment if ENABLE_DOCKER_SOCKET_MONITORING=true (not recommended - security risk)
     # "docker>=6.1.0",
