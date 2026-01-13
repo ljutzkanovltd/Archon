@@ -46,7 +46,7 @@ export function DataTableList({
   showPrimaryAction = true,
   resizeMode = "onChange",
 }: DataTableListProps) {
-  const { columns, rowButtons, keyExtractor, caption } = useDataTableContext();
+  const { columns, rowButtons, keyExtractor, caption, enableSelection = true } = useDataTableContext();
   const filteredData = useFilteredData();
 
   // Use multi-sort if enabled, otherwise fall back to legacy sorting
@@ -66,7 +66,7 @@ export function DataTableList({
   const { columnWidths, setWidth, getColumnWidth } = useColumnWidths();
 
   const hasActions = !!rowButtons;
-  const hasSelection = true; // Can be made configurable
+  const hasSelection = enableSelection; // Configurable via context
 
   // Determine which columns to render (use ordered if reorder enabled)
   const displayColumns = enableReorder ? orderedColumns : columns;
@@ -295,8 +295,12 @@ export function DataTableList({
                   <td className="px-6 py-4">
                     <Checkbox
                       checked={isSelected(itemKey)}
-                      onChange={() => toggleSelection(itemKey)}
+                      onChange={(e) => {
+                        const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
+                        toggleSelection(itemKey, shiftKey);
+                      }}
                       aria-label={`Select row ${itemKey}`}
+                      title="Click to select, Shift+Click to select range"
                     />
                   </td>
                 )}

@@ -2294,10 +2294,10 @@ async def retry_queue_item(item_id: str):
 
     except HTTPException:
         raise
+        raise
     except Exception as e:
         safe_logfire_error(f"Failed to retry queue item | item_id={item_id} | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)}")
-
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 @router.post("/crawl-queue/{item_id}/stop")
 async def stop_queue_item(item_id: str):

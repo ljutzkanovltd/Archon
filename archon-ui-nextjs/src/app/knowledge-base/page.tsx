@@ -17,65 +17,12 @@ import {
   DataTableColumn,
   DataTableButton,
   FilterConfig,
-  DataTableProvider,
-  useSelection,
 } from "@/components/common/DataTable";
-import { DataTableList } from "@/components/common/DataTable/DataTableList";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import EmptyState from "@/components/common/EmptyState";
 import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow } from "date-fns";
 
-/**
- * Wrapper component that uses DataTable's selection hooks to render bulk actions
- * Must be inside DataTableProvider to access selection context
- */
-interface KnowledgeTableWithBulkActionsProps {
-  sources: KnowledgeSource[];
-  onBulkRecrawl: (sources: KnowledgeSource[]) => Promise<void>;
-  onBulkDelete: (sources: KnowledgeSource[]) => Promise<void>;
-}
-
-function KnowledgeTableWithBulkActions({
-  sources,
-  onBulkRecrawl,
-  onBulkDelete,
-}: KnowledgeTableWithBulkActionsProps) {
-  const { selectedIds, clearSelection } = useSelection();
-
-  // Get selected sources from selection state
-  const selectedSourceIds = Array.from(selectedIds);
-  const selectedSources = sources.filter((s) =>
-    selectedSourceIds.includes(s.source_id)
-  );
-
-  const handleBulkRecrawl = async () => {
-    await onBulkRecrawl(selectedSources);
-    clearSelection();
-  };
-
-  const handleBulkDelete = async () => {
-    await onBulkDelete(selectedSources);
-    clearSelection();
-  };
-
-  return (
-    <>
-      {/* Bulk Actions Bar - shown when items selected */}
-      {selectedSources.length > 0 && (
-        <BulkActionsBar
-          selectedCount={selectedSources.length}
-          onRecrawl={handleBulkRecrawl}
-          onDelete={handleBulkDelete}
-          onClear={clearSelection}
-        />
-      )}
-
-      {/* Data Table */}
-      <DataTableList />
-    </>
-  );
-}
 
 export default function KnowledgeBasePage() {
   usePageTitle("Knowledge Base", "Archon");
@@ -1121,8 +1068,8 @@ export default function KnowledgeBasePage() {
             )}
           </div>
 
-          {/* Table Content with Bulk Operations - Using DataTable */}
-          <DataTableProvider
+          {/* Table Content with Bulk Operations - Using DataTable with Native Bulk Selection */}
+          <DataTable
             data={sources.filter((source) => {
               // Filter by search query when in "sources" mode
               if (searchMode === "sources" && searchQuery) {
@@ -1139,18 +1086,28 @@ export default function KnowledgeBasePage() {
                 ? `No sources match "${searchQuery}"`
                 : "No knowledge sources"
             }
-            initialPagination={{
-              page: 1,
-              per_page: 50,
-              total: sources.length,
-            }}
-          >
-            <KnowledgeTableWithBulkActions
-              sources={sources}
-              onBulkRecrawl={handleBulkRecrawl}
-              onBulkDelete={handleBulkDelete}
-            />
-          </DataTableProvider>
+            initialPage={1}
+            initialPerPage={50}
+            totalItems={sources.length}
+            showHeader={false}
+            showSearch={false}
+            showPagination={false}
+            enableSelection={true}
+            renderBulkActions={(selectedSources, clearSelection) => (
+              <BulkActionsBar
+                selectedCount={selectedSources.length}
+                onRecrawl={async () => {
+                  await handleBulkRecrawl(selectedSources);
+                  clearSelection();
+                }}
+                onDelete={async () => {
+                  await handleBulkDelete(selectedSources);
+                  clearSelection();
+                }}
+                onClear={clearSelection}
+              />
+            )}
+          />
         </div>
       )}
 

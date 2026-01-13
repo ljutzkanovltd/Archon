@@ -6,6 +6,8 @@ import {
   DataTableColumn,
   DataTableButton,
   useDataTableState,
+  useDataTableProps,
+  useSelection,
 } from "./context/DataTableContext";
 import { DataTableList } from "./DataTableList";
 import { DataTableGrid } from "./DataTableGrid";
@@ -32,6 +34,34 @@ interface DataTableContentProps<T = any> {
   enableMultiSort?: boolean;
   showPrimaryAction?: boolean;
   columnResizeMode?: "onChange" | "onEnd";
+}
+
+/**
+ * BulkActionsSlot - Renders bulk actions if renderBulkActions prop provided and items selected
+ * Must be inside DataTableProvider to access context
+ */
+interface BulkActionsSlotProps<T = any> {
+  data: T[];
+  keyExtractor?: (item: T) => string;
+}
+
+function BulkActionsSlot<T = any>({ data, keyExtractor }: BulkActionsSlotProps<T>) {
+  const { renderBulkActions } = useDataTableProps<T>();
+  const { selectedIds, clearSelection } = useSelection();
+
+  // Don't render if no renderBulkActions prop or no items selected
+  if (!renderBulkActions || selectedIds.size === 0) {
+    return null;
+  }
+
+  // Get selected items
+  const safeData = data || [];
+  const selectedItems = safeData.filter((item) => {
+    const key = keyExtractor?.(item) || String(item);
+    return selectedIds.has(key);
+  });
+
+  return <>{renderBulkActions(selectedItems, clearSelection)}</>;
 }
 
 /**
@@ -207,6 +237,14 @@ export interface DataTableProps<T = any> {
   showPrimaryAction?: boolean;
   /** Resize mode: 'onChange' for real-time, 'onEnd' for on release (default: 'onChange') */
   columnResizeMode?: "onChange" | "onEnd";
+
+  // Selection Features (NEW)
+  /** Enable row selection with checkboxes (default: true) */
+  enableSelection?: boolean;
+  /** Callback when selection changes - receives selected IDs and items */
+  onSelectionChange?: (selectedIds: Set<string>, selectedItems: T[]) => void;
+  /** Render prop for custom bulk actions UI - receives selected items and clearSelection function */
+  renderBulkActions?: (selectedItems: T[], clearSelection: () => void) => React.ReactNode;
 }
 
 export function DataTable<T = any>({
@@ -237,6 +275,10 @@ export function DataTable<T = any>({
   enableMultiSort = true,
   showPrimaryAction = true,
   columnResizeMode = "onChange",
+  // Selection features
+  enableSelection = true,
+  onSelectionChange,
+  renderBulkActions,
 }: DataTableProps<T>) {
   // Load persisted preferences if tableId is provided
   // CRITICAL: Hooks must be called unconditionally (React Rules of Hooks)
@@ -259,6 +301,9 @@ export function DataTable<T = any>({
         per_page: initialPerPage,
         total: totalItems || (data || []).length,
       }}
+      enableSelection={enableSelection}
+      onSelectionChange={onSelectionChange}
+      renderBulkActions={renderBulkActions}
     >
       {/* Wrapper that loads preferences on mount if tableId is provided */}
       <DataTableWithPreferences
@@ -372,6 +417,9 @@ function DataTableWithPreferences<T = any>({
 
       {/* Active Filters Display */}
       {showFilters && <DataTableFilters />}
+
+      {/* Bulk Actions Slot - Rendered if renderBulkActions provided and items selected */}
+      <BulkActionsSlot data={data} keyExtractor={keyExtractor} />
 
       {/* Data Display - Delegates to DataTableContent which uses currentViewMode from context */}
       <DataTableContent

@@ -75,6 +75,10 @@ export interface DataTablePropsContext<T = any> {
   kanbanGroupBy?: string; // Field to group by (e.g., "status")
   kanbanColumns?: { key: string; label: string; color?: string }[];
   onKanbanDrop?: (itemId: string, newValue: string) => void;
+  // Selection props (NEW)
+  enableSelection?: boolean; // Enable row selection (default: true)
+  onSelectionChange?: (selectedIds: Set<string>, selectedItems: T[]) => void; // Callback when selection changes
+  renderBulkActions?: (selectedItems: T[], clearSelection: () => void) => React.ReactNode; // Custom bulk actions UI
 }
 
 // Layer 2: State Context (Mutable)
@@ -108,11 +112,12 @@ export interface DataTableStateContext {
 
   // Selection
   selectedIds: Set<string>;
-  toggleSelection: (id: string) => void;
+  toggleSelection: (id: string, shiftKey?: boolean) => void; // Enhanced with shift-click support
   toggleSelectAll: () => void;
   clearSelection: () => void;
   isSelected: (id: string) => boolean;
   isAllSelected: boolean;
+  lastSelectedId: string | null; // Track last selected for range selection
 
   // Search
   searchQuery: string;
@@ -158,6 +163,10 @@ interface DataTableProviderProps<T = any> {
   kanbanGroupBy?: string;
   kanbanColumns?: { key: string; label: string; color?: string }[];
   onKanbanDrop?: (itemId: string, newValue: string) => void;
+  // Selection props (NEW)
+  enableSelection?: boolean;
+  onSelectionChange?: (selectedIds: Set<string>, selectedItems: T[]) => void;
+  renderBulkActions?: (selectedItems: T[], clearSelection: () => void) => React.ReactNode;
 }
 
 export function DataTableProvider<T = any>({
@@ -175,6 +184,10 @@ export function DataTableProvider<T = any>({
   kanbanGroupBy,
   kanbanColumns,
   onKanbanDrop,
+  // Selection props (NEW)
+  enableSelection = true,
+  onSelectionChange,
+  renderBulkActions,
 }: DataTableProviderProps<T>) {
   // ========== STATE MANAGEMENT ==========
 
@@ -236,20 +249,43 @@ export function DataTableProvider<T = any>({
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
 
   const toggleSelection = useCallback(
-    (id: string) => {
+    (id: string, shiftKey = false) => {
       setSelectedIds((prev) => {
         const newSet = new Set(prev);
+
+        // Shift-click range selection
+        if (shiftKey && lastSelectedId && data) {
+          const safeData = data || [];
+          const lastIndex = safeData.findIndex((item) => keyExtractor(item) === lastSelectedId);
+          const currentIndex = safeData.findIndex((item) => keyExtractor(item) === id);
+
+          if (lastIndex !== -1 && currentIndex !== -1) {
+            const start = Math.min(lastIndex, currentIndex);
+            const end = Math.max(lastIndex, currentIndex);
+
+            // Select all items in range
+            for (let i = start; i <= end; i++) {
+              newSet.add(keyExtractor(safeData[i]));
+            }
+            return newSet;
+          }
+        }
+
+        // Normal toggle
         if (newSet.has(id)) {
           newSet.delete(id);
         } else {
           newSet.add(id);
+          setLastSelectedId(id); // Track for next range selection
         }
+
         return newSet;
       });
     },
-    []
+    [lastSelectedId, data, keyExtractor]
   );
 
   const toggleSelectAll = useCallback(() => {
@@ -284,6 +320,17 @@ export function DataTableProvider<T = any>({
   // View Mode
   const [currentViewMode, setViewMode] = useState<ViewMode>(viewMode);
 
+  // ========== SELECTION CHANGE CALLBACK ==========
+
+  // Trigger onSelectionChange when selection changes
+  useEffect(() => {
+    if (onSelectionChange) {
+      const safeData = data || [];
+      const selectedItems = safeData.filter((item) => selectedIds.has(keyExtractor(item)));
+      onSelectionChange(selectedIds, selectedItems);
+    }
+  }, [selectedIds, data, keyExtractor, onSelectionChange]);
+
   // ========== CONTEXT VALUES ==========
 
   const propsValue: DataTablePropsContext<T> = useMemo(
@@ -300,8 +347,12 @@ export function DataTableProvider<T = any>({
       kanbanGroupBy,
       kanbanColumns,
       onKanbanDrop,
+      // Selection props
+      enableSelection,
+      onSelectionChange,
+      renderBulkActions,
     }),
-    [columns, data, tableButtons, rowButtons, emptyMessage, caption, viewMode, customRender, keyExtractor, kanbanGroupBy, kanbanColumns, onKanbanDrop]
+    [columns, data, tableButtons, rowButtons, emptyMessage, caption, viewMode, customRender, keyExtractor, kanbanGroupBy, kanbanColumns, onKanbanDrop, enableSelection, onSelectionChange, renderBulkActions]
   );
 
   const stateValue: DataTableStateContext = useMemo(
@@ -331,6 +382,7 @@ export function DataTableProvider<T = any>({
       clearSelection,
       isSelected,
       isAllSelected,
+      lastSelectedId,
       searchQuery,
       setSearchQuery,
       currentViewMode,
@@ -356,6 +408,7 @@ export function DataTableProvider<T = any>({
       clearSelection,
       isSelected,
       isAllSelected,
+      lastSelectedId,
       searchQuery,
       currentViewMode,
     ]
