@@ -209,7 +209,7 @@ function OperationCard({ operation, onStop, onPause, onResume }: OperationCardPr
       case "processing":
       case "storing":
       case "document_storage":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+        return "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400";
       case "paused":
         return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
       case "completed":

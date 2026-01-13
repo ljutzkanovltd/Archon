@@ -316,7 +316,7 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
                   {selectedCode.summary || "Code Example"}
                 </h3>
                 {selectedCode.language && (
-                  <div className="mb-2 inline-block rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                  <div className="mb-2 inline-block rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-800 dark:bg-brand-900/20 dark:text-brand-400">
                     {selectedCode.language}
                   </div>
                 )}

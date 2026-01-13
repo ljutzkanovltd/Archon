@@ -32,7 +32,7 @@ const getLevelColor = (level?: string) => {
 const getKnowledgeTypeColor = (type: string) => {
   switch (type) {
     case "technical":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
+      return "bg-brand-100 text-brand-800 dark:bg-brand-900/20 dark:text-brand-400";
     case "business":
       return "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400";
     default:
@@ -43,7 +43,7 @@ const getKnowledgeTypeColor = (type: string) => {
 const getTopEdgeColor = (type: string) => {
   switch (type) {
     case "technical":
-      return "border-t-4 border-t-blue-500 dark:border-t-blue-400";
+      return "border-t-4 border-t-brand-500 dark:border-t-brand-400";
     case "business":
       return "border-t-4 border-t-purple-500 dark:border-t-purple-400";
     default:
@@ -180,7 +180,7 @@ export function KnowledgeSourceCard({
                     e.stopPropagation();
                     onRecrawl(source);
                   }}
-                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800/40 focus:ring-2 focus:ring-brand-500"
+                  className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-800/40 focus:ring-2 focus:ring-brand-500"
                   aria-label={`Recrawl ${source.title} source`}
                 >
                   <RefreshCw className="w-3 h-3" aria-hidden="true" />

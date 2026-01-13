@@ -284,7 +284,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
       case "pending":
         return <HiClock className="h-5 w-5 text-gray-500" />;
       case "running":
-        return <HiPlay className="h-5 w-5 text-blue-500 animate-pulse" />;
+        return <HiPlay className="h-5 w-5 text-brand-500 animate-pulse" />;
       case "completed":
         return <HiCheckCircle className="h-5 w-5 text-green-500" />;
       case "failed":
@@ -299,7 +299,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
       case "pending":
         return "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300";
       case "running":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+        return "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400";
       case "completed":
         return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
       case "failed":
@@ -346,9 +346,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   };
 
   return (
-    <div className={`rounded-lg border-2 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20 ${className}`}>
+    <div className={`rounded-lg border-2 border-brand-200 bg-brand-50 dark:border-brand-800 dark:bg-brand-900/20 ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-blue-200 p-4 dark:border-blue-800">
+      <div className="flex items-center justify-between border-b border-brand-200 p-4 dark:border-brand-800">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
@@ -367,7 +367,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
             Crawl Queue
           </h3>
           {stats.running > 0 && (
-            <HiRefresh className="h-5 w-5 animate-spin text-blue-500" />
+            <HiRefresh className="h-5 w-5 animate-spin text-brand-500" />
           )}
         </div>
 
@@ -378,7 +378,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {stats.pending} Pending
             </span>
             {stats.running > 0 && (
-              <span className="rounded-full bg-blue-200 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              <span className="rounded-full bg-brand-200 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-900 dark:text-brand-300">
                 {stats.running} Running
               </span>
             )}
@@ -444,16 +444,16 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="peer sr-only"
               />
-              <div className="h-5 w-9 rounded-full bg-gray-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-blue-500 peer-checked:after:translate-x-4 dark:bg-gray-600"></div>
+              <div className="h-5 w-9 rounded-full bg-gray-300 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-brand-500 peer-checked:after:translate-x-4 dark:bg-gray-600"></div>
             </div>
-            <span className={autoRefresh ? "text-blue-600 dark:text-blue-400" : ""}>
+            <span className={autoRefresh ? "text-brand-600 dark:text-brand-400" : ""}>
               Auto
             </span>
           </label>
 
           <button
             onClick={loadQueue}
-            className="rounded-lg p-2 hover:bg-blue-100 dark:hover:bg-blue-900/40"
+            className="rounded-lg p-2 hover:bg-brand-100 dark:hover:bg-brand-900/40"
             title="Refresh"
           >
             <HiRefresh className="h-5 w-5 text-gray-600 dark:text-gray-400" />
@@ -471,10 +471,10 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
             <div className="space-y-4 p-4">
               {/* Section 1: Actively Crawling (TOP - Max 5) */}
               {runningItems.length > 0 && (
-                <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/10">
+                <div className="rounded-lg bg-brand-50 p-4 dark:bg-brand-900/10">
                   <div className="mb-3 flex items-center gap-2">
-                    <HiPlay className="h-5 w-5 animate-pulse text-blue-500" />
-                    <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                    <HiPlay className="h-5 w-5 animate-pulse text-brand-500" />
+                    <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100">
                       🔄 Actively Crawling ({runningItems.length}/{stats.running})
                     </h4>
                   </div>
@@ -687,7 +687,7 @@ function QueueItemCard({
               <div className="mt-3 space-y-2">
                 <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                   <div
-                    className="h-2 rounded-full bg-blue-500 transition-all duration-300"
+                    className="h-2 rounded-full bg-brand-500 transition-all duration-300"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -758,7 +758,7 @@ function QueueItemCard({
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => onRetry(item.item_id)}
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600"
               >
                 🔁 Retry Now
               </button>

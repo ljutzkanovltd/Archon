@@ -43,7 +43,7 @@ export default function KnowledgeTableView({
   const getKnowledgeTypeColor = (type: string) => {
     switch (type) {
       case "technical":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
+        return "bg-brand-100 text-brand-800 dark:bg-brand-900/20 dark:text-brand-400";
       case "business":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400";
       default:
@@ -243,7 +243,7 @@ export default function KnowledgeTableView({
 
                     {/* Examples Count */}
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center justify-center w-8 h-8 text-xs font-semibold text-blue-700 bg-blue-100 rounded-full dark:bg-blue-900/20 dark:text-blue-400">
+                      <span className="inline-flex items-center justify-center w-8 h-8 text-xs font-semibold text-brand-700 bg-brand-100 rounded-full dark:bg-brand-900/20 dark:text-brand-400">
                         {source.code_examples_count || 0}
                       </span>
                     </td>
