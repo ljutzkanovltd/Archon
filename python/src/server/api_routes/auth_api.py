@@ -96,6 +96,25 @@ class UserProfileResponse(BaseModel):
     updated_at: datetime
 
 
+class UpdateProfileRequest(BaseModel):
+    """Update profile request schema - all fields optional"""
+    full_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    phone_number: Optional[str] = Field(None, max_length=20)
+    bio: Optional[str] = None
+    company: Optional[str] = Field(None, max_length=255)
+    job_title: Optional[str] = Field(None, max_length=255)
+    location: Optional[str] = Field(None, max_length=255)
+    timezone: Optional[str] = Field(None, max_length=50)
+    language: Optional[str] = Field(None, max_length=10)
+    theme_preference: Optional[str] = Field(None, pattern="^(light|dark|system)$")
+    email_notifications: Optional[bool] = None
+    push_notifications: Optional[bool] = None
+    github_url: Optional[str] = Field(None, max_length=500)
+    linkedin_url: Optional[str] = Field(None, max_length=500)
+    twitter_url: Optional[str] = Field(None, max_length=500)
+    website_url: Optional[str] = Field(None, max_length=500)
+
+
 @router.post("/login")
 @limiter.limit("5/15minutes")
 async def login(
@@ -1091,6 +1110,237 @@ async def get_my_profile(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving your profile"
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.put("/users/me/profile", response_model=UserProfileResponse)
+async def update_my_profile(
+    update_data: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update current authenticated user's profile information.
+
+    Updates both user basic info (full_name) and profile details.
+    Only provided fields are updated (partial update).
+
+    **Requires Authentication:** JWT token in Authorization header
+
+    **Example:**
+    ```bash
+    curl -X PUT http://localhost:8181/api/auth/users/me/profile \\
+        -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
+        -H "Content-Type: application/json" \\
+        -d '{
+            "full_name": "John Doe Updated",
+            "bio": "Senior Software Engineer",
+            "company": "Acme Corp",
+            "timezone": "America/Los_Angeles",
+            "theme_preference": "dark"
+        }'
+    ```
+
+    **Request Body (all fields optional):**
+    ```json
+    {
+        "full_name": "string",
+        "phone_number": "string",
+        "bio": "string",
+        "company": "string",
+        "job_title": "string",
+        "location": "string",
+        "timezone": "string",
+        "language": "string",
+        "theme_preference": "light|dark|system",
+        "email_notifications": boolean,
+        "push_notifications": boolean,
+        "github_url": "string",
+        "linkedin_url": "string",
+        "twitter_url": "string",
+        "website_url": "string"
+    }
+    ```
+
+    **Responses:**
+    - 200: Profile updated successfully (returns updated profile)
+    - 400: Invalid input data
+    - 401: Not authenticated
+    - 500: Internal server error
+    """
+
+    conn = await get_direct_db_connection()
+
+    try:
+        user_id = current_user['id']
+
+        # ==================================================================
+        # Step 1: Update user table if full_name provided
+        # ==================================================================
+        if update_data.full_name is not None:
+            update_user_query = """
+                UPDATE archon_users
+                SET full_name = $1, updated_at = NOW()
+                WHERE id = $2
+            """
+            await conn.execute(update_user_query, update_data.full_name, user_id)
+            logger.info(f"Updated full_name for user_id={user_id}")
+
+        # ==================================================================
+        # Step 2: Build dynamic UPDATE query for profile
+        # ==================================================================
+        # Only update fields that were provided (exclude None values and full_name)
+        profile_updates = {}
+        for field, value in update_data.dict(exclude_unset=True, exclude={'full_name'}).items():
+            if value is not None:
+                profile_updates[field] = value
+
+        if profile_updates:
+            # Check if profile exists
+            check_profile_query = "SELECT id FROM archon_user_profiles WHERE user_id = $1"
+            profile_exists = await conn.fetchval(check_profile_query, user_id)
+
+            if not profile_exists:
+                # Create profile with provided values (and defaults)
+                logger.info(f"Creating new profile for user_id={user_id}")
+
+                # Build INSERT query dynamically
+                columns = ['user_id'] + list(profile_updates.keys())
+                placeholders = [f'${i+1}' for i in range(len(columns))]
+                values = [user_id] + list(profile_updates.values())
+
+                insert_query = f"""
+                    INSERT INTO archon_user_profiles ({', '.join(columns)})
+                    VALUES ({', '.join(placeholders)})
+                """
+                await conn.execute(insert_query, *values)
+            else:
+                # Update existing profile
+                logger.info(f"Updating profile for user_id={user_id}: {list(profile_updates.keys())}")
+
+                # Build UPDATE query dynamically
+                set_clauses = [f"{col} = ${i+1}" for i, col in enumerate(profile_updates.keys())]
+                set_clauses.append(f"updated_at = NOW()")
+                values = list(profile_updates.values()) + [user_id]
+
+                update_query = f"""
+                    UPDATE archon_user_profiles
+                    SET {', '.join(set_clauses)}
+                    WHERE user_id = ${len(values)}
+                """
+                await conn.execute(update_query, *values)
+
+        # ==================================================================
+        # Step 3: Fetch and return updated profile
+        # ==================================================================
+        fetch_query = """
+            SELECT
+                u.id as user_id,
+                u.email,
+                u.full_name,
+                u.avatar_url,
+                p.phone_number,
+                p.bio,
+                p.company,
+                p.job_title,
+                p.location,
+                p.timezone,
+                p.language,
+                p.theme_preference,
+                p.email_notifications,
+                p.push_notifications,
+                p.github_url,
+                p.linkedin_url,
+                p.twitter_url,
+                p.website_url,
+                p.created_at,
+                p.updated_at
+            FROM archon_users u
+            LEFT JOIN archon_user_profiles p ON u.id = p.user_id
+            WHERE u.id = $1
+        """
+
+        result = await conn.fetchrow(fetch_query, user_id)
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # If profile still doesn't exist (no updates were provided), create default
+        if result['timezone'] is None:
+            create_profile_query = """
+                INSERT INTO archon_user_profiles (user_id)
+                VALUES ($1)
+                RETURNING
+                    phone_number, bio, company, job_title, location,
+                    timezone, language, theme_preference,
+                    email_notifications, push_notifications,
+                    github_url, linkedin_url, twitter_url, website_url,
+                    created_at, updated_at
+            """
+            profile = await conn.fetchrow(create_profile_query, user_id)
+
+            return UserProfileResponse(
+                user_id=result['user_id'],
+                email=result['email'],
+                full_name=result['full_name'],
+                avatar_url=result['avatar_url'],
+                phone_number=profile['phone_number'],
+                bio=profile['bio'],
+                company=profile['company'],
+                job_title=profile['job_title'],
+                location=profile['location'],
+                timezone=profile['timezone'],
+                language=profile['language'],
+                theme_preference=profile['theme_preference'],
+                email_notifications=profile['email_notifications'],
+                push_notifications=profile['push_notifications'],
+                github_url=profile['github_url'],
+                linkedin_url=profile['linkedin_url'],
+                twitter_url=profile['twitter_url'],
+                website_url=profile['website_url'],
+                created_at=profile['created_at'],
+                updated_at=profile['updated_at']
+            )
+
+        return UserProfileResponse(
+            user_id=result['user_id'],
+            email=result['email'],
+            full_name=result['full_name'],
+            avatar_url=result['avatar_url'],
+            phone_number=result['phone_number'],
+            bio=result['bio'],
+            company=result['company'],
+            job_title=result['job_title'],
+            location=result['location'],
+            timezone=result['timezone'],
+            language=result['language'],
+            theme_preference=result['theme_preference'],
+            email_notifications=result['email_notifications'],
+            push_notifications=result['push_notifications'],
+            github_url=result['github_url'],
+            linkedin_url=result['linkedin_url'],
+            twitter_url=result['twitter_url'],
+            website_url=result['website_url'],
+            created_at=result['created_at'],
+            updated_at=result['updated_at']
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            f"Error updating profile for user_id={current_user['id']}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while updating your profile"
         )
 
     finally:
