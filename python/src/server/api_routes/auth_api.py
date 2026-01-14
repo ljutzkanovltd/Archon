@@ -115,6 +115,17 @@ class UpdateProfileRequest(BaseModel):
     website_url: Optional[str] = Field(None, max_length=500)
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change password request schema"""
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class ChangePasswordResponse(BaseModel):
+    """Change password response schema"""
+    message: str
+
+
 @router.post("/login")
 @limiter.limit("5/15minutes")
 async def login(
@@ -1341,6 +1352,158 @@ async def update_my_profile(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating your profile"
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.post("/users/me/change-password", response_model=ChangePasswordResponse)
+async def change_my_password(
+    request: Request,
+    password_data: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Change current authenticated user's password.
+
+    Verifies current password, validates new password strength,
+    and updates the password hash in the database.
+
+    **Requires Authentication:** JWT token in Authorization header
+
+    **Security Features:**
+    - Current password verification
+    - New password strength validation
+    - Password history tracking (password_changed_at timestamp)
+    - Audit logging
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8181/api/auth/users/me/change-password \\
+        -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
+        -H "Content-Type: application/json" \\
+        -d '{
+            "current_password": "OldPassword123!",
+            "new_password": "NewSecurePassword123!"
+        }'
+    ```
+
+    **Request Body:**
+    ```json
+    {
+        "current_password": "string",
+        "new_password": "string (min 8 chars)"
+    }
+    ```
+
+    **Responses:**
+    - 200: Password changed successfully
+    - 400: Invalid current password
+    - 400: New password validation failed
+    - 401: Not authenticated
+    - 500: Internal server error
+    """
+
+    conn = await get_direct_db_connection()
+
+    try:
+        user_id = current_user['id']
+
+        # ==================================================================
+        # Step 1: Fetch current password hash
+        # ==================================================================
+        query = """
+            SELECT hashed_password
+            FROM archon_users
+            WHERE id = $1
+        """
+
+        result = await conn.fetchrow(query, user_id)
+
+        if not result or not result['hashed_password']:
+            logger.error(f"User {user_id} has no password (OAuth user?)")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change password for OAuth accounts"
+            )
+
+        # ==================================================================
+        # Step 2: Verify current password
+        # ==================================================================
+        if not verify_password(password_data.current_password, result['hashed_password']):
+            logger.warning(
+                f"Failed password change attempt for user_id={user_id}: "
+                f"incorrect current password from IP {request.client.host}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+
+        # ==================================================================
+        # Step 3: Validate new password
+        # ==================================================================
+        try:
+            validate_password(password_data.new_password)
+        except PasswordValidationError as e:
+            logger.warning(
+                f"Password validation failed for user_id={user_id}: {str(e)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # ==================================================================
+        # Step 4: Hash new password and update database
+        # ==================================================================
+        new_password_hash = hash_password(password_data.new_password)
+
+        update_query = """
+            UPDATE archon_users
+            SET
+                hashed_password = $1,
+                password_changed_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, email
+        """
+
+        updated_user = await conn.fetchrow(update_query, new_password_hash, user_id)
+
+        if not updated_user:
+            logger.error(f"Failed to update password for user_id={user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to change password"
+            )
+
+        # ==================================================================
+        # Step 5: Log success and return response
+        # ==================================================================
+        logger.info(
+            f"Password changed successfully: "
+            f"user_id={user_id}, "
+            f"email={updated_user['email']}, "
+            f"ip={request.client.host}"
+        )
+
+        return {
+            "message": "Password changed successfully"
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            f"Error changing password for user_id={current_user['id']}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while changing your password"
         )
 
     finally:
