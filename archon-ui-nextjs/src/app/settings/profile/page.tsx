@@ -1,9 +1,10 @@
 "use client";
 
-import { HiUser, HiLockClosed } from "react-icons/hi";
+import { HiUser, HiLockClosed, HiMail } from "react-icons/hi";
 import TabView, { TabItem } from "@/components/common/TabView";
 import { ProfileOverviewForm } from "./components/ProfileOverviewForm";
 import { ChangePasswordForm } from "./components/ChangePasswordForm";
+import { ChangeEmailForm } from "./components/ChangeEmailForm";
 
 export default function ProfileSettingsPage() {
   const profileTabs: TabItem[] = [
@@ -13,6 +14,12 @@ export default function ProfileSettingsPage() {
       icon: HiUser,
       component: <ProfileOverviewForm />,
       default: true,
+    },
+    {
+      id: "email",
+      label: "Email",
+      icon: HiMail,
+      component: <ChangeEmailForm />,
     },
     {
       id: "security",
