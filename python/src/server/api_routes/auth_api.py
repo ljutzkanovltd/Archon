@@ -70,6 +70,32 @@ class ResetPasswordResponse(BaseModel):
     message: str
 
 
+class UserProfileResponse(BaseModel):
+    """User profile response schema"""
+    # User basic info
+    user_id: UUID
+    email: str
+    full_name: str
+    avatar_url: Optional[str] = None
+    # Profile fields
+    phone_number: Optional[str] = None
+    bio: Optional[str] = None
+    company: Optional[str] = None
+    job_title: Optional[str] = None
+    location: Optional[str] = None
+    timezone: str
+    language: str
+    theme_preference: str
+    email_notifications: bool
+    push_notifications: bool
+    github_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    twitter_url: Optional[str] = None
+    website_url: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 @router.post("/login")
 @limiter.limit("5/15minutes")
 async def login(
@@ -888,6 +914,183 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while resetting your password"
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.get("/users/me/profile", response_model=UserProfileResponse)
+async def get_my_profile(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get current authenticated user's profile information.
+
+    Returns user basic info (email, full_name, avatar) combined with
+    profile details from archon_user_profiles table.
+
+    **Requires Authentication:** JWT token in Authorization header
+
+    **Example:**
+    ```bash
+    curl -X GET http://localhost:8181/api/auth/users/me/profile \\
+        -H "Authorization: Bearer YOUR_JWT_TOKEN"
+    ```
+
+    **Response:**
+    ```json
+    {
+        "user_id": "uuid",
+        "email": "user@example.com",
+        "full_name": "John Doe",
+        "avatar_url": "https://...",
+        "phone_number": "+1234567890",
+        "bio": "Software engineer",
+        "company": "Acme Inc",
+        "job_title": "Senior Developer",
+        "location": "San Francisco, CA",
+        "timezone": "America/Los_Angeles",
+        "language": "en",
+        "theme_preference": "dark",
+        "email_notifications": true,
+        "push_notifications": false,
+        "github_url": "https://github.com/username",
+        "linkedin_url": "https://linkedin.com/in/username",
+        "twitter_url": "https://twitter.com/username",
+        "website_url": "https://example.com",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+    }
+    ```
+
+    **Responses:**
+    - 200: Profile retrieved successfully
+    - 401: Not authenticated
+    - 404: Profile not found
+    - 500: Internal server error
+    """
+
+    conn = await get_direct_db_connection()
+
+    try:
+        user_id = current_user['id']
+
+        # ==================================================================
+        # Query: Get user + profile data in single query (LEFT JOIN)
+        # ==================================================================
+        query = """
+            SELECT
+                u.id as user_id,
+                u.email,
+                u.full_name,
+                u.avatar_url,
+                p.phone_number,
+                p.bio,
+                p.company,
+                p.job_title,
+                p.location,
+                p.timezone,
+                p.language,
+                p.theme_preference,
+                p.email_notifications,
+                p.push_notifications,
+                p.github_url,
+                p.linkedin_url,
+                p.twitter_url,
+                p.website_url,
+                p.created_at,
+                p.updated_at
+            FROM archon_users u
+            LEFT JOIN archon_user_profiles p ON u.id = p.user_id
+            WHERE u.id = $1
+            LIMIT 1
+        """
+
+        result = await conn.fetchrow(query, user_id)
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # If profile doesn't exist yet, create default profile
+        if result['timezone'] is None:
+            logger.info(f"Creating default profile for user_id={user_id}")
+
+            create_profile_query = """
+                INSERT INTO archon_user_profiles (user_id)
+                VALUES ($1)
+                RETURNING
+                    phone_number, bio, company, job_title, location,
+                    timezone, language, theme_preference,
+                    email_notifications, push_notifications,
+                    github_url, linkedin_url, twitter_url, website_url,
+                    created_at, updated_at
+            """
+
+            profile = await conn.fetchrow(create_profile_query, user_id)
+
+            # Merge user + new profile data
+            return UserProfileResponse(
+                user_id=result['user_id'],
+                email=result['email'],
+                full_name=result['full_name'],
+                avatar_url=result['avatar_url'],
+                phone_number=profile['phone_number'],
+                bio=profile['bio'],
+                company=profile['company'],
+                job_title=profile['job_title'],
+                location=profile['location'],
+                timezone=profile['timezone'],
+                language=profile['language'],
+                theme_preference=profile['theme_preference'],
+                email_notifications=profile['email_notifications'],
+                push_notifications=profile['push_notifications'],
+                github_url=profile['github_url'],
+                linkedin_url=profile['linkedin_url'],
+                twitter_url=profile['twitter_url'],
+                website_url=profile['website_url'],
+                created_at=profile['created_at'],
+                updated_at=profile['updated_at']
+            )
+
+        # Return existing profile
+        return UserProfileResponse(
+            user_id=result['user_id'],
+            email=result['email'],
+            full_name=result['full_name'],
+            avatar_url=result['avatar_url'],
+            phone_number=result['phone_number'],
+            bio=result['bio'],
+            company=result['company'],
+            job_title=result['job_title'],
+            location=result['location'],
+            timezone=result['timezone'],
+            language=result['language'],
+            theme_preference=result['theme_preference'],
+            email_notifications=result['email_notifications'],
+            push_notifications=result['push_notifications'],
+            github_url=result['github_url'],
+            linkedin_url=result['linkedin_url'],
+            twitter_url=result['twitter_url'],
+            website_url=result['website_url'],
+            created_at=result['created_at'],
+            updated_at=result['updated_at']
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            f"Error retrieving profile for user_id={current_user['id']}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving your profile"
         )
 
     finally:
