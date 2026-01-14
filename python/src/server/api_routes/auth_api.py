@@ -13,6 +13,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ..auth.dependencies import get_current_user
 from ..auth.jwt_utils import create_access_token, hash_password, verify_password
@@ -27,6 +29,7 @@ from ..utils.password_validation import PasswordValidationError, validate_passwo
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 logger = get_logger(__name__)
+limiter = Limiter(key_func=get_remote_address)
 
 
 # Request/Response Models
@@ -68,6 +71,7 @@ class ResetPasswordResponse(BaseModel):
 
 
 @router.post("/login")
+@limiter.limit("5/15minutes")
 async def login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends()
@@ -287,6 +291,7 @@ async def refresh_token(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/register", response_model=RegisterResponse)
+@limiter.limit("5/15minutes")
 async def register(request: Request, data: RegisterRequest):
     """
     Register a new user account with automatic organization creation.
@@ -533,6 +538,7 @@ async def register(request: Request, data: RegisterRequest):
         await conn.close()
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit("5/15minutes")
 async def forgot_password(request: Request, data: ForgotPasswordRequest):
     """
     Initiate password reset process by sending reset email.
@@ -696,6 +702,7 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest):
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
+@limiter.limit("5/15minutes")
 async def reset_password(
     request: Request,
     reset_request: ResetPasswordRequest
