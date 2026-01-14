@@ -16,6 +16,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from ..auth.dependencies import get_current_user
 from ..auth.jwt_utils import create_access_token, hash_password, verify_password
+from ..config.logfire_config import get_logger
 from ..models.organization import OrganizationMemberRole
 from ..models.user import UserResponse
 from ..utils.db_utils import get_direct_db_connection
@@ -25,6 +26,7 @@ from ..utils.email_validation import EmailValidationError, validate_email
 from ..utils.password_validation import PasswordValidationError, validate_password
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+logger = get_logger(__name__)
 
 
 # Request/Response Models
