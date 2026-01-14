@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { HiMenu } from "react-icons/hi";
 import { useSidebar } from "@/contexts/sidebar-context";
+import { UserDropdown } from "@/components/UserDropdown";
 
 export function Header() {
   const [isDark, setIsDark] = useState(false);
@@ -51,6 +52,9 @@ export function Header() {
               </svg>
             )}
           </button>
+
+          {/* User dropdown */}
+          <UserDropdown />
         </div>
       </div>
     </header>
