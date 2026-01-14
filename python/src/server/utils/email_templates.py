@@ -418,6 +418,128 @@ def email_verification_email(
     return get_base_template(content, preheader)
 
 
+def email_change_verification_email(
+    user_name: str,
+    current_email: str,
+    new_email: str,
+    verification_link: str,
+    verification_code: Optional[str] = None,
+    expiry_minutes: int = 60,
+) -> str:
+    """
+    Generate email change verification email HTML.
+
+    Args:
+        user_name: User's full name
+        current_email: User's current email address
+        new_email: New email address to be verified
+        verification_link: Email verification URL
+        verification_code: Optional verification code
+        expiry_minutes: Link expiration time in minutes
+
+    Returns:
+        HTML email content
+    """
+    code_section = ""
+    if verification_code:
+        code_section = f"""
+        <p><strong>Or use this verification code:</strong></p>
+        <div class="code-box">{verification_code}</div>
+        <p style="font-size: 14px; color: #666; text-align: center;">
+            Enter this code to verify your new email
+        </p>
+        """
+
+    content = f"""
+    <h2>Verify Your New Email Address</h2>
+    <p>Hello {user_name},</p>
+    <p>We received a request to change your email address for your Archon account.</p>
+
+    <div class="info-box">
+        <p style="margin: 0;"><strong>Email Change Request</strong></p>
+        <p style="margin: 8px 0 0 0;">
+            <strong>Current Email:</strong> {current_email}<br>
+            <strong>New Email:</strong> {new_email}
+        </p>
+    </div>
+
+    <p>To complete the email change, please verify your new email address by clicking the button below:</p>
+
+    <a href="{verification_link}" class="button">Verify New Email</a>
+
+    <p style="font-size: 14px; color: #666;">Or copy this link into your browser:<br>
+    <span style="word-break: break-all;">{verification_link}</span></p>
+
+    {code_section}
+
+    <div class="warning-box">
+        <p style="margin: 0;"><strong>⏰ This link expires in {expiry_minutes} minutes</strong></p>
+        <p style="margin: 8px 0 0 0; font-size: 14px;">For security reasons, this verification link is only valid for {expiry_minutes} minutes.</p>
+    </div>
+
+    <div class="info-box">
+        <p style="margin: 0;"><strong>🔒 Security Notice</strong></p>
+        <p style="margin: 8px 0 0 0;">If you didn't request an email change, you can safely ignore this email. Your email address will remain unchanged.</p>
+        <p style="margin: 8px 0 0 0;">If you're concerned about unauthorized access, please contact our support team immediately.</p>
+    </div>
+
+    <p>Best regards,<br><strong>The Archon Team</strong></p>
+    """
+
+    preheader = f"Verify your new email address: {new_email}"
+    return get_base_template(content, preheader)
+
+
+def email_change_success_email(
+    user_name: str,
+    old_email: str,
+    new_email: str,
+) -> str:
+    """
+    Generate email change success confirmation email.
+
+    Args:
+        user_name: User's full name
+        old_email: Previous email address
+        new_email: New email address
+
+    Returns:
+        HTML email content
+    """
+    content = f"""
+    <h2>Email Address Changed Successfully ✓</h2>
+    <p>Hello {user_name},</p>
+    <p>Your Archon account email address has been successfully changed.</p>
+
+    <div class="info-box">
+        <p style="margin: 0;"><strong>✅ Email Change Confirmed</strong></p>
+        <p style="margin: 8px 0 0 0;">
+            <strong>Previous Email:</strong> {old_email}<br>
+            <strong>New Email:</strong> {new_email}<br>
+            <strong>Changed:</strong> Just now
+        </p>
+    </div>
+
+    <p><strong>What happens next?</strong></p>
+    <ul>
+        <li>All future emails will be sent to <strong>{new_email}</strong></li>
+        <li>Use <strong>{new_email}</strong> to sign in to your account</li>
+        <li>Your previous email address is no longer associated with this account</li>
+    </ul>
+
+    <div class="warning-box">
+        <p style="margin: 0;"><strong>⚠️ Didn't make this change?</strong></p>
+        <p style="margin: 8px 0 0 0;">If you didn't change your email address, someone else may have accessed your account. Please contact our support team immediately.</p>
+        <a href="mailto:support@archon.dev" class="button">Contact Support</a>
+    </div>
+
+    <p>Best regards,<br><strong>The Archon Team</strong></p>
+    """
+
+    preheader = "Your Archon email address has been changed successfully"
+    return get_base_template(content, preheader)
+
+
 def test_email(recipient_name: str = "User") -> str:
     """
     Generate test email for service verification.

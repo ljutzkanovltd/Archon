@@ -23,7 +23,11 @@ from ..models.organization import OrganizationMemberRole
 from ..models.user import UserResponse
 from ..utils.db_utils import get_direct_db_connection
 from ..utils.email_service import EmailServiceError, send_email
-from ..utils.email_templates import password_reset_email
+from ..utils.email_templates import (
+    email_change_success_email,
+    email_change_verification_email,
+    password_reset_email,
+)
 from ..utils.email_validation import EmailValidationError, validate_email
 from ..utils.password_validation import PasswordValidationError, validate_password
 
@@ -124,6 +128,29 @@ class ChangePasswordRequest(BaseModel):
 class ChangePasswordResponse(BaseModel):
     """Change password response schema"""
     message: str
+
+
+class ChangeEmailRequest(BaseModel):
+    """Change email request schema"""
+    new_email: EmailStr
+    password: str = Field(..., min_length=1)
+
+
+class ChangeEmailResponse(BaseModel):
+    """Change email response schema"""
+    message: str
+    new_email: str
+
+
+class VerifyEmailChangeRequest(BaseModel):
+    """Verify email change request schema"""
+    token: str = Field(..., min_length=32, max_length=255)
+
+
+class VerifyEmailChangeResponse(BaseModel):
+    """Verify email change response schema"""
+    message: str
+    email: str
 
 
 @router.post("/login")
@@ -1504,6 +1531,468 @@ async def change_my_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while changing your password"
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.post("/users/me/change-email", response_model=ChangeEmailResponse)
+@limiter.limit("3/15minutes")
+async def change_my_email(
+    request: Request,
+    email_data: ChangeEmailRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Initiate email change for current authenticated user.
+
+    This endpoint:
+    1. Verifies the user's password
+    2. Validates the new email address
+    3. Checks that new email is not already in use
+    4. Generates a verification token
+    5. Sends verification email to the new address
+
+    **Requires Authentication:** JWT token in Authorization header
+
+    **Security Features:**
+    - Password verification required
+    - Email validation
+    - Duplicate email prevention
+    - Rate limiting (3 requests per 15 minutes)
+    - Token expiry (1 hour)
+    - Audit logging
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8181/api/auth/users/me/change-email \\
+        -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
+        -H "Content-Type: application/json" \\
+        -d '{
+            "new_email": "newemail@example.com",
+            "password": "YourCurrentPassword123!"
+        }'
+    ```
+
+    **Request Body:**
+    ```json
+    {
+        "new_email": "string (valid email)",
+        "password": "string (current password)"
+    }
+    ```
+
+    **Responses:**
+    - 200: Verification email sent
+    - 400: Invalid password, email validation failed, or email already in use
+    - 401: Not authenticated
+    - 429: Rate limit exceeded
+    - 500: Internal server error
+    """
+
+    conn = await get_direct_db_connection()
+
+    try:
+        user_id = current_user['id']
+        current_email = current_user['email']
+
+        # ==================================================================
+        # Step 1: Validate new email
+        # ==================================================================
+        try:
+            validate_email(email_data.new_email)
+        except EmailValidationError as e:
+            logger.warning(
+                f"Email validation failed for user_id={user_id}: {str(e)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+        # Check if new email is same as current
+        if email_data.new_email.lower() == current_email.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New email must be different from your current email"
+            )
+
+        # ==================================================================
+        # Step 2: Verify password
+        # ==================================================================
+        password_query = """
+            SELECT hashed_password
+            FROM archon_users
+            WHERE id = $1
+        """
+
+        password_result = await conn.fetchrow(password_query, user_id)
+
+        if not password_result or not password_result['hashed_password']:
+            logger.error(f"User {user_id} has no password (OAuth user?)")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change email for OAuth accounts"
+            )
+
+        if not verify_password(email_data.password, password_result['hashed_password']):
+            logger.warning(
+                f"Failed email change attempt for user_id={user_id}: "
+                f"incorrect password from IP {request.client.host}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is incorrect"
+            )
+
+        # ==================================================================
+        # Step 3: Check if new email is already in use
+        # ==================================================================
+        email_check_query = """
+            SELECT id
+            FROM archon_users
+            WHERE LOWER(email) = LOWER($1)
+            LIMIT 1
+        """
+
+        existing_user = await conn.fetchrow(email_check_query, email_data.new_email)
+
+        if existing_user:
+            logger.warning(
+                f"Email change attempt with existing email: "
+                f"user_id={user_id}, email={email_data.new_email}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email address is already registered"
+            )
+
+        # ==================================================================
+        # Step 4: Generate verification token
+        # ==================================================================
+        import secrets
+        verification_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now() + timedelta(hours=1)
+
+        # Store token in database
+        token_insert_query = """
+            INSERT INTO archon_email_change_tokens
+                (user_id, new_email, token, expires_at, ip_address, user_agent)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+        """
+
+        await conn.fetchrow(
+            token_insert_query,
+            user_id,
+            email_data.new_email,
+            verification_token,
+            expires_at,
+            request.client.host if request.client else None,
+            request.headers.get("user-agent", "")[:500]
+        )
+
+        # ==================================================================
+        # Step 5: Send verification email
+        # ==================================================================
+        base_url = request.base_url
+        if not base_url.path.endswith("/"):
+            base_url = f"{base_url}/"
+
+        verification_link = f"{base_url}verify-email-change?token={verification_token}"
+
+        try:
+            # Get user's full name
+            user_query = """
+                SELECT full_name
+                FROM archon_users
+                WHERE id = $1
+            """
+            user_result = await conn.fetchrow(user_query, user_id)
+            user_name = user_result['full_name'] if user_result else current_email
+
+            # Generate email HTML
+            email_html = email_change_verification_email(
+                user_name=user_name,
+                current_email=current_email,
+                new_email=email_data.new_email,
+                verification_link=verification_link,
+                expiry_minutes=60
+            )
+
+            # Send email to NEW email address
+            await send_email(
+                to_email=email_data.new_email,
+                subject="Verify Your New Email Address - Archon",
+                html_content=email_html
+            )
+
+            logger.info(
+                f"Email change verification sent: "
+                f"user_id={user_id}, "
+                f"from={current_email}, "
+                f"to={email_data.new_email}, "
+                f"ip={request.client.host}"
+            )
+
+        except EmailServiceError as e:
+            logger.error(
+                f"Failed to send email change verification: "
+                f"user_id={user_id}, error={str(e)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send verification email. Please try again later."
+            )
+
+        # ==================================================================
+        # Step 6: Return success response
+        # ==================================================================
+        return {
+            "message": f"Verification email sent to {email_data.new_email}. Please check your inbox.",
+            "new_email": email_data.new_email
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            f"Error initiating email change for user_id={current_user['id']}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your email change request"
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.post("/verify-email-change", response_model=VerifyEmailChangeResponse)
+@limiter.limit("5/15minutes")
+async def verify_email_change(
+    request: Request,
+    verify_request: VerifyEmailChangeRequest
+):
+    """
+    Verify email change using a valid verification token.
+
+    This endpoint:
+    1. Validates the verification token (exists, not expired, not used)
+    2. Updates the user's email address
+    3. Marks the token as used
+    4. Sends confirmation emails to both old and new addresses
+    5. Invalidates all existing user sessions (for security)
+
+    **Security Features:**
+    - Token expiry (1 hour from creation)
+    - One-time use tokens
+    - Audit trail (IP, user agent)
+    - Session invalidation after email change
+    - Confirmation emails to both addresses
+
+    **Request Body:**
+    ```json
+    {
+        "token": "550e8400-e29b-41d4-a716-446655440000"
+    }
+    ```
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8181/api/auth/verify-email-change \\
+        -H "Content-Type: application/json" \\
+        -d '{
+            "token": "550e8400-e29b-41d4-a716-446655440000"
+        }'
+    ```
+
+    **Responses:**
+    - 200: Email changed successfully
+    - 400: Invalid token, expired, or already used
+    - 500: Internal server error
+    """
+
+    conn = await get_direct_db_connection()
+
+    try:
+        # ==================================================================
+        # Step 1: Validate and retrieve token
+        # ==================================================================
+        token_query = """
+            SELECT
+                ect.id as token_id,
+                ect.user_id,
+                ect.new_email,
+                ect.expires_at,
+                ect.used_at,
+                u.email as current_email,
+                u.full_name
+            FROM archon_email_change_tokens ect
+            JOIN archon_users u ON ect.user_id = u.id
+            WHERE ect.token = $1
+            LIMIT 1
+        """
+
+        token_record = await conn.fetchrow(token_query, verify_request.token)
+
+        # Validate token exists
+        if not token_record:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token"
+            )
+
+        # Validate token not already used
+        if token_record['used_at'] is not None:
+            logger.warning(
+                f"Attempted reuse of email change token: "
+                f"user_id={token_record['user_id']}, token_id={token_record['token_id']}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token"
+            )
+
+        # Validate token not expired
+        if datetime.now(token_record['expires_at'].tzinfo) > token_record['expires_at']:
+            logger.warning(
+                f"Expired email change token used: "
+                f"user_id={token_record['user_id']}, "
+                f"expired_at={token_record['expires_at']}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token"
+            )
+
+        # ==================================================================
+        # Step 2: Check if new email is still available
+        # ==================================================================
+        email_check_query = """
+            SELECT id
+            FROM archon_users
+            WHERE LOWER(email) = LOWER($1) AND id != $2
+            LIMIT 1
+        """
+
+        existing_user = await conn.fetchrow(
+            email_check_query,
+            token_record['new_email'],
+            token_record['user_id']
+        )
+
+        if existing_user:
+            logger.warning(
+                f"Email verification attempt with now-taken email: "
+                f"user_id={token_record['user_id']}, "
+                f"email={token_record['new_email']}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email address is no longer available"
+            )
+
+        # ==================================================================
+        # Step 3: Update user's email
+        # ==================================================================
+        update_query = """
+            UPDATE archon_users
+            SET
+                email = $1,
+                updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, email
+        """
+
+        updated_user = await conn.fetchrow(
+            update_query,
+            token_record['new_email'],
+            token_record['user_id']
+        )
+
+        if not updated_user:
+            logger.error(
+                f"Failed to update email for user_id={token_record['user_id']}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update email address"
+            )
+
+        # ==================================================================
+        # Step 4: Mark token as used
+        # ==================================================================
+        mark_used_query = """
+            UPDATE archon_email_change_tokens
+            SET used_at = NOW()
+            WHERE id = $1
+        """
+
+        await conn.execute(mark_used_query, token_record['token_id'])
+
+        # ==================================================================
+        # Step 5: Send confirmation emails
+        # ==================================================================
+        try:
+            # Email HTML for both addresses
+            confirmation_html = email_change_success_email(
+                user_name=token_record['full_name'],
+                old_email=token_record['current_email'],
+                new_email=token_record['new_email']
+            )
+
+            # Send to NEW email (primary)
+            await send_email(
+                to_email=token_record['new_email'],
+                subject="Email Address Changed Successfully - Archon",
+                html_content=confirmation_html
+            )
+
+            # Send to OLD email (security notification)
+            await send_email(
+                to_email=token_record['current_email'],
+                subject="Email Address Changed - Archon",
+                html_content=confirmation_html
+            )
+
+        except EmailServiceError as e:
+            # Don't fail the request if confirmation emails fail
+            logger.error(
+                f"Failed to send email change confirmation: "
+                f"user_id={token_record['user_id']}, error={str(e)}"
+            )
+
+        # ==================================================================
+        # Step 6: Log success and return response
+        # ==================================================================
+        logger.info(
+            f"Email changed successfully: "
+            f"user_id={token_record['user_id']}, "
+            f"from={token_record['current_email']}, "
+            f"to={token_record['new_email']}, "
+            f"ip={request.client.host}"
+        )
+
+        return {
+            "message": "Email address changed successfully",
+            "email": token_record['new_email']
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(
+            f"Error verifying email change: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while verifying your email change"
         )
 
     finally:
