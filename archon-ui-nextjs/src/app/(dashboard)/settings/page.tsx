@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase, HiInformationCircle } from "react-icons/hi";
+import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase, HiInformationCircle, HiRefresh } from "react-icons/hi";
 import { HiBugAnt } from "react-icons/hi2";
 import TabView, { TabItem } from "@/components/common/TabView";
 import { GeneralSettings } from "./components/GeneralSettings";
@@ -19,6 +19,7 @@ import LogFireSettingsTab from "./components/LogFireSettingsTab";
 import VersionUpdatesTab from "./components/VersionUpdatesTab";
 import MigrationsTab from "./components/MigrationsTab";
 import IDEGlobalRulesTab from "./components/IDEGlobalRulesTab";
+import DatabaseSyncTab from "./components/DatabaseSyncTab";
 
 export default function SettingsPage() {
   const { isLoading, fetchSettings } = useSettingsStore();
@@ -70,6 +71,12 @@ export default function SettingsPage() {
       label: "Migrations",
       icon: HiDatabase,
       component: <MigrationsTab />,
+    },
+    {
+      id: "database_sync",
+      label: "Database Sync",
+      icon: HiRefresh,
+      component: <DatabaseSyncTab />,
     },
     {
       id: "ide_rules",

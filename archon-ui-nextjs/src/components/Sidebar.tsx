@@ -17,6 +17,8 @@ import {
   HiServer,
   HiClipboardList,
   HiBeaker,
+  HiCode,
+  HiUsers,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ProjectTaskBadge } from "./Sidebar/ProjectTaskBadge";
@@ -335,6 +337,21 @@ export function DesktopSidebar() {
       label: "MCP Server",
     },
     {
+      href: "/mcp-inspector",
+      icon: HiCode,
+      label: "MCP Inspector",
+    },
+    {
+      href: "/test-foundation",
+      icon: HiBeaker,
+      label: "Test Foundation",
+    },
+    {
+      href: "/users",
+      icon: HiUsers,
+      label: "Users",
+    },
+    {
       href: "/settings",
       icon: HiCog,
       label: "Settings",
@@ -501,6 +518,21 @@ export function MobileSidebar() {
       href: "/mcp",
       icon: HiServer,
       label: "MCP Server",
+    },
+    {
+      href: "/mcp-inspector",
+      icon: HiCode,
+      label: "MCP Inspector",
+    },
+    {
+      href: "/test-foundation",
+      icon: HiBeaker,
+      label: "Test Foundation",
+    },
+    {
+      href: "/users",
+      icon: HiUsers,
+      label: "Users",
     },
     {
       href: "/settings",

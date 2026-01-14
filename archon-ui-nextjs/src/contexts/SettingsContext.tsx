@@ -73,7 +73,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   const [projectsEnabled, setProjectsEnabledState] = useState(true);
   const [styleGuideEnabled, setStyleGuideEnabledState] = useState(false);
   const [agentWorkOrdersEnabled, setAgentWorkOrdersEnabledState] =
-    useState(false);
+    useState(true);
   const [logfireEnabled, setLogfireEnabledState] = useState(false);
   const [disconnectScreenEnabled, setDisconnectScreenEnabledState] =
     useState(false);
@@ -154,11 +154,11 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         setStyleGuideEnabledState(false);
       }
 
-      // Agent Work Orders (default: false)
+      // Agent Work Orders (default: true)
       if (agentWorkOrdersResponse.value !== undefined) {
         setAgentWorkOrdersEnabledState(agentWorkOrdersResponse.value === "true");
       } else {
-        setAgentWorkOrdersEnabledState(false);
+        setAgentWorkOrdersEnabledState(true);
       }
 
       // Logfire (default: false)
@@ -205,7 +205,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       setDarkModeEnabledState(false);
       setProjectsEnabledState(true);
       setStyleGuideEnabledState(false);
-      setAgentWorkOrdersEnabledState(false);
+      setAgentWorkOrdersEnabledState(true);
       setLogfireEnabledState(false);
       setDisconnectScreenEnabledState(false);
       setTasksEnabledState(true);
