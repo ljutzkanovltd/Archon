@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { HiSave, HiX } from "react-icons/hi";
+import { AvatarUpload } from "./AvatarUpload";
 
 interface ProfileData {
   full_name: string;
@@ -20,6 +21,7 @@ interface ProfileData {
   linkedin_url: string;
   twitter_url: string;
   website_url: string;
+  avatar_url: string;
 }
 
 export function ProfileOverviewForm() {
@@ -44,6 +46,7 @@ export function ProfileOverviewForm() {
     linkedin_url: "",
     twitter_url: "",
     website_url: "",
+    avatar_url: "",
   });
 
   useEffect(() => {
@@ -82,6 +85,7 @@ export function ProfileOverviewForm() {
         linkedin_url: data.linkedin_url || "",
         twitter_url: data.twitter_url || "",
         website_url: data.website_url || "",
+        avatar_url: data.avatar_url || "",
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch profile");
@@ -152,6 +156,17 @@ export function ProfileOverviewForm() {
           </div>
         </div>
       )}
+
+      {/* Avatar Upload Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Profile Picture
+        </h3>
+        <AvatarUpload
+          currentAvatarUrl={profile.avatar_url}
+          onAvatarUpdate={(newUrl) => setProfile((prev) => ({ ...prev, avatar_url: newUrl }))}
+        />
+      </div>
 
       {/* Personal Information Section */}
       <div className="space-y-4">
