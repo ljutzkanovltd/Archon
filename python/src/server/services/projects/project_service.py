@@ -88,6 +88,7 @@ class ProjectService:
         try:
             if include_content:
                 # Current behavior - maintain backward compatibility
+                logger.debug(f"list_projects: include_content=True, include_archived={include_archived}")
                 query = self.supabase_client.table("archon_projects").select("*")
 
                 # Filter archived projects by default
@@ -95,11 +96,20 @@ class ProjectService:
                     query = query.eq("archived", False)
 
                 response = query.order("created_at", desc=True).execute()
+                logger.debug(f"list_projects: Fetched {len(response.data)} projects from database")
+
+                # Batch fetch task counts for all projects (efficient single query)
+                task_counts = self._get_task_counts_batch([p["id"] for p in response.data])
+                logger.debug(f"list_projects: Got task_counts: {len(task_counts)} projects")
+
+                # Batch fetch document counts for all projects (efficient single query)
+                document_counts = self._get_document_counts_batch([p["id"] for p in response.data])
 
                 projects = []
                 for project in response.data:
+                    project_id = project["id"]
                     projects.append({
-                        "id": project["id"],
+                        "id": project_id,
                         "title": project["title"],
                         "github_repo": project.get("github_repo"),
                         "created_at": project["created_at"],
@@ -112,6 +122,8 @@ class ProjectService:
                         "archived": project.get("archived", False),
                         "archived_at": project.get("archived_at"),
                         "archived_by": project.get("archived_by"),
+                        "task_count": task_counts.get(project_id, 0),
+                        "document_count": document_counts.get(project_id, 0),
                     })
             else:
                 # Lightweight response for MCP - fetch all data but only return metadata + stats
@@ -124,8 +136,15 @@ class ProjectService:
 
                 response = query.order("created_at", desc=True).execute()
 
+                # Batch fetch task counts for all projects (efficient single query)
+                task_counts = self._get_task_counts_batch([p["id"] for p in response.data])
+
+                # Batch fetch document counts for all projects (efficient single query)
+                document_counts = self._get_document_counts_batch([p["id"] for p in response.data])
+
                 projects = []
                 for project in response.data:
+                    project_id = project["id"]
                     # Calculate counts from fetched data (no additional queries)
                     docs_count = len(project.get("docs", []))
                     features_count = len(project.get("features", []))
@@ -133,7 +152,7 @@ class ProjectService:
 
                     # Return only metadata + stats, excluding large JSONB fields
                     projects.append({
-                        "id": project["id"],
+                        "id": project_id,
                         "title": project["title"],
                         "github_repo": project.get("github_repo"),
                         "created_at": project["created_at"],
@@ -143,6 +162,8 @@ class ProjectService:
                         "archived": project.get("archived", False),
                         "archived_at": project.get("archived_at"),
                         "archived_by": project.get("archived_by"),
+                        "task_count": task_counts.get(project_id, 0),
+                        "document_count": document_counts.get(project_id, 0),
                         "stats": {
                             "docs_count": docs_count,
                             "features_count": features_count,
@@ -155,6 +176,89 @@ class ProjectService:
         except Exception as e:
             logger.error(f"Error listing projects: {e}")
             return False, {"error": f"Error listing projects: {str(e)}"}
+
+    def _get_task_counts_batch(self, project_ids: list[str]) -> dict[str, int]:
+        """
+        Batch fetch task counts for multiple projects (efficient single query).
+        Only counts non-archived tasks.
+
+        Args:
+            project_ids: List of project UUIDs
+
+        Returns:
+            Dictionary mapping project_id -> task_count
+        """
+        if not project_ids:
+            logger.debug("_get_task_counts_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_task_counts_batch: Fetching task counts for {len(project_ids)} projects")
+
+            # Query all non-archived tasks for given projects
+            response = (
+                self.supabase_client.table("archon_tasks")
+                .select("project_id")
+                .in_("project_id", project_ids)
+                .or_("archived.is.null,archived.eq.false")
+                .execute()
+            )
+
+            logger.debug(f"_get_task_counts_batch: Got {len(response.data) if response.data else 0} tasks")
+
+            # Count tasks per project
+            counts = {}
+            for task in response.data:
+                project_id = task["project_id"]
+                counts[project_id] = counts.get(project_id, 0) + 1
+
+            logger.debug(f"_get_task_counts_batch: Counted tasks for {len(counts)} projects")
+            return counts
+
+        except Exception as e:
+            logger.error(f"Error fetching task counts: {e}")
+            return {}
+
+    def _get_document_counts_batch(self, project_ids: list[str]) -> dict[str, int]:
+        """
+        Batch fetch document counts for multiple projects (efficient single query).
+        Counts document versions in archon_document_versions table.
+
+        Args:
+            project_ids: List of project UUIDs
+
+        Returns:
+            Dictionary mapping project_id -> document_count
+        """
+        if not project_ids:
+            logger.debug("_get_document_counts_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_document_counts_batch: Fetching document counts for {len(project_ids)} projects")
+
+            # Query all document versions for given projects
+            response = (
+                self.supabase_client.table("archon_document_versions")
+                .select("project_id")
+                .in_("project_id", project_ids)
+                .execute()
+            )
+
+            logger.debug(f"_get_document_counts_batch: Got {len(response.data) if response.data else 0} documents")
+
+            # Count documents per project
+            counts = {}
+            for doc in response.data:
+                project_id = doc["project_id"]
+                counts[project_id] = counts.get(project_id, 0) + 1
+
+            logger.debug(f"_get_document_counts_batch: Counted documents for {len(counts)} projects")
+            return counts
+
+        except Exception as e:
+            logger.error(f"Error fetching document counts: {e}")
+            return {}
 
     def get_project(self, project_id: str) -> tuple[bool, dict[str, Any]]:
         """

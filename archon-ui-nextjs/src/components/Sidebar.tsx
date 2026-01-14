@@ -256,10 +256,10 @@ export function DesktopSidebar() {
     setSidebarWidth(DEFAULT_WIDTH);
   }, []);
 
-  // Fetch projects on mount
+  // Fetch projects on mount - load ALL projects including archived for accurate counts
   useEffect(() => {
     if (projects.length === 0) {
-      fetchProjects({ per_page: 50 });
+      fetchProjects({ per_page: 1000, include_archived: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -285,6 +285,9 @@ export function DesktopSidebar() {
     (workOrder) => workOrder.status === "pending" || workOrder.status === "running"
   ).length;
 
+  // Calculate active (non-archived) project count for badge
+  const activeProjects = (projects || []).filter((p) => !p.archived);
+
   // Build menu items with projects as children
   const allMenuItems: MenuItemProps[] = [
     {
@@ -296,19 +299,17 @@ export function DesktopSidebar() {
       href: "/projects",
       icon: HiFolder,
       label: "Projects",
-      badge: projects?.length > 0 ? String(projects.length) : undefined,
-      children: (projects || [])
+      badge: activeProjects.length > 0 ? String(activeProjects.length) : undefined,
+      children: activeProjects
         .filter((project) => project && project.id)
         .map((project) => ({
           href: `/projects/${project.id}`,
           icon: HiFolder,
           label: project.title,
-          badge: project.archived
-            ? "Archived"
-            : <ProjectTaskBadge
-                projectId={project.id}
-                isCollapsed={desktop.isCollapsed}
-              />,
+          badge: <ProjectTaskBadge
+              projectId={project.id}
+              isCollapsed={desktop.isCollapsed}
+            />,
         })),
     },
     {
@@ -422,10 +423,10 @@ export function MobileSidebar() {
   // Fetch work orders for badge count
   const { data: workOrders = [] } = useWorkOrders();
 
-  // Fetch projects on mount
+  // Fetch projects on mount - load ALL projects including archived for accurate counts
   useEffect(() => {
     if (projects.length === 0) {
-      fetchProjects({ per_page: 50 });
+      fetchProjects({ per_page: 1000, include_archived: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -451,6 +452,9 @@ export function MobileSidebar() {
     (workOrder) => workOrder.status === "pending" || workOrder.status === "running"
   ).length;
 
+  // Calculate active (non-archived) project count for badge
+  const activeProjects = (projects || []).filter((p) => !p.archived);
+
   // Build menu items with projects as children
   const allMenuItems: MenuItemProps[] = [
     {
@@ -462,20 +466,18 @@ export function MobileSidebar() {
       href: "/projects",
       icon: HiFolder,
       label: "Projects",
-      badge: projects?.length > 0 ? String(projects.length) : undefined,
-      children: (projects || [])
+      badge: activeProjects.length > 0 ? String(activeProjects.length) : undefined,
+      children: activeProjects
         .filter((project) => project && project.id)
         .map((project) => ({
           href: `/projects/${project.id}`,
           icon: HiFolder,
           label: project.title,
-          badge: project.archived
-            ? "Archived"
-            : <ProjectTaskBadge
-                projectId={project.id}
-                isCollapsed={false}
-                isMobile={true}
-              />,
+          badge: <ProjectTaskBadge
+              projectId={project.id}
+              isCollapsed={false}
+              isMobile={true}
+            />,
         })),
     },
     {

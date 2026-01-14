@@ -24,7 +24,7 @@ def _is_valid_provider(provider: str) -> bool:
     """Basic provider validation."""
     if not provider or not isinstance(provider, str):
         return False
-    return provider.lower() in {"openai", "azure-openai", "ollama", "google", "openrouter", "anthropic", "grok"}
+    return provider.lower() in {"openai", "azure-openai", "ollama", "google", "openrouter", "anthropic", "grok", "jina"}
 
 
 def _sanitize_for_log(text: str) -> str:
@@ -547,6 +547,16 @@ async def get_llm_client(
             )
             logger.info("Grok client created successfully")
 
+        elif provider_name == "jina":
+            if not api_key:
+                raise ValueError("Jina API key not found - set JINA_API_KEY environment variable")
+
+            client = openai.AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url or "https://api.jina.ai/v1",
+            )
+            logger.info("Jina client created successfully")
+
         else:
             raise ValueError(f"Unsupported LLM provider: {provider_name}")
 
@@ -719,6 +729,9 @@ async def get_embedding_model(provider: str | None = None) -> str:
         elif provider_name == "google":
             # Google's latest embedding model
             return "text-embedding-004"
+        elif provider_name == "jina":
+            # Jina has its own embedding models
+            return "jina-embeddings-v3"
         elif provider_name == "openrouter":
             # OpenRouter supports both OpenAI and Google embedding models
             # Model names MUST include provider prefix for OpenRouter API
@@ -853,6 +866,10 @@ def get_supported_embedding_models(provider: str) -> list[str]:
         "multimodalembedding@001"
     ]
 
+    jina_models = [
+        "jina-embeddings-v3"
+    ]
+
     from ..config.providers import get_multi_model_providers
 
     if provider_lower == "openai":
@@ -863,11 +880,13 @@ def get_supported_embedding_models(provider: str) -> list[str]:
         return ["<configured-deployment>"]
     elif provider_lower == "google":
         return google_models
+    elif provider_lower == "jina":
+        return jina_models
     elif provider_lower in get_multi_model_providers():
         # These providers support both OpenAI and Google models
         return openai_models + google_models
     elif provider_lower == "ollama":
-        return ["nomic-embed-text", "all-minilm", "mxbai-embed-large"]
+        return ["nomic-embed-text", "all-minilm", "mxbai-embed-large", "gte-qwen2-7b-instruct"]
     else:
         # For unknown providers, assume OpenAI compatibility
         return openai_models

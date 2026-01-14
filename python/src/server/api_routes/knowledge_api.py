@@ -2245,6 +2245,197 @@ async def list_queue_items(
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+# =====================================================
+# Crawl Queue Worker Control Endpoints
+# =====================================================
+# NOTE: These must be defined BEFORE {item_id} routes to avoid routing conflicts
+
+@router.get("/crawl-queue/worker/health")
+async def get_worker_health():
+    """
+    Get crawl queue worker health status.
+
+    Returns:
+    - is_running: Whether worker is running
+    - is_paused: Whether worker is paused
+    - active_crawls: Number of active crawl operations
+    - batch_size: Max sources processed concurrently
+    - poll_interval: Queue polling interval in seconds
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        status = queue_worker.get_status()
+
+        return {
+            "success": True,
+            "worker_status": status
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to get worker health | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/worker/pause")
+async def pause_worker():
+    """
+    Pause the crawl queue worker.
+
+    The worker will stop processing new items but will complete current operations.
+    The background loop continues running but skips queue polling.
+
+    Returns success confirmation.
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        await queue_worker.pause()
+
+        safe_logfire_info("Crawl queue worker paused via API")
+
+        return {
+            "success": True,
+            "message": "Queue worker paused successfully",
+            "worker_status": queue_worker.get_status()
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to pause worker | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/worker/resume")
+async def resume_worker():
+    """
+    Resume the crawl queue worker after pause.
+
+    The worker will start processing queue items again on the next poll cycle.
+
+    Returns success confirmation.
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+        await queue_worker.resume()
+
+        safe_logfire_info("Crawl queue worker resumed via API")
+
+        return {
+            "success": True,
+            "message": "Queue worker resumed successfully",
+            "worker_status": queue_worker.get_status()
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to resume worker | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/worker/stop")
+async def stop_worker():
+    """
+    Stop the crawl queue worker and cancel all running items.
+
+    This will:
+    1. Pause the worker to prevent new items from starting
+    2. Cancel all currently running crawl items
+    3. Mark running items as 'cancelled'
+
+    Returns success confirmation with count of cancelled items.
+    """
+    try:
+        from ..services.crawling.queue_worker import get_queue_worker
+
+        queue_worker = get_queue_worker()
+
+        # Pause the worker first
+        await queue_worker.pause()
+
+        # Get all running items and cancel them using Supabase client
+        supabase = get_supabase_client()
+
+        # Get running items
+        running_items_result = supabase.table("archon_crawl_queue")\
+            .select("item_id")\
+            .eq("status", "running")\
+            .execute()
+
+        running_item_ids = [item['item_id'] for item in running_items_result.data]
+        items_cancelled = len(running_item_ids)
+
+        # Mark all running items as cancelled
+        if running_item_ids:
+            for item_id in running_item_ids:
+                supabase.table("archon_crawl_queue").update({
+                    "status": "cancelled",
+                    "completed_at": datetime.now().isoformat(),
+                    "error_message": "Cancelled by worker stop command"
+                }).eq("item_id", item_id).execute()
+
+        safe_logfire_info(f"Crawl queue worker stopped | items_cancelled={items_cancelled}")
+
+        return {
+            "success": True,
+            "message": f"Queue worker stopped and {items_cancelled} running items cancelled",
+            "items_cancelled": items_cancelled,
+            "worker_status": queue_worker.get_status()
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to stop worker | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post("/crawl-queue/clear-completed")
+async def clear_completed_items():
+    """
+    Clear all completed and failed items from the crawl queue.
+
+    This removes items with status 'completed' or 'failed' from the queue,
+    helping to keep the queue clean and focused on active/pending work.
+
+    Returns count of items removed.
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Get count of items to be removed before deletion
+        completed_items = supabase.table("archon_crawl_queue")\
+            .select("item_id", count="exact")\
+            .in_("status", ["completed", "failed"])\
+            .execute()
+
+        removed_count = completed_items.count if completed_items.count else 0
+
+        # Delete completed and failed items
+        if removed_count > 0:
+            delete_result = supabase.table("archon_crawl_queue")\
+                .delete()\
+                .in_("status", ["completed", "failed"])\
+                .execute()
+
+        safe_logfire_info(f"Cleared completed items from queue | removed_count={removed_count}")
+
+        return {
+            "success": True,
+            "message": f"Cleared {removed_count} completed/failed items from queue",
+            "removed_count": removed_count
+        }
+
+    except Exception as e:
+        safe_logfire_error(f"Failed to clear completed items | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# =====================================================
+# Crawl Queue Item-Specific Endpoints
+# =====================================================
+# NOTE: These endpoints with {item_id} must be defined AFTER /worker/* routes
+
 @router.post("/crawl-queue/retry/{item_id}")
 async def retry_queue_item(item_id: str):
     """
@@ -2576,186 +2767,6 @@ async def get_batch_progress(batch_id: str):
         raise
     except Exception as e:
         safe_logfire_error(f"Failed to get batch progress | batch_id={batch_id} | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)})
-
-
-# =====================================================
-# Crawl Queue Worker Control Endpoints
-# =====================================================
-
-@router.get("/crawl-queue/worker/health")
-async def get_worker_health():
-    """
-    Get crawl queue worker health status.
-
-    Returns:
-    - is_running: Whether worker is running
-    - is_paused: Whether worker is paused
-    - active_crawls: Number of active crawl operations
-    - batch_size: Max sources processed concurrently
-    - poll_interval: Queue polling interval in seconds
-    """
-    try:
-        from ..services.crawling.queue_worker import get_queue_worker
-
-        queue_worker = get_queue_worker()
-        status = queue_worker.get_status()
-
-        return {
-            "success": True,
-            "worker_status": status
-        }
-
-    except Exception as e:
-        safe_logfire_error(f"Failed to get worker health | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)})
-
-
-@router.post("/crawl-queue/worker/pause")
-async def pause_worker():
-    """
-    Pause the crawl queue worker.
-
-    The worker will stop processing new items but will complete current operations.
-    The background loop continues running but skips queue polling.
-
-    Returns success confirmation.
-    """
-    try:
-        from ..services.crawling.queue_worker import get_queue_worker
-
-        queue_worker = get_queue_worker()
-        await queue_worker.pause()
-
-        safe_logfire_info("Crawl queue worker paused via API")
-
-        return {
-            "success": True,
-            "message": "Queue worker paused successfully",
-            "worker_status": queue_worker.get_status()
-        }
-
-    except Exception as e:
-        safe_logfire_error(f"Failed to pause worker | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)})
-
-
-@router.post("/crawl-queue/worker/resume")
-async def resume_worker():
-    """
-    Resume the crawl queue worker after pause.
-
-    The worker will start processing queue items again on the next poll cycle.
-
-    Returns success confirmation.
-    """
-    try:
-        from ..services.crawling.queue_worker import get_queue_worker
-
-        queue_worker = get_queue_worker()
-        await queue_worker.resume()
-
-        safe_logfire_info("Crawl queue worker resumed via API")
-
-        return {
-            "success": True,
-            "message": "Queue worker resumed successfully",
-            "worker_status": queue_worker.get_status()
-        }
-
-    except Exception as e:
-        safe_logfire_error(f"Failed to resume worker | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)})
-
-
-@router.post("/crawl-queue/worker/stop")
-async def stop_worker():
-    """
-    Stop the crawl queue worker and cancel all running items.
-
-    This will:
-    1. Pause the worker to prevent new items from starting
-    2. Cancel all currently running crawl items
-    3. Mark running items as 'cancelled'
-
-    Returns success confirmation with count of cancelled items.
-    """
-    try:
-        from ..services.crawling.queue_worker import get_queue_worker
-
-        queue_worker = get_queue_worker()
-
-        # Pause the worker first
-        await queue_worker.pause()
-
-        # Get all running items and cancel them
-        async with get_db_connection() as conn:
-            # Get running items
-            result = await conn.fetch("""
-                SELECT item_id
-                FROM crawl_queue
-                WHERE status = 'running'
-            """)
-
-            running_item_ids = [row['item_id'] for row in result]
-            items_cancelled = len(running_item_ids)
-
-            # Mark all running items as cancelled
-            if running_item_ids:
-                await conn.execute("""
-                    UPDATE crawl_queue
-                    SET status = 'cancelled',
-                        completed_at = NOW(),
-                        error_message = 'Cancelled by worker stop command'
-                    WHERE item_id = ANY($1::text[])
-                """, running_item_ids)
-
-        safe_logfire_info(f"Crawl queue worker stopped | items_cancelled={items_cancelled}")
-
-        return {
-            "success": True,
-            "message": f"Queue worker stopped and {items_cancelled} running items cancelled",
-            "items_cancelled": items_cancelled,
-            "worker_status": queue_worker.get_status()
-        }
-
-    except Exception as e:
-        safe_logfire_error(f"Failed to stop worker | error={str(e)}")
-        raise HTTPException(status_code=500, detail={"error": str(e)})
-
-
-@router.post("/crawl-queue/clear-completed")
-async def clear_completed_items():
-    """
-    Clear all completed and failed items from the crawl queue.
-
-    This removes items with status 'completed' or 'failed' from the queue,
-    helping to keep the queue clean and focused on active/pending work.
-
-    Returns count of items removed.
-    """
-    try:
-        async with get_db_connection() as conn:
-            # Delete completed and failed items
-            result = await conn.execute("""
-                DELETE FROM crawl_queue
-                WHERE status IN ('completed', 'failed')
-                RETURNING item_id
-            """)
-
-            # Extract count from result string (e.g., "DELETE 5" -> 5)
-            removed_count = int(result.split()[1]) if result else 0
-
-        safe_logfire_info(f"Cleared completed items from queue | removed_count={removed_count}")
-
-        return {
-            "success": True,
-            "message": f"Cleared {removed_count} completed/failed items from queue",
-            "removed_count": removed_count
-        }
-
-    except Exception as e:
-        safe_logfire_error(f"Failed to clear completed items | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 

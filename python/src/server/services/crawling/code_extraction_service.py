@@ -132,6 +132,41 @@ class CodeExtractionService:
         """Check if code summaries generation is enabled."""
         return await self._get_setting("ENABLE_CODE_SUMMARIES", True)
 
+    async def _get_source_extraction_config(self, source_id: str) -> dict[str, Any]:
+        """
+        Get source-specific code extraction configuration from database.
+
+        Args:
+            source_id: The source ID to fetch config for
+
+        Returns:
+            dict with extraction config, or empty dict if none set
+
+        Example config:
+            {
+                "min_code_length": 50,
+                "enable_small_snippets": true,
+                "skip_prose_filter": false,
+                "extraction_strategy": "aggressive"
+            }
+        """
+        try:
+            result = self.supabase_client.table("archon_sources").select("code_extraction_config").eq("source_id", source_id).execute()
+
+            if result.data and len(result.data) > 0:
+                config = result.data[0].get("code_extraction_config", {})
+                if config:
+                    safe_logfire_info(
+                        f"Loaded source extraction config | source_id={source_id} | "
+                        f"min_length={config.get('min_code_length', 'default')} | "
+                        f"strategy={config.get('extraction_strategy', 'default')}"
+                    )
+                return config or {}
+            return {}
+        except Exception as e:
+            safe_logfire_error(f"Error fetching source extraction config for {source_id}: {e}")
+            return {}
+
     async def extract_and_store_code_examples(
         self,
         crawl_results: list[dict[str, Any]],
@@ -272,7 +307,19 @@ class CodeExtractionService:
         Returns:
             List of code blocks with metadata
         """
-        # Progress will be reported during the loop below
+        # Load source-specific extraction configuration
+        source_config = await self._get_source_extraction_config(source_id)
+
+        # Override global settings with source-specific config
+        min_code_length = source_config.get('min_code_length') or await self._get_min_code_length()
+        skip_prose_filter = source_config.get('skip_prose_filter', False)
+        extraction_strategy = source_config.get('extraction_strategy', 'balanced')
+
+        safe_logfire_info(
+            f"Code extraction config | source_id={source_id} | "
+            f"min_length={min_code_length} | strategy={extraction_strategy} | "
+            f"skip_prose={skip_prose_filter}"
+        )
 
         all_code_blocks = []
         total_docs = len(crawl_results)
@@ -382,13 +429,12 @@ class CodeExtractionService:
                 # If still no code blocks, try markdown extraction as fallback
                 if len(code_blocks) == 0 and md and "```" in md:
                     safe_logfire_info(
-                        f"No code blocks from HTML, trying markdown extraction | url={source_url}"
+                        f"No code blocks from HTML, trying markdown extraction | url={source_url} | min_length={min_code_length}"
                     )
                     from ..storage.code_storage_service import extract_code_blocks
 
-                    # Use dynamic minimum for markdown extraction
-                    base_min_length = 250  # Default for markdown
-                    code_blocks = extract_code_blocks(md, min_length=base_min_length)
+                    # Use source-configured minimum length
+                    code_blocks = extract_code_blocks(md, min_length=min_code_length)
                     safe_logfire_info(
                         f"Found {len(code_blocks)} code blocks from markdown | url={source_url}"
                     )

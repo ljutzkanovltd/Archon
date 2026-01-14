@@ -20,9 +20,11 @@ class TestDocumentStorageMetrics:
         mock_supabase = Mock()
         doc_storage = DocumentStorageOperations(mock_supabase)
         
-        # Mock the storage service
+        # Mock the storage service (updated to match new signature)
         doc_storage.doc_storage_service.smart_chunk_text = Mock(
-            side_effect=lambda text, chunk_size: ["chunk1", "chunk2"] if text else []
+            side_effect=lambda text, chunk_size=512, overlap_percentage=0.20, use_tokens=True: (
+                ["chunk1", "chunk2"] if text else []
+            )
         )
         
         # Mock internal methods
@@ -165,12 +167,12 @@ class TestDocumentStorageMetrics:
         
         # Track which documents are chunked
         chunked_urls = []
-        
-        def mock_chunk(text, chunk_size):
+
+        def mock_chunk(text, chunk_size=512, overlap_percentage=0.20, use_tokens=True):
             if text:
                 return ["chunk"]
             return []
-        
+
         doc_storage.doc_storage_service.smart_chunk_text = Mock(side_effect=mock_chunk)
         doc_storage._create_source_records = AsyncMock()
         

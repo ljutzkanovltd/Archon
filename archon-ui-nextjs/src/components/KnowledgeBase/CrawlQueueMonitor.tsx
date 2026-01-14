@@ -424,14 +424,11 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Crawl Queue
           </h3>
-          {stats.running > 0 && (
-            <HiRefresh className="h-5 w-5 animate-spin text-brand-500" />
-          )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 md:gap-4">
           {/* Stats badges */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <span className="rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-300">
               {stats.pending} Pending
             </span>
@@ -468,58 +465,46 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                   ? "bg-orange-500"
                   : "bg-gray-500"
               }`} />
-              Worker: {workerStatus === "running" ? "Active" : workerStatus === "paused" ? "Paused" : "Idle"}
+              <span className="hidden sm:inline">Worker: </span>{workerStatus === "running" ? "Active" : workerStatus === "paused" ? "Paused" : "Idle"}
             </span>
           </div>
 
           {/* Worker Control Buttons */}
-          <div className="flex items-center gap-2 border-l border-gray-300 pl-4 dark:border-gray-600">
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">CONTROLS:</span>
+          <div className="flex flex-wrap items-center gap-2 border-l border-gray-300 pl-3 md:pl-4 dark:border-gray-600">
+            <span className="hidden md:inline text-xs font-medium text-gray-500 dark:text-gray-400">CONTROLS:</span>
             {workerStatus === "running" ? (
               <button
                 onClick={handlePauseWorker}
-                className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700"
+                className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600 touch-manipulation dark:bg-orange-600 dark:hover:bg-orange-700"
                 title="Pause Worker - No new items will be processed"
               >
-                <span className="flex items-center gap-1.5">
-                  <HiPause className="h-4 w-4" />
-                  Pause
-                </span>
+                Pause
               </button>
             ) : (
               <button
                 onClick={handleResumeWorker}
-                className="rounded-lg bg-green-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700"
+                className="rounded-lg bg-green-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-600 touch-manipulation dark:bg-green-600 dark:hover:bg-green-700"
                 title="Resume Worker - Processing will continue"
               >
-                <span className="flex items-center gap-1.5">
-                  <HiPlay className="h-4 w-4" />
-                  Resume
-                </span>
+                Resume
               </button>
             )}
 
             <button
               onClick={handleStopWorker}
-              className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
+              className="rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 touch-manipulation dark:bg-red-600 dark:hover:bg-red-700"
               title="Stop Worker - Pause worker and cancel all running items"
             >
-              <span className="flex items-center gap-1.5">
-                <HiStop className="h-4 w-4" />
-                Stop
-              </span>
+              Stop
             </button>
 
             <button
               onClick={handleClearCompleted}
               disabled={(stats?.completed || 0) + (stats?.failed || 0) === 0}
-              className="rounded-lg bg-gray-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-600 dark:hover:bg-gray-700"
+              className="rounded-lg bg-gray-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation dark:bg-gray-600 dark:hover:bg-gray-700"
               title="Clear Completed - Remove completed and failed items from queue"
             >
-              <span className="flex items-center gap-1.5">
-                <HiXCircle className="h-4 w-4" />
-                Clear
-              </span>
+              Clear
             </button>
           </div>
 
@@ -565,10 +550,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {/* Section 1: Actively Crawling (TOP - Max 5) */}
               {runningItems.length > 0 && (
                 <div className="rounded-lg bg-brand-50 p-4 dark:bg-brand-900/10">
-                  <div className="mb-3 flex items-center gap-2">
-                    <HiPlay className="h-5 w-5 animate-pulse text-brand-500" />
+                  <div className="mb-3">
                     <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100">
-                      🔄 Actively Crawling ({runningItems.length}/{stats.running})
+                      Actively Crawling ({runningItems.length}/{stats.running})
                     </h4>
                   </div>
                   <div className="space-y-2">
@@ -595,10 +579,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {/* Section 2: Pending (MIDDLE) */}
               {pendingItems.length > 0 && (
                 <div>
-                  <div className="mb-3 flex items-center gap-2 px-2">
-                    <HiClock className="h-5 w-5 text-gray-500" />
+                  <div className="mb-3 px-2">
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-                      ⏳ Pending Queue ({pendingItems.length}/{stats.pending})
+                      Pending Queue ({pendingItems.length}/{stats.pending})
                     </h4>
                   </div>
                   <div className="space-y-2">
@@ -630,10 +613,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {/* Section 3: Failed Items (ATTENTION REQUIRED) */}
               {failedItems.length > 0 && (
                 <div className="rounded-lg border-2 border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/10">
-                  <div className="mb-3 flex items-center gap-2">
-                    <HiXCircle className="h-5 w-5 text-red-500" />
+                  <div className="mb-3">
                     <h4 className="text-sm font-semibold text-red-900 dark:text-red-100">
-                      ❌ Failed Items - Attention Required ({failedItems.length}/{stats.failed})
+                      Failed Items - Attention Required ({failedItems.length}/{stats.failed})
                     </h4>
                   </div>
                   <div className="space-y-2">
@@ -660,8 +642,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {/* Section 4: Recently Completed (BOTTOM) */}
               {completedItems.length > 0 && (
                 <div>
-                  <div className="mb-3 flex items-center gap-2 px-2">
-                    <HiCheckCircle className="h-5 w-5 text-green-500" />
+                  <div className="mb-3 px-2">
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
                       Recently Completed ({completedItems.length})
                     </h4>
@@ -777,7 +758,7 @@ function QueueItemCard({
 
             {/* Progress bar for running items */}
             {item.status === "running" && (
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-3">
                 <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
                   <div
                     className="h-2 rounded-full bg-brand-500 transition-all duration-300"
@@ -798,6 +779,40 @@ function QueueItemCard({
                     <HiStop className="h-4 w-4" />
                     Stop
                   </button>
+                </div>
+
+                {/* Progress Information */}
+                <div className="flex flex-col py-2 text-xs text-gray-600 dark:text-gray-400">
+                  <span className="font-medium">
+                    Crawling: {source?.url || source?.title || `Source ${item.source_id.slice(0, 8)}`}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-500 mt-1">
+                    Check queue completion for full statistics
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Statistics Grid for completed items */}
+            {item.status === "completed" && item.error_details?.validation_result && (
+              <div className="mt-3 grid grid-cols-3 gap-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                <div className="text-center">
+                  <div className="text-xl font-bold text-brand-500">
+                    {item.error_details.validation_result.pages_count || 0}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Pages Crawled</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-500 dark:text-gray-400">
+                    {item.error_details.validation_result.chunks_count || 0}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Chunks Stored</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-500 dark:text-gray-400">
+                    {item.error_details.validation_result.code_examples_count || 0}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Code Examples</div>
                 </div>
               </div>
             )}

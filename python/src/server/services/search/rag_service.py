@@ -4,10 +4,11 @@ RAG Service - Thin Coordinator
 This service acts as a coordinator that delegates to specific strategy implementations.
 It combines multiple RAG strategies in a pipeline fashion:
 
-1. Base vector search
-2. + Hybrid search (if enabled) - combines vector + keyword
-3. + Reranking (if enabled) - reorders results using CrossEncoder
-4. + Agentic RAG (if enabled) - enhanced code example search
+1. Query rewriting (if enabled) - expands short queries with synonyms
+2. Base vector search
+3. + Hybrid search (if enabled) - combines vector + keyword
+4. + Reranking (if enabled) - reorders results using CrossEncoder
+5. + Agentic RAG (if enabled) - enhanced code example search
 
 Multiple strategies can be enabled simultaneously and work together.
 """
@@ -23,6 +24,7 @@ from .agentic_rag_strategy import AgenticRAGStrategy
 # Import all strategies
 from .base_search_strategy import BaseSearchStrategy
 from .hybrid_search_strategy import HybridSearchStrategy
+from .query_rewriting_service import QueryRewritingService
 from .reranking_strategy import RerankingStrategy
 
 logger = get_logger(__name__)
@@ -46,6 +48,9 @@ class RAGService:
         # Initialize optional strategies
         self.hybrid_strategy = HybridSearchStrategy(self.supabase_client, self.base_strategy)
         self.agentic_strategy = AgenticRAGStrategy(self.supabase_client, self.base_strategy)
+
+        # Initialize query rewriting service (lazy initialization - only used if enabled)
+        self.query_rewriter = None
 
         # Initialize reranking strategy based on settings
         self.reranking_strategy = None
@@ -248,9 +253,10 @@ class RAGService:
         Unified RAG query with all strategies.
 
         Pipeline:
-        1. Vector/Hybrid Search (based on settings)
-        2. Reranking (if enabled)
-        3. Page Grouping (if return_mode="pages")
+        1. Query Rewriting (if enabled) - expands short queries
+        2. Vector/Hybrid Search (based on settings)
+        3. Reranking (if enabled)
+        4. Page Grouping (if return_mode="pages")
 
         Args:
             query: The search query
@@ -266,6 +272,30 @@ class RAGService:
         ) as span:
             try:
                 logger.info(f"RAG query started: {query[:100]}{'...' if len(query) > 100 else ''}")
+
+                # Step 0: Query Rewriting (if enabled) - expand short queries for better recall
+                query_rewrite_result = None
+                if self.query_rewriter is None:
+                    # Lazy initialization of query rewriter
+                    self.query_rewriter = QueryRewritingService()
+
+                # Try to rewrite query (will check if enabled internally)
+                query_rewrite_result = await self.query_rewriter.rewrite_query(
+                    query, context="technical documentation"
+                )
+
+                # Use rewritten query if rewriting was applied
+                if query_rewrite_result.get("used_rewriting", False):
+                    original_query = query
+                    query = query_rewrite_result["rewritten_query"]
+                    logger.info(
+                        f"Query rewritten | original='{original_query}' | "
+                        f"expanded='{query}' | added_terms={len(query_rewrite_result.get('expansion_terms', []))}"
+                    )
+                    span.set_attribute("query_rewriting_applied", True)
+                    span.set_attribute("original_query", original_query)
+                else:
+                    span.set_attribute("query_rewriting_applied", False)
 
                 # Build filter metadata
                 filter_metadata = {"source": source} if source else None
@@ -355,6 +385,13 @@ class RAGService:
                     "reranking_applied": reranking_applied,
                     "return_mode": actual_return_mode,
                 }
+
+                # Add query rewriting metadata if it was applied
+                if query_rewrite_result and query_rewrite_result.get("used_rewriting", False):
+                    response_data["query_rewriting"] = {
+                        "original_query": query_rewrite_result["original_query"],
+                        "expansion_terms": query_rewrite_result["expansion_terms"],
+                    }
 
                 span.set_attribute("final_results_count", len(formatted_results))
                 span.set_attribute("reranking_applied", reranking_applied)

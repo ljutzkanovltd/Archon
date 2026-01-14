@@ -3,6 +3,12 @@ Contextual Embedding Service
 
 Handles generation of contextual embeddings for improved RAG retrieval.
 Includes proper rate limiting for OpenAI API calls.
+
+Key Features:
+- Dynamic document truncation based on token limits
+- Full document context (up to 7500 tokens / ~30k chars)
+- Token estimation for safe API calls
+- Future BM25 keyword boost support
 """
 
 import os
@@ -18,6 +24,42 @@ from ..llm_provider_service import (
     requires_max_completion_tokens,
 )
 from ..threading_service import get_threading_service
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count using rough heuristic.
+
+    Most tokenizers average 4 characters per token for English text.
+    This is intentionally conservative to avoid exceeding context limits.
+
+    Args:
+        text: Text to estimate tokens for
+
+    Returns:
+        Estimated token count
+    """
+    return len(text) // 4
+
+
+def truncate_to_token_limit(text: str, max_tokens: int = 5000) -> str:
+    """
+    Truncate text to approximate token limit.
+
+    Uses conservative estimation (4 chars = 1 token) to ensure we don't
+    exceed model context windows. Adds ellipsis if truncated.
+
+    Args:
+        text: Text to truncate
+        max_tokens: Maximum token count (default: 5000)
+
+    Returns:
+        Truncated text with ellipsis if needed
+    """
+    max_chars = max_tokens * 4
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "..."
 
 
 async def generate_contextual_embedding(
@@ -50,15 +92,33 @@ async def generate_contextual_embedding(
 
     threading_service = get_threading_service()
 
-    # Estimate tokens: document preview (5000 chars ≈ 1250 tokens) + chunk + prompt
-    estimated_tokens = 1250 + len(chunk.split()) + 100  # Rough estimate
+    # Truncate document to fit in LLM context window
+    # Reserve ~500 tokens for prompt structure + output, use remaining for document
+    # Most models support 8k context, we use 7500 tokens conservatively
+    max_doc_tokens = 7500
+    truncated_doc = truncate_to_token_limit(full_document, max_doc_tokens)
+
+    # Estimate total tokens for rate limiting
+    doc_tokens = estimate_tokens(truncated_doc)
+    chunk_tokens = estimate_tokens(chunk)
+    prompt_tokens = 100  # Rough estimate for prompt structure
+    estimated_tokens = doc_tokens + chunk_tokens + prompt_tokens
+
+    # Log truncation info for monitoring
+    search_logger.info(
+        f"Contextual embedding | full_doc_len={len(full_document)} chars "
+        f"({estimate_tokens(full_document)} tokens) | "
+        f"truncated_len={len(truncated_doc)} chars ({doc_tokens} tokens) | "
+        f"chunk_len={len(chunk)} chars ({chunk_tokens} tokens) | "
+        f"total_estimated={estimated_tokens} tokens"
+    )
 
     try:
         # Use rate limiting before making the API call
         async with threading_service.rate_limited_operation(estimated_tokens):
             async with get_llm_client(provider=provider) as client:
                 prompt = f"""<document>
-{full_document[:5000]}
+{truncated_doc}
 </document>
 Here is the chunk we want to situate within the whole document
 <chunk>
@@ -89,6 +149,15 @@ Please give a short succinct context to situate this chunk within the overall do
                 context, _, _ = extract_message_text(choice)
                 context = context.strip()
                 contextual_text = f"{context}\n---\n{chunk}"
+
+                # TODO: Future enhancement - add BM25 keyword boost
+                # Anthropic's approach combines contextual embeddings with BM25 scores
+                # for hybrid retrieval. This could be implemented in hybrid_search_strategy.py by:
+                # 1. Store BM25 scores alongside embeddings during indexing
+                # 2. At query time, combine scores: final_score = alpha * semantic_score + (1-alpha) * bm25_score
+                # 3. Where alpha = 0.7-0.8 for semantic weight (tune based on use case)
+                # 4. Use rank_bm25 library for efficient BM25 computation
+                # Expected impact: +5-10% improvement in keyword-heavy queries
 
                 return contextual_text, True
 
@@ -190,12 +259,17 @@ async def generate_contextual_embeddings_batch(
             # Build batch prompt for ALL chunks at once
             batch_prompt = "Process the following chunks and provide contextual information for each:\n\n"
 
+            # For batch processing, use moderate document context per chunk
+            # Trade-off: more docs in batch vs more context per doc
+            # Using 5000 tokens (~20k chars) per doc allows ~5-10 docs per batch
+            max_doc_tokens_batch = 5000
+
             for i, (doc, chunk) in enumerate(zip(full_documents, chunks, strict=False)):
-                # Use only 2000 chars of document context to save tokens
-                doc_preview = doc[:2000] if len(doc) > 2000 else doc
+                # Use dynamic truncation for document context
+                doc_preview = truncate_to_token_limit(doc, max_doc_tokens_batch)
                 batch_prompt += f"CHUNK {i + 1}:\n"
                 batch_prompt += f"<document_preview>\n{doc_preview}\n</document_preview>\n"
-                batch_prompt += f"<chunk>\n{chunk[:500]}\n</chunk>\n\n"  # Limit chunk preview
+                batch_prompt += f"<chunk>\n{chunk}\n</chunk>\n\n"  # Use full chunk
 
             batch_prompt += (
                 "For each chunk, provide a short succinct context to situate it within the overall document for improving search retrieval. "

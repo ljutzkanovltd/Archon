@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { HiPlus, HiEye, HiPencil, HiArchive } from "react-icons/hi";
+import { HiPlus, HiEye, HiPencil, HiArchive, HiTrash } from "react-icons/hi";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
 import { ProjectWithTasksCard } from "@/components/Projects/ProjectWithTasksCard";
 import { useProjectStore } from "@/store/useProjectStore";
@@ -31,14 +31,15 @@ export function ProjectsListView() {
     fetchProjects,
     archiveProject,
     unarchiveProject,
+    deleteProject,
     isLoading,
     error,
     pagination,
   } = useProjectStore();
 
-  // Fetch projects on mount
+  // Fetch all projects on mount (active + archived) - filtering handled by DataTable
   useEffect(() => {
-    fetchProjects({ per_page: 10 });
+    fetchProjects({ per_page: 1000, include_archived: true });
   }, [fetchProjects]);
 
   // ========== HANDLERS ==========
@@ -57,8 +58,26 @@ export function ProjectsListView() {
     } else {
       await archiveProject(project.id, "User");
     }
-    // Refresh list
-    await fetchProjects({ per_page: pagination.per_page });
+    // Refresh list - load all projects
+    await fetchProjects({
+      per_page: 1000,
+      include_archived: true,
+    });
+  };
+
+  const handleDelete = async (project: Project) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${project.title}"?\n\nThis action cannot be undone and will permanently delete the project and all associated data.`
+    );
+
+    if (confirmed) {
+      await deleteProject(project.id);
+      // Refresh list - load all projects
+      await fetchProjects({
+        per_page: 1000,
+        include_archived: true,
+      });
+    }
   };
 
   const handleCreate = () => {
@@ -161,16 +180,25 @@ export function ProjectsListView() {
       variant: project.archived ? "primary" : "ghost",
       ariaLabel: project.archived ? `Restore ${project.title}` : `Archive ${project.title}`,
     },
+    {
+      label: "Delete",
+      icon: HiTrash,
+      onClick: () => handleDelete(project),
+      variant: "danger",
+      ariaLabel: `Delete ${project.title}`,
+    },
   ];
 
+  // Filter configuration - use select for clearer UX
   const filterConfigs: FilterConfig[] = [
     {
       field: "archived",
       label: "Status",
       type: "select",
       options: [
-        { value: "false", label: "Active" },
-        { value: "true", label: "Archived" },
+        { value: "all", label: "All Projects" },
+        { value: "false", label: "Active Only" },
+        { value: "true", label: "Archived Only" },
       ],
     },
   ];

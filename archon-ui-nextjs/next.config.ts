@@ -10,6 +10,17 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: false,
   },
 
+  // Configure allowed image domains
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "ui-avatars.com",
+        pathname: "/api/**",
+      },
+    ],
+  },
+
   // Proxy API requests to backend server to avoid CORS issues
   // DUAL URL STRATEGY:
   // - Browser requests: Use NEXT_PUBLIC_API_URL (localhost from host machine)

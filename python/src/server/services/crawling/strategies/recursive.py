@@ -123,6 +123,8 @@ class RecursiveCrawlStrategy:
                 exclude_all_images=False,
                 remove_overlay_elements=True,
                 process_iframes=True,
+                exclude_internal_links=False,  # Enable internal link extraction for recursive crawling
+                exclude_external_links=False,  # Enable external link extraction for filtering
             )
         else:
             # Configuration for regular recursive crawling
@@ -134,6 +136,8 @@ class RecursiveCrawlStrategy:
                 page_timeout=int(settings.get("CRAWL_PAGE_TIMEOUT", "45000")),
                 delay_before_return_html=float(settings.get("CRAWL_DELAY_BEFORE_HTML", "0.5")),
                 scan_full_page=True,
+                exclude_internal_links=False,  # Enable internal link extraction for recursive crawling
+                exclude_external_links=False,  # Enable external link extraction for filtering
             )
 
         dispatcher = MemoryAdaptiveDispatcher(
@@ -299,7 +303,21 @@ class RecursiveCrawlStrategy:
 
                         # Find internal links for next depth
                         links = getattr(result, "links", {}) or {}
-                        for link in links.get("internal", []):
+                        internal_links = links.get("internal", [])
+                        external_links = links.get("external", [])
+
+                        # Log link extraction results for debugging
+                        logger.info(
+                            f"Link extraction for {original_url}: "
+                            f"internal={len(internal_links)}, external={len(external_links)}"
+                        )
+                        if len(internal_links) == 0:
+                            logger.warning(
+                                f"No internal links found on {original_url}. "
+                                f"Links object keys: {list(links.keys()) if links else 'None'}"
+                            )
+
+                        for link in internal_links:
                             next_url = normalize_url(link["href"])
                             # Skip binary files and already visited URLs
                             is_binary = self.url_handler.is_binary_file(next_url)

@@ -248,6 +248,23 @@ export function DataTableSearchWithFilters({
                     ))}
                   </Select>
                 )}
+                {config.type === "boolean" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      id={`filter-${config.field}`}
+                      type="checkbox"
+                      checked={localFilters[config.field] === true || localFilters[config.field] === "true"}
+                      onChange={(e) => handleFilterChange(config.field, e.target.checked, "boolean")}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:ring-offset-gray-800"
+                    />
+                    <label
+                      htmlFor={`filter-${config.field}`}
+                      className="text-sm text-gray-700 dark:text-gray-300"
+                    >
+                      {config.placeholder || config.label}
+                    </label>
+                  </div>
+                )}
               </div>
             ))}
           </div>
