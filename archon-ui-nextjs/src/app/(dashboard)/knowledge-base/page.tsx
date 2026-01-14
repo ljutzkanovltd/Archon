@@ -13,7 +13,6 @@ import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
 import { BulkActionsBar } from "@/components/KnowledgeBase/BulkActionsBar";
 import { KnowledgeBaseHeader } from "@/components/KnowledgeBase/KnowledgeBaseHeader";
-import { SearchModeToggle } from "@/components/KnowledgeBase/SearchModeToggle";
 import {
   DataTable,
   DataTableColumn,
@@ -22,6 +21,7 @@ import {
 } from "@/components/common/DataTable";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import EmptyState from "@/components/common/EmptyState";
+import { ContentSearchResults } from "@/features/knowledge-base/components/ContentSearchResults";
 import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow } from "date-fns";
 
@@ -45,8 +45,7 @@ export default function KnowledgeBasePage() {
   const [completionRate, setCompletionRate] = useState<number>(0);
   const [metricsLoading, setMetricsLoading] = useState(false);
 
-  // Content search state
-  const [searchMode, setSearchMode] = useState<"titles" | "content">("titles");
+  // Content search state (for semantic content search results)
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -312,14 +311,6 @@ export default function KnowledgeBasePage() {
     } finally {
       setSearchLoading(false);
     }
-  };
-
-  const handleSearchModeChange = (mode: "titles" | "content") => {
-    setSearchMode(mode);
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchError(null);
-    setSearchPage(1);
   };
 
   /**
@@ -643,14 +634,7 @@ export default function KnowledgeBasePage() {
       {/* Unified Progress Tracking - Queue-Based System */}
       <CrawlQueueMonitor sources={sources} className="mb-6" />
 
-      {/* Search Mode Toggle - Choose between Titles and Content search */}
-      <SearchModeToggle
-        mode={searchMode}
-        onChange={setSearchMode}
-        className="mb-6"
-      />
-
-      {/* Data Table with Bulk Operations Support */}
+      {/* Unified Data Table with Grid/Table View Toggle */}
       {!isLoading && sources.length === 0 ? (
         <div className="rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <EmptyState
@@ -667,264 +651,31 @@ export default function KnowledgeBasePage() {
             }}
           />
         </div>
-      ) : viewMode === "grid" ? (
-        /* Grid View: Using DataTable's built-in controls */
-        <div className="space-y-4 rounded-lg border-2 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          {/* Content Search Bar - Only shown in content mode */}
-          {searchMode === "content" && (
-            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter") {
-                      handleContentSearch(1);
-                    }
-                  }}
-                  placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-                />
-                <button
-                  onClick={() => handleContentSearch(1)}
-                  disabled={searchLoading || !searchQuery.trim()}
-                  className="rounded-lg bg-brand-600 px-6 py-2 text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
-                >
-                  {searchLoading ? "Searching..." : "Search"}
-                </button>
-              </div>
-
-              {/* Content Search Results */}
-              <div className="mt-4">
-                {searchError && (
-                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    <p className="font-semibold">Search Error</p>
-                    <p className="text-sm">{searchError}</p>
-                  </div>
-                )}
-
-                {searchResults.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-                      Found {searchTotal} results in {searchPages} pages
-                    </div>
-                    <div className="space-y-4">
-                      {searchResults.map((result, index) => (
-                        <div
-                          key={result.id || index}
-                          className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
-                        >
-                          <div className="mb-2 flex items-start justify-between">
-                            <a
-                              href={result.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
-                            >
-                              {result.url}
-                            </a>
-                            <div className="flex gap-2">
-                              <span className="rounded bg-brand-100 px-2 py-1 text-xs font-medium text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
-                                {result.match_type}
-                              </span>
-                              <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                {Math.round(result.similarity * 100)}% match
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
-                            {result.content}
-                          </p>
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            Chunk #{result.chunk_number}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {searchPages > 1 && (
-                      <div className="mt-4 flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleContentSearch(searchPage - 1)}
-                          disabled={searchPage === 1 || searchLoading}
-                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Previous
-                        </button>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          Page {searchPage} of {searchPages}
-                        </span>
-                        <button
-                          onClick={() => handleContentSearch(searchPage + 1)}
-                          disabled={searchPage === searchPages || searchLoading}
-                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
-                    <p className="text-gray-600 dark:text-gray-400">
-                      No results found for &quot;{searchQuery}&quot;
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Grid Content - Simple grid without DataTable wrapper */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {sources
-              .filter((source) => {
-                if (searchMode === "titles" && searchQuery) {
-                  return source.title.toLowerCase().includes(searchQuery.toLowerCase());
-                }
-                return true;
-              })
-              .map((source) => (
-                <KnowledgeSourceCard
-                  key={source.source_id}
-                  source={source}
-                  onView={handleView}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  onRecrawl={handleRecrawl}
-                />
-              ))}
-          </div>
-        </div>
       ) : (
-        /* Table View: Use DataTable with built-in controls */
         <div className="space-y-4">
-          {/* Content Search Bar - Only shown in content mode */}
-          {searchMode === "content" && (
-            <div className="rounded-lg border-2 border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter") {
-                      handleContentSearch(1);
-                    }
-                  }}
-                  placeholder="Search within crawled pages (e.g., 'authentication JWT tokens')..."
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-900 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
-                />
-                <button
-                  onClick={() => handleContentSearch(1)}
-                  disabled={searchLoading || !searchQuery.trim()}
-                  className="rounded-lg bg-brand-600 px-6 py-2 text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
-                >
-                  {searchLoading ? "Searching..." : "Search"}
-                </button>
-              </div>
-
-              {/* Content Search Results */}
-              <div className="mt-4">
-                {searchError && (
-                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    <p className="font-semibold">Search Error</p>
-                    <p className="text-sm">{searchError}</p>
-                  </div>
-                )}
-
-                {searchResults.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-                      Found {searchTotal} results in {searchPages} pages
-                    </div>
-                    <div className="space-y-4">
-                      {searchResults.map((result, index) => (
-                        <div
-                          key={result.id || index}
-                          className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
-                        >
-                          <div className="mb-2 flex items-start justify-between">
-                            <a
-                              href={result.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
-                            >
-                              {result.url}
-                            </a>
-                            <div className="flex gap-2">
-                              <span className="rounded bg-brand-100 px-2 py-1 text-xs font-medium text-brand-800 dark:bg-brand-900/30 dark:text-brand-300">
-                                {result.match_type}
-                              </span>
-                              <span className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                {Math.round(result.similarity * 100)}% match
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
-                            {result.content}
-                          </p>
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            Chunk #{result.chunk_number}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Pagination */}
-                    {searchPages > 1 && (
-                      <div className="mt-4 flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleContentSearch(searchPage - 1)}
-                          disabled={searchPage === 1 || searchLoading}
-                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Previous
-                        </button>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                          Page {searchPage} of {searchPages}
-                        </span>
-                        <button
-                          onClick={() => handleContentSearch(searchPage + 1)}
-                          disabled={searchPage === searchPages || searchLoading}
-                          className="rounded-lg border border-gray-300 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!searchLoading && searchQuery && searchResults.length === 0 && !searchError && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center dark:border-gray-700 dark:bg-gray-800/50">
-                    <p className="text-gray-600 dark:text-gray-400">
-                      No results found for &quot;{searchQuery}&quot;
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* DataTable - Table view with built-in controls */}
           <DataTable
             data={sources}
             columns={columns}
             rowButtons={rowButtons}
             tableButtons={tableButtons}
             keyExtractor={(item: KnowledgeSource) => item.source_id}
-            viewMode="table"
+            viewMode={viewMode}
+            customRender={(source: KnowledgeSource) => (
+              <KnowledgeSourceCard
+                key={source.source_id}
+                source={source}
+                onView={handleView}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onRecrawl={handleRecrawl}
+              />
+            )}
             emptyMessage="No knowledge sources"
             initialPage={1}
             initialPerPage={50}
             totalItems={sources.length}
-            showSearch={searchMode === "titles"}
-            showViewToggle={false}
+            showSearch={true}
+            showViewToggle={true}
             showPagination={false}
             filterConfigs={filterConfigs}
             enableSelection={true}
@@ -945,6 +696,18 @@ export default function KnowledgeBasePage() {
           />
         </div>
       )}
+
+      {/* Content Search Results - Semantic content search (separate from DataTable title search) */}
+      <ContentSearchResults
+        query={searchQuery}
+        results={searchResults}
+        loading={searchLoading}
+        error={searchError}
+        total={searchTotal}
+        pages={searchPages}
+        currentPage={searchPage}
+        onPageChange={handleContentSearch}
+      />
 
       {/* Add Source Dialog */}
       <AddSourceDialog

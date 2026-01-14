@@ -81,31 +81,44 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
 
         try {
-          // TODO: Replace with actual API call when backend auth is ready
-          // For now, simulate authentication
+          // Call real backend API
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              username: email,
+              password: password,
+            }),
+          });
 
-          // Simulated delay
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Login failed");
+          }
 
-          // Simulated user data
-          const mockUser: User = {
-            id: "1",
-            email: email,
-            name: email.split("@")[0],
-            role: "admin",
-            avatar: `https://ui-avatars.com/api/?name=${email.split("@")[0]}&background=random`,
+          const data = await response.json();
+
+          // Transform backend response to User interface
+          const user: User = {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.full_name || email.split("@")[0],
+            role: data.user.role || "member",
+            avatar: data.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.full_name || email.split("@")[0])}&background=random`,
           };
 
-          const mockToken = "mock-jwt-token-" + Date.now();
+          const token = data.access_token;
 
           // Store token in localStorage for API client
           if (typeof window !== "undefined") {
-            localStorage.setItem("archon_token", mockToken);
+            localStorage.setItem("archon_token", token);
           }
 
           set({
-            user: mockUser,
-            token: mockToken,
+            user,
+            token,
             isAuthenticated: true,
             isLoading: false,
             error: null,
@@ -118,6 +131,7 @@ export const useAuthStore = create<AuthStore>()(
             isLoading: false,
             error: error instanceof Error ? error.message : "Login failed",
           });
+          throw error;
         }
       },
 

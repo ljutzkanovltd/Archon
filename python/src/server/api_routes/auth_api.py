@@ -189,7 +189,7 @@ async def login(
         query = """
             SELECT
                 id, email, hashed_password, full_name, is_active, is_verified,
-                failed_login_attempts, locked_until
+                failed_login_attempts, locked_until, role
             FROM archon_users
             WHERE email = $1
         """
@@ -269,6 +269,7 @@ async def login(
                 "sub": str(user["id"]),
                 "email": user["email"],
                 "full_name": user["full_name"],
+                "role": user["role"] or "member",
             }
         )
 
@@ -280,6 +281,7 @@ async def login(
                 "email": user["email"],
                 "full_name": user["full_name"],
                 "is_verified": user["is_verified"],
+                "role": user["role"] or "member",
             },
         }
 
