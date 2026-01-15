@@ -23,6 +23,17 @@ from .organization import (
     OrganizationUpdate,
     OrganizationWithMembers,
 )
+from .permission import (
+    PermissionAuditEntry,
+    PermissionKey,
+    UserPermissionBase,
+    UserPermissionCheck,
+    UserPermissionCheckResponse,
+    UserPermissionCreate,
+    UserPermissionResponse,
+    UserPermissionRevoke,
+    UserPermissionsListResponse,
+)
 from .user import (
     UserBase,
     UserCreate,
@@ -63,4 +74,14 @@ __all__ = [
     "InvitationAccept",
     "InvitationRevoke",
     "InvitationStatus",
+    # Permission models
+    "PermissionKey",
+    "UserPermissionBase",
+    "UserPermissionCreate",
+    "UserPermissionRevoke",
+    "UserPermissionResponse",
+    "UserPermissionCheck",
+    "UserPermissionCheckResponse",
+    "UserPermissionsListResponse",
+    "PermissionAuditEntry",
 ]
