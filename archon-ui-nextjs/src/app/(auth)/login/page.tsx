@@ -196,11 +196,10 @@ export default function LoginPage() {
                   type="submit"
                   className="w-full"
                   disabled={isLoading}
-                  isProcessing={isLoading}
-                  processingSpinner={
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  }
                 >
+                  {isLoading && (
+                    <div className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  )}
                   {isLoading ? "Signing in..." : "Sign in"}
                 </Button>
               </form>
@@ -243,11 +242,10 @@ export default function LoginPage() {
                     type="submit"
                     className="w-full"
                     disabled={magicLinkLoading}
-                    isProcessing={magicLinkLoading}
-                    processingSpinner={
-                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    }
                   >
+                    {magicLinkLoading && (
+                      <div className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    )}
                     {magicLinkLoading ? "Sending..." : "Send Magic Link"}
                   </Button>
                 </form>
