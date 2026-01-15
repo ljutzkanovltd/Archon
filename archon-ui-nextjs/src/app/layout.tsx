@@ -5,6 +5,7 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AuthProvider } from "@/components/AuthProvider";
+import { Toaster } from "react-hot-toast";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -36,7 +37,10 @@ export default function RootLayout({
         <ErrorBoundary>
           <QueryProvider>
             <AuthProvider>
-              <SettingsProvider>{children}</SettingsProvider>
+              <SettingsProvider>
+                <Toaster position="top-right" />
+                {children}
+              </SettingsProvider>
             </AuthProvider>
           </QueryProvider>
         </ErrorBoundary>

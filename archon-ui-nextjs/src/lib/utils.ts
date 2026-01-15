@@ -39,3 +39,31 @@ export function applyBranding(primaryColor: string = "#ef0606") {
   const brand800 = darkenHexColor(primaryColor, 20);
   document.documentElement.style.setProperty("--color-brand-800", brand800);
 }
+
+/**
+ * Check if a dev-only feature should be shown
+ * @param featureName - Name of the environment variable (without NEXT_PUBLIC_ prefix)
+ * @returns true if feature is enabled, false otherwise
+ *
+ * @example
+ * ```tsx
+ * if (isDevFeatureEnabled("SHOW_TEST_FOUNDATION")) {
+ *   return <TestFoundationTab />;
+ * }
+ * ```
+ */
+export function isDevFeatureEnabled(featureName: string): boolean {
+  const envKey = `NEXT_PUBLIC_${featureName}`;
+  const envValue = process.env[envKey];
+
+  // Feature is enabled only if explicitly set to "true" (case-insensitive)
+  return envValue?.toLowerCase() === "true";
+}
+
+/**
+ * Check if Test Foundation page should be shown in Settings
+ * This is a convenience wrapper around isDevFeatureEnabled
+ */
+export function shouldShowTestFoundation(): boolean {
+  return isDevFeatureEnabled("SHOW_TEST_FOUNDATION");
+}

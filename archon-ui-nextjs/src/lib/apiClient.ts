@@ -940,6 +940,65 @@ export const mcpApi = {
   },
 };
 
+// ==================== ADMIN API ====================
+
+export const adminApi = {
+  /**
+   * List all users with pagination and filtering
+   */
+  listUsers: async (params?: {
+    page?: number;
+    per_page?: number;
+    search?: string;
+    status_filter?: "active" | "inactive" | "verified" | "unverified";
+  }): Promise<import("./admin-types").UsersListResponse> => {
+    const response = await apiClient.get("/api/admin/users", { params });
+    return response.data;
+  },
+
+  /**
+   * Invite user via email
+   */
+  inviteUser: async (
+    data: import("./admin-types").InviteUserRequest
+  ): Promise<import("./admin-types").InviteUserResponse> => {
+    const response = await apiClient.post("/api/admin/users/invite", data);
+    return response.data;
+  },
+
+  /**
+   * Update user status (activate/deactivate)
+   */
+  updateUserStatus: async (
+    userId: string,
+    data: import("./admin-types").UpdateUserStatusRequest
+  ): Promise<import("./admin-types").UpdateUserStatusResponse> => {
+    const response = await apiClient.put(`/api/admin/users/${userId}/status`, data);
+    return response.data;
+  },
+
+  /**
+   * Get user permissions
+   */
+  getUserPermissions: async (
+    userId: string
+  ): Promise<import("./admin-types").UserPermissionsResponse> => {
+    const response = await apiClient.get(`/api/admin/users/${userId}/permissions`);
+    return response.data;
+  },
+
+  /**
+   * Update user permissions
+   */
+  updateUserPermissions: async (
+    userId: string,
+    data: import("./admin-types").UpdateUserPermissionsRequest
+  ): Promise<import("./admin-types").UpdateUserPermissionsResponse> => {
+    const response = await apiClient.put(`/api/admin/users/${userId}/permissions`, data);
+    return response.data;
+  },
+};
+
 // ==================== HEALTH CHECK ====================
 
 export const healthApi = {

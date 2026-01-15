@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { HiCog, HiKey, HiGlobe, HiEye, HiBell, HiCode, HiLightningBolt, HiDatabase, HiInformationCircle, HiRefresh } from "react-icons/hi";
-import { HiBugAnt } from "react-icons/hi2";
+import { HiBugAnt, HiBeaker } from "react-icons/hi2";
 import TabView, { TabItem } from "@/components/common/TabView";
 import { GeneralSettings } from "./components/GeneralSettings";
 import FeaturesTab from "./components/FeaturesTab";
 import RAGSettingsTab from "./components/RAGSettingsTab";
 import CodeExtractionTab from "./components/CodeExtractionTab";
 import BugReportTab from "./components/BugReportTab";
+import TestFoundationTab from "./components/TestFoundationTab";
 import { ApiKeySettings } from "./components/ApiKeySettings";
 import { CrawlSettings } from "./components/CrawlSettings";
 import { DisplaySettings } from "./components/DisplaySettings";
@@ -20,6 +21,7 @@ import VersionUpdatesTab from "./components/VersionUpdatesTab";
 import MigrationsTab from "./components/MigrationsTab";
 import IDEGlobalRulesTab from "./components/IDEGlobalRulesTab";
 import DatabaseSyncTab from "./components/DatabaseSyncTab";
+import { shouldShowTestFoundation } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { isLoading, fetchSettings } = useSettingsStore();
@@ -28,7 +30,8 @@ export default function SettingsPage() {
     fetchSettings();
   }, [fetchSettings]);
 
-  const settingsTabs: TabItem[] = [
+  // Build settings tabs array
+  const allSettingsTabs: TabItem[] = [
     {
       id: "features",
       label: "Features",
@@ -121,6 +124,18 @@ export default function SettingsPage() {
       component: <BugReportTab />,
     },
   ];
+
+  // Conditionally add Test Foundation tab (dev/staging only)
+  if (shouldShowTestFoundation()) {
+    allSettingsTabs.push({
+      id: "test_foundation",
+      label: "Test Foundation",
+      icon: HiBeaker,
+      component: <TestFoundationTab />,
+    });
+  }
+
+  const settingsTabs = allSettingsTabs;
 
   return (
     <section className="p-4">
