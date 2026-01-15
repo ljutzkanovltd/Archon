@@ -166,10 +166,9 @@ async def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """
-    Dependency to require admin role (placeholder for future RBAC).
+    Dependency to require admin permissions (RBAC Phase 3A).
 
-    Currently checks if user is active and verified.
-    In Phase 3, this will check organization admin/owner roles.
+    Checks if user has 'manage_users' permission in archon_user_permissions table.
 
     Args:
         current_user: User data from get_current_user dependency
@@ -178,7 +177,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
         User data dictionary
 
     Raises:
-        HTTPException 403: User is not admin
+        HTTPException 403: User does not have admin permissions
 
     Example:
         @app.delete("/admin/users/{user_id}")
@@ -186,12 +185,23 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
             # Admin-only operation
             pass
     """
-    # TODO: Implement proper RBAC check in Phase 3
-    # For now, just ensure user is verified
-    if not current_user["is_verified"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required. Email verification needed.",
-        )
+    user_id = current_user["id"]
 
-    return current_user
+    # Check if user has 'manage_users' permission
+    conn = await get_direct_db_connection()
+    try:
+        query = """
+            SELECT user_has_permission($1::uuid, 'manage_users')
+        """
+        has_permission = await conn.fetchval(query, user_id)
+
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required. You do not have permission to manage users.",
+            )
+
+        return current_user
+
+    finally:
+        await conn.close()

@@ -361,6 +361,98 @@ def organization_invitation_email(
     return get_base_template(content, preheader)
 
 
+def invitation_email(
+    to_email: str,
+    invitation_token: str,
+    invited_by_name: str,
+    custom_message: Optional[str] = None,
+) -> dict:
+    """
+    Generate user invitation email.
+
+    Args:
+        to_email: Email address of invitee
+        invitation_token: Invitation token for registration link
+        invited_by_name: Name of admin who sent invitation
+        custom_message: Optional custom message from admin
+
+    Returns:
+        Dict with subject, html, and text keys
+    """
+    # TODO: Update this URL to match your frontend registration page
+    invitation_link = f"http://localhost:3738/register?token={invitation_token}"
+
+    custom_section = ""
+    if custom_message:
+        custom_section = f"""
+        <div class="info-box">
+            <p style="margin: 0;"><strong>Message from {invited_by_name}:</strong></p>
+            <p style="margin: 8px 0 0 0; font-style: italic;">"{custom_message}"</p>
+        </div>
+        """
+
+    content = f"""
+    <h2>You've been invited to join Archon! 🎉</h2>
+    <p>Hello,</p>
+    <p><strong>{invited_by_name}</strong> has invited you to join Archon, an AI-powered knowledge base and task management platform.</p>
+
+    {custom_section}
+
+    <p>Click the button below to create your account:</p>
+    <a href="{invitation_link}" class="button">Create Account</a>
+
+    <p style="font-size: 14px; color: #666;">Or copy this link into your browser:<br>
+    <span style="word-break: break-all;">{invitation_link}</span></p>
+
+    <div class="warning-box">
+        <p style="margin: 0;"><strong>⏰ This invitation expires in 7 days</strong></p>
+        <p style="margin: 8px 0 0 0; font-size: 14px;">Please accept the invitation within 7 days to join Archon.</p>
+    </div>
+
+    <p><strong>What is Archon?</strong></p>
+    <p>Archon is a knowledge base and task management platform designed for AI-assisted development workflows. Features include:</p>
+    <ul style="margin: 8px 0; padding-left: 20px;">
+        <li>Project and task management</li>
+        <li>AI-powered knowledge base with semantic search</li>
+        <li>MCP (Model Context Protocol) integration</li>
+        <li>Collaborative development tools</li>
+    </ul>
+
+    <p>Questions? Feel free to reach out to {invited_by_name} or our support team.</p>
+
+    <p>Best regards,<br><strong>The Archon Team</strong></p>
+    """
+
+    preheader = f"{invited_by_name} invited you to join Archon"
+    html = get_base_template(content, preheader)
+
+    # Plain text version
+    text = f"""
+You've been invited to join Archon!
+
+{invited_by_name} has invited you to join Archon, an AI-powered knowledge base and task management platform.
+
+{f'Message: {custom_message}' if custom_message else ''}
+
+Create your account here:
+{invitation_link}
+
+This invitation expires in 7 days.
+
+What is Archon?
+Archon is a knowledge base and task management platform designed for AI-assisted development workflows.
+
+Best regards,
+The Archon Team
+    """.strip()
+
+    return {
+        "subject": f"You've been invited to join Archon by {invited_by_name}",
+        "html": html,
+        "text": text,
+    }
+
+
 def email_verification_email(
     user_name: str,
     verification_link: str,
