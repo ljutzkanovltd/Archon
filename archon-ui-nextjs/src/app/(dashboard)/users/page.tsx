@@ -65,17 +65,29 @@ export default function UsersPage() {
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ["admin-users", page, perPage, search, statusFilter],
-    queryFn: () =>
-      adminApi.listUsers({
-        page,
-        per_page: perPage,
-        search: search || undefined,
-        status_filter:
-          statusFilter === "all"
-            ? undefined
-            : (statusFilter as "active" | "inactive" | "verified" | "unverified"),
-      }),
+    queryFn: async () => {
+      try {
+        return await adminApi.listUsers({
+          page,
+          per_page: perPage,
+          search: search || undefined,
+          status_filter:
+            statusFilter === "all"
+              ? undefined
+              : (statusFilter as "active" | "inactive" | "verified" | "unverified"),
+        });
+      } catch (err: any) {
+        // If 401, user needs to log in again
+        if (err.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          // Optionally redirect to login
+          // window.location.href = '/login';
+        }
+        throw err;
+      }
+    },
     placeholderData: (previousData) => previousData,
+    retry: false, // Don't retry on auth errors
   });
 
   // Fetch selected user permissions

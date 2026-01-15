@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Auth Debug</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+    pre { background: #000; padding: 15px; border-radius: 5px; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🔐 Archon Auth Debugger</h1>
+
+  <h2>Current Auth Status:</h2>
+  <pre id="status">Loading...</pre>
+
+  <button onclick="checkAuth()">🔄 Refresh</button>
+  <button onclick="clearAuth()">🗑️ Clear Auth</button>
+  <button onclick="testAdminAPI()">🧪 Test Admin API</button>
+
+  <h2>Admin API Test Result:</h2>
+  <pre id="apiResult">Not tested yet</pre>
+
+  <script>
+    function checkAuth() {
+      const token = localStorage.getItem('archon_token');
+      const authStore = localStorage.getItem('archon-auth-storage');
+
+      const status = {
+        token: token ? `${token.substring(0, 50)}...` : 'NOT FOUND',
+        tokenLength: token ? token.length : 0,
+        authStore: authStore ? JSON.parse(authStore) : 'NOT FOUND',
+        timestamp: new Date().toISOString()
+      };
+
+      document.getElementById('status').textContent = JSON.stringify(status, null, 2);
+    }
+
+    function clearAuth() {
+      localStorage.removeItem('archon_token');
+      localStorage.removeItem('archon-auth-storage');
+      alert('Auth cleared! Please refresh.');
+      checkAuth();
+    }
+
+    async function testAdminAPI() {
+      const token = localStorage.getItem('archon_token');
+      const result = document.getElementById('apiResult');
+
+      if (!token) {
+        result.textContent = 'ERROR: No token found! Please log in first.';
+        return;
+      }
+
+      try {
+        result.textContent = 'Testing...';
+
+        const response = await fetch('http://localhost:8181/api/admin/users?page=1&per_page=10', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+
+        result.textContent = JSON.stringify({
+          status: response.status,
+          statusText: response.statusText,
+          data: data
+        }, null, 2);
+      } catch (error) {
+        result.textContent = `ERROR: ${error.message}`;
+      }
+    }
+
+    // Auto-check on load
+    checkAuth();
+  </script>
+</body>
+</html>
