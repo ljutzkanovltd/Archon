@@ -6,6 +6,7 @@ import { useSidebar } from "@/contexts/sidebar-context";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useTaskStore } from "@/store/useTaskStore";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   HiChartPie,
   HiFolder,
@@ -17,7 +18,6 @@ import {
   HiServer,
   HiClipboardList,
   HiBeaker,
-  HiCode,
   HiUsers,
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -176,6 +176,7 @@ export function DesktopSidebar() {
     mcpServerDashboardEnabled,
     agentWorkOrdersEnabled,
   } = useSettings();
+  const permissions = usePermissions();
 
   // Fetch work orders for badge count
   const { data: workOrders = [] } = useWorkOrders();
@@ -337,11 +338,6 @@ export function DesktopSidebar() {
       label: "MCP Server",
     },
     {
-      href: "/mcp-inspector",
-      icon: HiCode,
-      label: "MCP Inspector",
-    },
-    {
       href: "/test-foundation",
       icon: HiBeaker,
       label: "Test Foundation",
@@ -358,14 +354,20 @@ export function DesktopSidebar() {
     },
   ];
 
-  // Filter menu items based on feature toggles
+  // Filter menu items based on feature toggles AND permissions (RBAC)
   const menuItems = allMenuItems.filter((item) => {
+    // Feature toggle checks
     if (item.href === "/projects" && !projectsEnabled) return false;
     if (item.href === "/tasks" && !tasksEnabled) return false;
     if (item.href === "/agent-work-orders" && !agentWorkOrdersEnabled) return false;
     if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
     if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
-    return true; // Always show Dashboard and Settings
+
+    // Permission-based filtering (RBAC)
+    if (item.href === "/users" && !permissions.canManageUsers) return false;
+    if (item.href === "/test-foundation" && !permissions.canViewTestFoundation) return false;
+
+    return true; // Show if passes all checks
   });
 
   return (
@@ -436,6 +438,7 @@ export function MobileSidebar() {
     mcpServerDashboardEnabled,
     agentWorkOrdersEnabled,
   } = useSettings();
+  const permissions = usePermissions();
 
   // Fetch work orders for badge count
   const { data: workOrders = [] } = useWorkOrders();
@@ -520,11 +523,6 @@ export function MobileSidebar() {
       label: "MCP Server",
     },
     {
-      href: "/mcp-inspector",
-      icon: HiCode,
-      label: "MCP Inspector",
-    },
-    {
       href: "/test-foundation",
       icon: HiBeaker,
       label: "Test Foundation",
@@ -541,14 +539,20 @@ export function MobileSidebar() {
     },
   ];
 
-  // Filter menu items based on feature toggles
+  // Filter menu items based on feature toggles AND permissions (RBAC)
   const menuItems = allMenuItems.filter((item) => {
+    // Feature toggle checks
     if (item.href === "/projects" && !projectsEnabled) return false;
     if (item.href === "/tasks" && !tasksEnabled) return false;
     if (item.href === "/agent-work-orders" && !agentWorkOrdersEnabled) return false;
     if (item.href === "/knowledge-base" && !knowledgeBaseEnabled) return false;
     if (item.href === "/mcp" && !mcpServerDashboardEnabled) return false;
-    return true; // Always show Dashboard and Settings
+
+    // Permission-based filtering (RBAC)
+    if (item.href === "/users" && !permissions.canManageUsers) return false;
+    if (item.href === "/test-foundation" && !permissions.canViewTestFoundation) return false;
+
+    return true; // Show if passes all checks
   });
 
   if (!mobile.isOpen) return null;

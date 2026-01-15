@@ -23,9 +23,17 @@ import { useTaskStore } from "@/store/useTaskStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useSourceStore } from "@/store/useSourceStore";
 import { HiCheck, HiX, HiChevronDown } from "react-icons/hi";
+import { usePermissions } from "@/hooks/usePermissions";
+import { Forbidden } from "@/components/Forbidden";
 
 export default function TestFoundationPage() {
   usePageTitle("Foundation Testing", "Archon");
+
+  // Permission check - admin only
+  const { canViewTestFoundation } = usePermissions();
+  if (!canViewTestFoundation) {
+    return <Forbidden />;
+  }
 
   // Test Results State
   const [testResults, setTestResults] = useState<

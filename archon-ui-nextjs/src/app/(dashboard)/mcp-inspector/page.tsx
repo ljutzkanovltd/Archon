@@ -11,8 +11,15 @@ import {
   HiClipboardCopy,
   HiPlay,
 } from "react-icons/hi";
+import { usePermissions } from "@/hooks/usePermissions";
+import { Forbidden } from "@/components/Forbidden";
 
 export default function McpInspectorPage() {
+  // Permission check - admin only
+  const { canViewMCPInspector } = usePermissions();
+  if (!canViewMCPInspector) {
+    return <Forbidden />;
+  }
   const {
     isConnected,
     isConnecting,
