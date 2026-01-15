@@ -1,0 +1,66 @@
+# Casbin Policy File for Archon RBAC
+# Format: p, role, domain, resource, action
+# Format: g, user, role, domain
+
+# ============================================
+# Policy Rules (p) - Role Permissions
+# ============================================
+
+# Admin role - full permissions
+p, admin, *, project, read
+p, admin, *, project, write
+p, admin, *, project, delete
+p, admin, *, task, create
+p, admin, *, task, assign
+p, admin, *, task, read
+p, admin, *, task, write
+p, admin, *, task, delete
+p, admin, *, sprint, manage
+p, admin, *, sprint, read
+p, admin, *, team, manage
+p, admin, *, team, read
+p, admin, *, hierarchy, manage
+p, admin, *, hierarchy, read
+
+# Manager role - project and sprint management
+p, manager, *, project, read
+p, manager, *, project, write
+p, manager, *, task, create
+p, manager, *, task, assign
+p, manager, *, task, read
+p, manager, *, task, write
+p, manager, *, sprint, manage
+p, manager, *, sprint, read
+p, manager, *, team, read
+p, manager, *, hierarchy, read
+
+# Member role - task creation and updates
+p, member, *, project, read
+p, member, *, task, create
+p, member, *, task, read
+p, member, *, task, write
+p, member, *, sprint, read
+p, member, *, team, read
+p, member, *, hierarchy, read
+
+# Viewer role - read-only access
+p, viewer, *, project, read
+p, viewer, *, task, read
+p, viewer, *, sprint, read
+p, viewer, *, team, read
+p, viewer, *, hierarchy, read
+
+# ============================================
+# Role Assignment Rules (g) - User to Role
+# ============================================
+# Format: g, user_id, role, project_id
+# These are default examples - actual assignments will be in database
+
+# Example: User admin-user has admin role in all projects
+# g, admin-user, admin, *
+
+# Example: User john.doe has manager role in project-123
+# g, john.doe, manager, project-123
+
+# Example: User jane.smith has member role in project-123
+# g, jane.smith, member, project-123

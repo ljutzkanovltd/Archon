@@ -57,6 +57,9 @@ server = [
     "bcrypt==4.0.1",  # Pin to 4.0.1 for passlib 1.7.4 compatibility
     "cryptography>=41.0.0",
     "slowapi>=0.1.9",
+    # RBAC with Casbin
+    "casbin>=1.17.0",
+    "casbin-sqlalchemy-adapter>=1.2.0",
     # Core utilities
     "httpx>=0.24.0",
     "pydantic[email]>=2.0.0",
@@ -140,6 +143,9 @@ all = [
     "python-jose[cryptography]>=3.3.0",
     "cryptography>=41.0.0",
     "slowapi>=0.1.9",
+    # RBAC with Casbin
+    "casbin>=1.17.0",
+    "casbin-sqlalchemy-adapter>=1.2.0",
     # OPTIONAL: Docker SDK only needed for legacy Docker socket monitoring mode
     # Uncomment if ENABLE_DOCKER_SOCKET_MONITORING=true (not recommended - security risk)
     # "docker>=6.1.0",

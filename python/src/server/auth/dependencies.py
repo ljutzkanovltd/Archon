@@ -1,14 +1,23 @@
 """
-FastAPI Dependencies for JWT Authentication.
+FastAPI Dependencies for JWT Authentication and RBAC.
 
-Provides dependency injection for route protection and user authentication.
+Provides dependency injection for route protection, user authentication,
+and Casbin-based permission checking.
 """
 
-from typing import Optional
+from typing import Callable, Optional
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+
+# Optional Casbin import - RBAC features will be disabled if not available
+try:
+    from ..services.casbin_service import CasbinService
+    CASBIN_AVAILABLE = True
+except ImportError:
+    CASBIN_AVAILABLE = False
+    CasbinService = None  # type: ignore
 
 from ..utils.db_utils import get_direct_db_connection
 from .jwt_utils import verify_token
@@ -205,3 +214,283 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
     finally:
         await conn.close()
+
+
+# ============================================
+# Casbin RBAC Permission Dependencies
+# ============================================
+
+
+def require_permission(resource: str, action: str) -> Callable:
+    """
+    Factory function to create permission check dependencies.
+
+    Creates a FastAPI dependency that checks if the current user has
+    permission to perform an action on a resource in a specific project.
+
+    Args:
+        resource: Resource type (e.g., "project", "task", "sprint", "team")
+        action: Action to perform (e.g., "read", "write", "manage", "assign")
+
+    Returns:
+        FastAPI dependency function
+
+    Example:
+        @app.post("/api/sprints/{sprint_id}/start")
+        async def start_sprint(
+            sprint_id: str,
+            user: dict = Depends(require_permission("sprint", "manage"))
+        ):
+            # User is authorized to manage sprints
+            pass
+    """
+
+    async def permission_checker(
+        project_id: str,  # Expected as path/query parameter
+        current_user: dict = Depends(get_current_user),
+    ) -> dict:
+        """
+        Check if user has permission for the requested operation.
+
+        Args:
+            project_id: Project UUID (from path or query parameter)
+            current_user: Authenticated user from get_current_user dependency
+
+        Returns:
+            User data dictionary if permission granted
+
+        Raises:
+            HTTPException 403: Permission denied
+        """
+        user_id = current_user.get("email") or str(current_user.get("id"))
+
+        # If Casbin is not available, allow all authenticated users (development mode)
+        if not CASBIN_AVAILABLE:
+            # TODO: Remove this bypass in production - implement proper RBAC
+            return current_user
+
+        # Initialize Casbin service
+        casbin_service = CasbinService()
+
+        # Check permission
+        allowed, result = await casbin_service.enforce(
+            user_id=user_id,
+            project_id=project_id,
+            resource=resource,
+            action=action,
+        )
+
+        if not allowed:
+            # Get user's roles for detailed error message
+            roles_success, roles_result = await casbin_service.get_user_roles(
+                user_id, project_id
+            )
+            user_roles = roles_result.get("roles", []) if roles_success else []
+
+            detail = (
+                f"Permission denied: {resource}:{action} requires appropriate role. "
+                f"Your current roles in this project: {', '.join(user_roles) if user_roles else 'none'}"
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail,
+            )
+
+        return current_user
+
+    return permission_checker
+
+
+# Convenience dependencies for common permissions
+async def require_sprint_manage(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require sprint:manage permission.
+
+    Use this for sprint lifecycle operations (start, complete, cancel).
+
+    Args:
+        project_id: Project UUID (from path or query parameter)
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot manage sprints in this project
+
+    Example:
+        @app.post("/api/sprints/{sprint_id}/start")
+        async def start_sprint(
+            sprint_id: str,
+            project_id: str,
+            user: dict = Depends(require_sprint_manage)
+        ):
+            pass
+    """
+    checker = require_permission("sprint", "manage")
+    return await checker(project_id, current_user)
+
+
+async def require_task_assign(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require task:assign permission.
+
+    Use this for assigning tasks to users or moving tasks between sprints.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot assign tasks in this project
+    """
+    checker = require_permission("task", "assign")
+    return await checker(project_id, current_user)
+
+
+async def require_project_write(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require project:write permission.
+
+    Use this for modifying project settings, hierarchy, or team membership.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot modify this project
+    """
+    checker = require_permission("project", "write")
+    return await checker(project_id, current_user)
+
+
+async def require_team_manage(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require team:manage permission.
+
+    Use this for creating/deleting teams or modifying team membership.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot manage teams in this project
+    """
+    checker = require_permission("team", "manage")
+    return await checker(project_id, current_user)
+
+
+async def require_hierarchy_manage(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require hierarchy:manage permission.
+
+    Use this for creating/removing parent-child project relationships.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot manage project hierarchy
+    """
+    checker = require_permission("hierarchy", "manage")
+    return await checker(project_id, current_user)
+
+
+async def require_knowledge_manage(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require knowledge:manage permission.
+
+    Use this for linking/unlinking knowledge items to projects/tasks/sprints.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot manage knowledge links in this project
+    """
+    checker = require_permission("knowledge", "manage")
+    return await checker(project_id, current_user)
+
+
+async def require_knowledge_read(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require knowledge:read permission.
+
+    Use this for viewing linked knowledge items and AI suggestions.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot read knowledge links in this project
+    """
+    checker = require_permission("knowledge", "read")
+    return await checker(project_id, current_user)
+
+
+async def require_reports_read(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require reports:read permission.
+
+    Use this for viewing project reports, metrics, and analytics.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot read reports in this project
+    """
+    checker = require_permission("reports", "read")
+    return await checker(project_id, current_user)

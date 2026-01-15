@@ -351,6 +351,26 @@ IMPORTANT: Always use source_id (not URLs or domain names) for filtering!
 - `manage_document(action, project_id, document_id=None, title=None, document_type=None, content=None, ...)`
   - Actions: "create", "update", "delete"
 
+### Knowledge Linking Tools
+- `link_knowledge(source_type, source_id, knowledge_type, knowledge_id, relevance_score=None)`
+  - Link knowledge items (documents/code/RAG pages) to projects/tasks/sprints
+  - source_type: "project", "task", or "sprint"
+  - knowledge_type: "document", "code_example", or "rag_page"
+  - Returns full link details with knowledge item content
+- `unlink_knowledge(link_id)`
+  - Remove a knowledge link
+- `get_linked_knowledge(source_type, source_id)`
+  - Get all knowledge items linked to an entity
+  - Returns enriched links with full knowledge item details
+- `suggest_knowledge(source_type, source_id, limit=5)`
+  - AI-powered knowledge suggestions using RAG search
+  - Based on entity title and description
+  - Returns suggestions with relevance scores
+  - Cached for 1 hour
+- `get_knowledge_sources(knowledge_type, knowledge_id)`
+  - Reverse lookup: find all entities linked to a knowledge item
+  - Returns projects, tasks, and sprints grouped by type
+
 ## 🔍 Research Patterns
 
 ### CRITICAL: Keep Queries Short and Focused!
@@ -704,6 +724,23 @@ def register_modules():
         raise
     except Exception as e:
         logger.error(f"✗ Failed to register feature tools: {e}")
+        logger.error(traceback.format_exc())
+
+    # Knowledge Linking Tools
+    try:
+        from src.mcp_server.features.knowledge_links import register_knowledge_link_tools
+
+        register_knowledge_link_tools(mcp)
+        modules_registered += 1
+        logger.info("✓ Knowledge linking tools registered")
+    except ImportError as e:
+        logger.warning(f"⚠ Knowledge linking tools module not available (optional): {e}")
+    except (SyntaxError, NameError, AttributeError) as e:
+        logger.error(f"✗ Code error in knowledge linking tools - MUST FIX: {e}")
+        logger.error(traceback.format_exc())
+        raise
+    except Exception as e:
+        logger.error(f"✗ Failed to register knowledge linking tools: {e}")
         logger.error(traceback.format_exc())
 
     logger.info(f"📦 Total modules registered: {modules_registered}")
