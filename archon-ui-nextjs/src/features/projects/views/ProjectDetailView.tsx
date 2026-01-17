@@ -393,9 +393,10 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
         </div>
       ) : viewMode === "kanban" ? (
-        // Kanban view - uses BoardView with status columns
+        // Kanban view - uses BoardView with dynamic workflow stages (Phase 2.4)
         <BoardView
           projectId={projectId}
+          workflowId={selectedProject?.workflow_id || "29d6341c-0352-46e7-95d3-c26ae27a1aff"}
           tasks={tasks}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}

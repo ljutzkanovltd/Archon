@@ -17,9 +17,8 @@ import { Forbidden } from "@/components/Forbidden";
 export default function McpInspectorPage() {
   // Permission check - admin only
   const { canViewMCPInspector } = usePermissions();
-  if (!canViewMCPInspector) {
-    return <Forbidden />;
-  }
+
+  // All hooks must be called before conditional returns
   const {
     isConnected,
     isConnecting,
@@ -45,6 +44,11 @@ export default function McpInspectorPage() {
       connect().catch(console.error);
     }
   }, [isConnected, isConnecting, connect]);
+
+  // Permission check - return after all hooks are called
+  if (!canViewMCPInspector) {
+    return <Forbidden />;
+  }
 
   // Handle connection toggle
   const handleConnectionToggle = async () => {

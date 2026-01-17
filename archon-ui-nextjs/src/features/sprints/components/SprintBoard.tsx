@@ -20,46 +20,46 @@ import {
 } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Task, WorkflowStage } from "@/lib/types";
+import { Task, WorkflowStage, Sprint } from "@/lib/types";
 import { TaskCard } from "@/components/Tasks/TaskCard";
 import { useTaskStore } from "@/store/useTaskStore";
 import { workflowsApi } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
+import { SprintStatusIndicator } from "./SprintStatusIndicator";
+import { format, differenceInDays } from "date-fns";
+import { HiCalendar, HiFlag, HiChartBar } from "react-icons/hi";
 
-interface BoardViewProps {
+interface SprintBoardProps {
   projectId: string;
   workflowId: string;
+  sprint: Sprint;
   tasks: Task[];
   onEditTask: (task: Task) => void;
   onDeleteTask: (task: Task) => void;
   onArchiveTask: (task: Task) => void;
 }
 
-// Column styling based on stage order
+// Column styling based on stage order (reuse from BoardView)
 const STAGE_COLORS = [
   {
-    // Stage 0 - Backlog/To Do
     color: "bg-gray-100 dark:bg-gray-800",
     borderColor: "border-l-gray-400 dark:border-l-gray-500",
     gradient: "bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900",
     dropHighlight: "ring-2 ring-gray-400 bg-gray-200/50 dark:bg-gray-700/50",
   },
   {
-    // Stage 1 - In Progress
     color: "bg-blue-100 dark:bg-blue-900/20",
     borderColor: "border-l-blue-500 dark:border-l-blue-400",
     gradient: "bg-gradient-to-b from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/30",
     dropHighlight: "ring-2 ring-blue-400 bg-blue-200/50 dark:bg-blue-700/50",
   },
   {
-    // Stage 2 - Review
     color: "bg-yellow-100 dark:bg-yellow-900/20",
     borderColor: "border-l-yellow-500 dark:border-l-yellow-400",
     gradient: "bg-gradient-to-b from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-900/30",
     dropHighlight: "ring-2 ring-yellow-400 bg-yellow-200/50 dark:bg-yellow-700/50",
   },
   {
-    // Stage 3+ - Done
     color: "bg-green-100 dark:bg-green-900/20",
     borderColor: "border-l-green-500 dark:border-l-green-400",
     gradient: "bg-gradient-to-b from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/30",
@@ -218,46 +218,48 @@ function DroppableColumn({ column, tasks, isOver, children }: DroppableColumnPro
 }
 
 /**
- * BoardView - Kanban board with drag-and-drop task management
+ * SprintBoard - Sprint-specific Kanban board
  *
- * Phase 2.4: Updated to use dynamic workflow stages based on project's workflow_id
+ * Phase 2.5: Sprint-focused board view with metadata
  *
  * Features:
- * - Drag tasks between dynamic workflow stage columns
- * - Supports any workflow (Standard Agile, Kanban, Scrum, Custom)
- * - Visual feedback during drag (drop zone highlighting)
- * - Optimistic UI updates with error recovery
- * - Keyboard accessible (via dnd-kit KeyboardSensor)
+ * - Sprint header with name, goal, dates, velocity, status
+ * - Progress metrics (total, completed, in progress)
+ * - Filters tasks to only show sprint tasks
+ * - Drag tasks between workflow stages
+ * - Visual feedback during drag
+ * - Optimistic UI updates
+ * - Keyboard accessible
  * - Touch device support
- * - Adaptive grid layout based on number of workflow stages
+ * - Adaptive grid layout based on workflow stages
  */
-export function BoardView({
+export function SprintBoard({
   projectId,
   workflowId,
+  sprint,
   tasks,
   onEditTask,
   onDeleteTask,
   onArchiveTask,
-}: BoardViewProps) {
+}: SprintBoardProps) {
   const { updateTask, fetchTasks } = useTaskStore();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [workflowStages, setWorkflowStages] = useState<WorkflowStage[]>([]);
   const [isLoadingStages, setIsLoadingStages] = useState(true);
 
-  // Fetch workflow stages based on project's workflow_id (Phase 2.4)
+  // Fetch workflow stages
   useEffect(() => {
     const fetchWorkflowStages = async () => {
       try {
         setIsLoadingStages(true);
         const response = await workflowsApi.getStages(workflowId);
         if (response.stages && response.stages.length > 0) {
-          // Sort stages by stage_order
           const sortedStages = response.stages.sort((a, b) => a.stage_order - b.stage_order);
           setWorkflowStages(sortedStages);
         }
       } catch (error) {
-        console.error("[BoardView] Failed to fetch workflow stages:", error);
+        console.error("[SprintBoard] Failed to fetch workflow stages:", error);
       } finally {
         setIsLoadingStages(false);
       }
@@ -268,7 +270,40 @@ export function BoardView({
     }
   }, [workflowId]);
 
-  // Create column configurations from workflow stages
+  // Filter tasks to only those in this sprint
+  const sprintTasks = useMemo(() => {
+    return tasks.filter((task) => task.sprint_id === sprint.id);
+  }, [tasks, sprint.id]);
+
+  // Calculate sprint metrics
+  const sprintMetrics = useMemo(() => {
+    const total = sprintTasks.length;
+    const completed = sprintTasks.filter((t) => t.status === "done").length;
+    const inProgress = sprintTasks.filter((t) => t.status === "doing").length;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    return { total, completed, inProgress, completionRate };
+  }, [sprintTasks]);
+
+  // Calculate days remaining/elapsed
+  const daysInfo = useMemo(() => {
+    const today = new Date();
+    const startDate = new Date(sprint.start_date);
+    const endDate = new Date(sprint.end_date);
+
+    if (sprint.status === "planned") {
+      const daysUntilStart = differenceInDays(startDate, today);
+      return { type: "until_start", days: daysUntilStart };
+    } else if (sprint.status === "active") {
+      const daysRemaining = differenceInDays(endDate, today);
+      return { type: "remaining", days: daysRemaining };
+    } else {
+      const daysElapsed = differenceInDays(today, endDate);
+      return { type: "completed", days: daysElapsed };
+    }
+  }, [sprint.start_date, sprint.end_date, sprint.status]);
+
+  // Create column configurations
   const columns: ColumnConfig[] = useMemo(() => {
     return workflowStages.map((stage) => {
       const colorIndex = Math.min(stage.stage_order, STAGE_COLORS.length - 1);
@@ -281,36 +316,34 @@ export function BoardView({
     });
   }, [workflowStages]);
 
-  // Configure drag sensors with activation constraints
+  // Configure drag sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Require 8px of movement before starting drag
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor)
   );
 
   // Get task by ID
-  const getTask = (id: string) => tasks.find((t) => t.id === id);
+  const getTask = (id: string) => sprintTasks.find((t) => t.id === id);
 
   // Get tasks by workflow_stage_id
   const getTasksByStageId = (stageId: string) =>
-    tasks.filter((task) => task.workflow_stage_id === stageId);
+    sprintTasks.filter((task) => task.workflow_stage_id === stageId);
 
-  // Memoize tasks by column for performance
+  // Memoize tasks by column
   const tasksByColumn = useMemo(() => {
     return columns.reduce((acc, col) => {
       acc[col.stage.id] = getTasksByStageId(col.stage.id);
       return acc;
     }, {} as Record<string, Task[]>);
-  }, [tasks, columns]);
+  }, [sprintTasks, columns]);
 
-  // Handle workflow stage change (both drag-drop and button click)
+  // Handle workflow stage change
   const handleStatusChange = async (task: Task, newStageId: string) => {
-    // Optimistic update - immediately update UI
     await updateTask(task.id, { workflow_stage_id: newStageId });
-    // Refresh tasks from server
     await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
   };
 
@@ -335,22 +368,17 @@ export function BoardView({
     const activeTask = getTask(active.id as string);
     if (!activeTask) return;
 
-    // Determine target stage ID
     let targetStageId: string | null = null;
 
-    // Check if dropped over a column directly (stage ID)
     if (columns.some((col) => col.stage.id === over.id)) {
       targetStageId = over.id as string;
-    }
-    // Check if dropped over another task
-    else {
+    } else {
       const overTask = getTask(over.id as string);
       if (overTask) {
         targetStageId = overTask.workflow_stage_id;
       }
     }
 
-    // If workflow stage changed, update the task
     if (targetStageId && targetStageId !== activeTask.workflow_stage_id) {
       await handleStatusChange(activeTask, targetStageId);
     }
@@ -361,20 +389,25 @@ export function BoardView({
     setOverId(null);
   };
 
-  // Get the active task for the drag overlay
   const activeTask = activeId ? getTask(activeId) : null;
 
-  // Determine which column is being hovered
   const getIsColumnOver = (stageId: string): boolean => {
     if (!overId) return false;
-    // Direct column drop
     if (overId === stageId) return true;
-    // Dropped over a task in this column
     const overTask = getTask(overId);
     return overTask?.workflow_stage_id === stageId;
   };
 
-  // Show loading state while fetching workflow stages
+  // Dynamic grid layout
+  const gridColsClass = useMemo(() => {
+    const stageCount = columns.length;
+    if (stageCount <= 2) return "grid-cols-1 md:grid-cols-2";
+    if (stageCount === 3) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
+    if (stageCount === 4) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
+    if (stageCount === 5) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
+    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+  }, [columns.length]);
+
   if (isLoadingStages) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -386,7 +419,6 @@ export function BoardView({
     );
   }
 
-  // Show message if no workflow stages found
   if (columns.length === 0) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -397,76 +429,161 @@ export function BoardView({
     );
   }
 
-  // Dynamic grid layout based on number of stages (Phase 2.4)
-  const gridColsClass = useMemo(() => {
-    const stageCount = columns.length;
-    if (stageCount <= 2) return "grid-cols-1 md:grid-cols-2";
-    if (stageCount === 3) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
-    if (stageCount === 4) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
-    if (stageCount === 5) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
-    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"; // 6+ stages
-  }, [columns.length]);
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className={`grid gap-3 ${gridColsClass}`}>
-        {columns.map((column) => {
-          const columnTasks = tasksByColumn[column.stage.id] || [];
-          const isOver = getIsColumnOver(column.stage.id);
+    <div className="space-y-6">
+      {/* Sprint Header */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {sprint.name}
+              </h2>
+              <SprintStatusIndicator status={sprint.status} />
+            </div>
 
-          return (
-            <SortableContext
-              key={column.stage.id}
-              id={column.stage.id}
-              items={columnTasks.map((t) => t.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <DroppableColumn
-                column={column}
-                tasks={columnTasks}
-                isOver={isOver}
-              >
-                {columnTasks.length === 0 ? (
-                  <EmptyColumnDropZone stageId={column.stage.id} isOver={isOver} />
-                ) : (
-                  columnTasks.map((task) => (
-                    <DraggableTaskCard
-                      key={task.id}
-                      task={task}
-                      onEdit={onEditTask}
-                      onDelete={onDeleteTask}
-                      onArchive={onArchiveTask}
-                      onStatusChange={handleStatusChange}
-                    />
-                  ))
+            {sprint.goal && (
+              <div className="mt-2 flex items-start gap-2">
+                <HiFlag className="mt-0.5 h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <p className="text-sm text-gray-700 dark:text-gray-300">{sprint.goal}</p>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
+              {/* Dates */}
+              <div className="flex items-center gap-2">
+                <HiCalendar className="h-4 w-4" />
+                <span>
+                  {format(new Date(sprint.start_date), "MMM d, yyyy")} →{" "}
+                  {format(new Date(sprint.end_date), "MMM d, yyyy")}
+                </span>
+              </div>
+
+              {/* Days info */}
+              <div className="flex items-center gap-2">
+                {daysInfo.type === "until_start" && (
+                  <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                    Starts in {daysInfo.days} days
+                  </span>
                 )}
-              </DroppableColumn>
-            </SortableContext>
-          );
-        })}
+                {daysInfo.type === "remaining" && (
+                  <span className={cn(
+                    "rounded-full px-3 py-1 text-xs font-medium",
+                    daysInfo.days > 3
+                      ? "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300"
+                      : "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300"
+                  )}>
+                    {daysInfo.days} days remaining
+                  </span>
+                )}
+                {daysInfo.type === "completed" && (
+                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                    Completed {daysInfo.days} days ago
+                  </span>
+                )}
+              </div>
+
+              {/* Velocity */}
+              {sprint.velocity !== undefined && sprint.velocity !== null && (
+                <div className="flex items-center gap-2">
+                  <HiChartBar className="h-4 w-4" />
+                  <span>Velocity: {sprint.velocity} points</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Metrics */}
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Tasks</p>
+            <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+              {sprintMetrics.total}
+            </p>
+          </div>
+          <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
+            <p className="text-xs font-medium text-green-700 dark:text-green-400">Completed</p>
+            <p className="mt-1 text-2xl font-semibold text-green-900 dark:text-green-300">
+              {sprintMetrics.completed}
+            </p>
+          </div>
+          <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
+            <p className="text-xs font-medium text-blue-700 dark:text-blue-400">In Progress</p>
+            <p className="mt-1 text-2xl font-semibold text-blue-900 dark:text-blue-300">
+              {sprintMetrics.inProgress}
+            </p>
+          </div>
+          <div className="rounded-lg bg-purple-50 p-4 dark:bg-purple-900/20">
+            <p className="text-xs font-medium text-purple-700 dark:text-purple-400">Completion</p>
+            <p className="mt-1 text-2xl font-semibold text-purple-900 dark:text-purple-300">
+              {sprintMetrics.completionRate}%
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Drag Overlay - Shows the task being dragged */}
-      <DragOverlay>
-        {activeTask && (
-          <div className="opacity-90 rotate-3 scale-105 shadow-2xl">
-            <TaskCard
-              task={activeTask}
-              onEdit={() => {}}
-              onDelete={() => {}}
-              onArchive={() => {}}
-              onStatusChange={() => {}}
-            />
-          </div>
-        )}
-      </DragOverlay>
-    </DndContext>
+      {/* Board */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className={`grid gap-3 ${gridColsClass}`}>
+          {columns.map((column) => {
+            const columnTasks = tasksByColumn[column.stage.id] || [];
+            const isOver = getIsColumnOver(column.stage.id);
+
+            return (
+              <SortableContext
+                key={column.stage.id}
+                id={column.stage.id}
+                items={columnTasks.map((t) => t.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <DroppableColumn
+                  column={column}
+                  tasks={columnTasks}
+                  isOver={isOver}
+                >
+                  {columnTasks.length === 0 ? (
+                    <EmptyColumnDropZone stageId={column.stage.id} isOver={isOver} />
+                  ) : (
+                    columnTasks.map((task) => (
+                      <DraggableTaskCard
+                        key={task.id}
+                        task={task}
+                        onEdit={onEditTask}
+                        onDelete={onDeleteTask}
+                        onArchive={onArchiveTask}
+                        onStatusChange={handleStatusChange}
+                      />
+                    ))
+                  )}
+                </DroppableColumn>
+              </SortableContext>
+            );
+          })}
+        </div>
+
+        {/* Drag Overlay */}
+        <DragOverlay>
+          {activeTask && (
+            <div className="opacity-90 rotate-3 scale-105 shadow-2xl">
+              <TaskCard
+                task={activeTask}
+                onEdit={() => {}}
+                onDelete={() => {}}
+                onArchive={() => {}}
+                onStatusChange={() => {}}
+              />
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
+    </div>
   );
 }
