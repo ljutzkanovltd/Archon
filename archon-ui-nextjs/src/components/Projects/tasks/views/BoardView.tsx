@@ -374,6 +374,17 @@ export function BoardView({
     return overTask?.workflow_stage_id === stageId;
   };
 
+  // Dynamic grid layout based on number of stages (Phase 2.4)
+  // MUST be called before early returns to follow Rules of Hooks
+  const gridColsClass = useMemo(() => {
+    const stageCount = columns.length;
+    if (stageCount <= 2) return "grid-cols-1 md:grid-cols-2";
+    if (stageCount === 3) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
+    if (stageCount === 4) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
+    if (stageCount === 5) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
+    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"; // 6+ stages
+  }, [columns.length]);
+
   // Show loading state while fetching workflow stages
   if (isLoadingStages) {
     return (
@@ -396,16 +407,6 @@ export function BoardView({
       </div>
     );
   }
-
-  // Dynamic grid layout based on number of stages (Phase 2.4)
-  const gridColsClass = useMemo(() => {
-    const stageCount = columns.length;
-    if (stageCount <= 2) return "grid-cols-1 md:grid-cols-2";
-    if (stageCount === 3) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3";
-    if (stageCount === 4) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-4";
-    if (stageCount === 5) return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
-    return "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"; // 6+ stages
-  }, [columns.length]);
 
   return (
     <DndContext
