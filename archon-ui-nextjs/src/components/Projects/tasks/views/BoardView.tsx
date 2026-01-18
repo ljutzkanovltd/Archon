@@ -25,6 +25,7 @@ import { TaskCard } from "@/components/Tasks/TaskCard";
 import { useTaskStore } from "@/store/useTaskStore";
 import { workflowsApi } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
+import { toast } from "react-hot-toast";
 
 interface BoardViewProps {
   projectId: string;
@@ -308,10 +309,25 @@ export function BoardView({
 
   // Handle workflow stage change (both drag-drop and button click)
   const handleStatusChange = async (task: Task, newStageId: string) => {
-    // Optimistic update - immediately update UI
-    await updateTask(task.id, { workflow_stage_id: newStageId });
-    // Refresh tasks from server
-    await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+    try {
+      // Optimistic update - immediately update UI (no await)
+      await updateTask(task.id, { workflow_stage_id: newStageId });
+
+      // Refresh tasks from server to ensure consistency
+      await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+
+      // Show success toast (silent for better UX - drag-and-drop is self-evident)
+      // Uncomment if you want visual feedback:
+      // toast.success("Task moved successfully");
+    } catch (error: any) {
+      // Rollback on error - refresh tasks to restore previous state
+      await fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+
+      // Show error toast
+      toast.error(error.message || "Failed to move task. Please try again.");
+
+      console.error("[BoardView] Error updating task stage:", error);
+    }
   };
 
   // Drag event handlers
