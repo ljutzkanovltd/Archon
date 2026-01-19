@@ -6,7 +6,7 @@ Provides endpoints for user authentication (login, logout, registration).
 
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -203,8 +203,8 @@ async def login(
             )
 
         # Check account lockout
-        if user["locked_until"] and user["locked_until"] > datetime.utcnow():
-            remaining_seconds = int((user["locked_until"] - datetime.utcnow()).total_seconds())
+        if user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
+            remaining_seconds = int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds())
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Account locked due to too many failed login attempts. Try again in {remaining_seconds} seconds.",
@@ -217,7 +217,7 @@ async def login(
             locked_until = None
 
             if failed_attempts >= 5:
-                locked_until = datetime.utcnow() + timedelta(minutes=30)
+                locked_until = datetime.now(timezone.utc) + timedelta(minutes=30)
                 update_query = """
                     UPDATE archon_users
                     SET failed_login_attempts = $1, locked_until = $2, updated_at = NOW()
@@ -267,7 +267,7 @@ async def login(
         permissions_query = """
             SELECT permission_key
             FROM archon_user_permissions
-            WHERE user_id = $1 AND is_active = TRUE
+            WHERE user_id = $1 AND revoked_at IS NULL
             ORDER BY permission_key
         """
         permissions_rows = await conn.fetch(permissions_query, user["id"])
@@ -718,7 +718,7 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest):
         # Step 3: Generate Reset Token
         # ==================================================================
         reset_token = str(uuid.uuid4())
-        expires_at = datetime.utcnow() + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         client_ip = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent", "Unknown")
 

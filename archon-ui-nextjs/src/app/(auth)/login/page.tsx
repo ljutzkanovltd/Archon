@@ -52,6 +52,16 @@ export default function LoginPage() {
     }
   };
 
+  // Quick demo login handler
+  const handleQuickLogin = async (email: string, password: string) => {
+    clearError();
+    try {
+      await login(email, password);
+    } catch (err) {
+      console.error("Quick login failed:", err);
+    }
+  };
+
   const handleMagicLinkSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setMagicLinkError(null);
@@ -168,26 +178,82 @@ export default function LoginPage() {
                   </a>
                 </div>
 
-                {/* Available Accounts Info (Development Only) */}
+                {/* Quick Demo Access (Development Only) */}
                 {process.env.NODE_ENV === "development" && (
-                  <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-                    <p className="mb-2 text-xs font-semibold text-blue-900 dark:text-blue-300">
-                      Available Accounts:
+                  <div className="rounded-lg border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:border-blue-800 dark:from-blue-900/20 dark:to-indigo-900/20">
+                    <p className="mb-3 text-center text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Quick Demo Access
                     </p>
-                    <div className="space-y-1 text-xs text-blue-800 dark:text-blue-400">
-                      <div>
-                        <strong>Admin:</strong>{" "}
-                        <code className="font-mono">admin@archon.dev</code> /{" "}
-                        <code className="font-mono">admin123#</code>
-                      </div>
-                      <div>
-                        <strong>Your Account:</strong>{" "}
-                        <code className="font-mono">
-                          ljutzkanov@sporterp.co.uk
-                        </code>{" "}
-                        / <code className="font-mono">SecurePass123#</code>
-                      </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Admin Button */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickLogin(
+                            "ljutzkanov@sporterp.co.uk",
+                            "TestUser123"
+                          )
+                        }
+                        disabled={isLoading}
+                        className="flex flex-col items-center justify-center rounded-lg border-2 border-purple-300 bg-white p-3 transition-all hover:border-purple-500 hover:bg-purple-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-700 dark:bg-gray-800 dark:hover:bg-purple-900/30"
+                      >
+                        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-xl dark:bg-purple-900/50">
+                          👑
+                        </div>
+                        <span className="text-xs font-semibold text-purple-900 dark:text-purple-300">
+                          Admin
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Full Access
+                        </span>
+                      </button>
+
+                      {/* Team Manager Button */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickLogin(
+                            "teammanager@archon.dev",
+                            "TestUser123"
+                          )
+                        }
+                        disabled={isLoading}
+                        className="flex flex-col items-center justify-center rounded-lg border-2 border-blue-300 bg-white p-3 transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700 dark:bg-gray-800 dark:hover:bg-blue-900/30"
+                      >
+                        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-xl dark:bg-blue-900/50">
+                          👥
+                        </div>
+                        <span className="text-xs font-semibold text-blue-900 dark:text-blue-300">
+                          Manager
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Team Lead
+                        </span>
+                      </button>
+
+                      {/* Developer Button */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleQuickLogin("developer@archon.dev", "TestUser123")
+                        }
+                        disabled={isLoading}
+                        className="flex flex-col items-center justify-center rounded-lg border-2 border-green-300 bg-white p-3 transition-all hover:border-green-500 hover:bg-green-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-green-700 dark:bg-gray-800 dark:hover:bg-green-900/30"
+                      >
+                        <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-xl dark:bg-green-900/50">
+                          💻
+                        </div>
+                        <span className="text-xs font-semibold text-green-900 dark:text-green-300">
+                          Developer
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Dev Tools
+                        </span>
+                      </button>
                     </div>
+                    <p className="mt-2 text-center text-[10px] text-gray-500 dark:text-gray-400">
+                      Click any role to instantly login
+                    </p>
                   </div>
                 )}
 
