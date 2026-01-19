@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { HiPlus, HiEye, HiPencil, HiTrash, HiArchive } from "react-icons/hi";
+import { HiPlus, HiEye, HiPencil, HiTrash, HiArchive, HiLightningBolt } from "react-icons/hi";
 import { tasksApi } from "@/lib/apiClient";
 import { Task } from "@/lib/types";
 import { TaskCard } from "@/components/Tasks/TaskCard";
@@ -12,6 +12,7 @@ import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow } from "date-fns";
 import { CreateTaskModal } from "../components/CreateTaskModal";
 import { EditTaskModal } from "../components/EditTaskModal";
+import { toast } from "react-hot-toast";
 
 /**
  * TasksListView - List view for all tasks
@@ -38,6 +39,19 @@ export function TasksListView() {
   // Fetch tasks on mount
   useEffect(() => {
     loadTasks();
+  }, []);
+
+  // Keyboard shortcut: Cmd/Ctrl + Shift + S for sprint creation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        handleCreateSprint();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const loadTasks = async () => {
@@ -101,6 +115,13 @@ export function TasksListView() {
 
   const handleCreateTask = () => {
     setIsCreateModalOpen(true);
+  };
+
+  const handleCreateSprint = () => {
+    toast.error(
+      "Sprint creation is project-specific. Please navigate to a project to create sprints.",
+      { duration: 4000 }
+    );
   };
 
   const handleStatusChange = async (task: Task, newStatus: Task["status"]) => {
@@ -243,6 +264,12 @@ export function TasksListView() {
       icon: HiPlus,
       onClick: handleCreateTask,
       variant: "primary",
+    },
+    {
+      label: "New Sprint",
+      icon: HiLightningBolt,
+      onClick: handleCreateSprint,
+      variant: "secondary",
     },
   ];
 

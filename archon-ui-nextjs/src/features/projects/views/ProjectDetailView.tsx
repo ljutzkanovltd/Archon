@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { HiArrowLeft, HiPencil, HiArchive, HiTrash } from "react-icons/hi";
+import { HiArrowLeft, HiPencil, HiArchive, HiTrash, HiPlus } from "react-icons/hi";
 import { ViewModeToggle, ViewMode } from "@/components/common/ViewModeToggle";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useTaskStore } from "@/store/useTaskStore";
@@ -12,11 +12,14 @@ import { BoardView } from "@/components/Projects/tasks/views/BoardView";
 import { TaskModal, TaskFormData } from "@/components/Tasks/TaskModal";
 import { Task } from "@/lib/types";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
-import { ProjectHeader } from "../components";
+import { ProjectHeader, ProjectMembersView, ProjectHierarchyTree, ProjectBreadcrumb, SubprojectModal } from "../components";
 import { DataTable, DataTableColumn, DataTableButton } from "@/components/common/DataTable";
 import { TaskCard } from "@/components/Tasks/TaskCard";
 import { formatDistanceToNow } from "date-fns";
 import { WorkflowVisualization } from "@/features/workflows";
+import { CreateSprintModal } from "../../sprints/components/CreateSprintModal";
+import { SprintListView } from "../../sprints/views/SprintListView";
+import { TimelineView } from "./TimelineView";
 
 // Use ViewMode from ViewModeToggle component (supports: "kanban" | "table" | "grid" | "list")
 
@@ -77,6 +80,10 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<Task | null>(null);
   const [taskModalMode, setTaskModalMode] = useState<"create" | "edit">("create");
+  const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
+  // Phase 3.6: Hierarchy state
+  const [isSubprojectModalOpen, setIsSubprojectModalOpen] = useState(false);
+  const [hierarchyData, setHierarchyData] = useState<any>(null);
 
   // Define columns for DataTable (used in table view)
   const taskColumns: DataTableColumn<Task>[] = useMemo(() => [
@@ -187,6 +194,22 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
     fetchProjectById(projectId);
     // Fetch all tasks with high per_page to avoid pagination issues
     fetchTasks({ project_id: projectId, include_closed: true, per_page: 1000 });
+
+    // Phase 3.6: Fetch hierarchy data
+    const fetchHierarchy = async () => {
+      try {
+        const hierarchyResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"}/api/projects/${projectId}/hierarchy`
+        );
+        if (hierarchyResponse.ok) {
+          const data = await hierarchyResponse.json();
+          setHierarchyData(data);
+        }
+      } catch (error) {
+        console.error("[ProjectDetailView] Error fetching hierarchy:", error);
+      }
+    };
+    fetchHierarchy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -282,6 +305,51 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
     }
   };
 
+  const handleCreateSprint = () => {
+    if (!selectedProject?.archived) {
+      setIsSprintModalOpen(true);
+    }
+  };
+
+  const handleSprintCreated = () => {
+    setIsSprintModalOpen(false);
+    // Sprints are managed by TanStack Query, so they auto-refresh
+  };
+
+  // Phase 3.6: Subproject handlers
+  const handleAddSubproject = (parentId: string) => {
+    setIsSubprojectModalOpen(true);
+  };
+
+  const handleSubprojectCreated = async () => {
+    setIsSubprojectModalOpen(false);
+    // Refresh hierarchy data
+    try {
+      const hierarchyResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"}/api/projects/${projectId}/hierarchy`
+      );
+      if (hierarchyResponse.ok) {
+        const data = await hierarchyResponse.json();
+        setHierarchyData(data);
+      }
+    } catch (error) {
+      console.error("[ProjectDetailView] Error refreshing hierarchy:", error);
+    }
+  };
+
+  // Keyboard shortcut: Cmd/Ctrl + Shift + S for sprint creation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        handleCreateSprint();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedProject]);
+
   // ========== RENDER ==========
 
   if (projectError) {
@@ -313,14 +381,31 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
 
   return (
     <div className="p-8">
-      {/* Breadcrumb */}
-      <BreadCrumb
-        items={[
-          { label: "Projects", href: "/projects" },
-          { label: selectedProject.title, href: `/projects/${projectId}` }
-        ]}
-        className="mb-4"
-      />
+      {/* Phase 3.6: Hierarchy-aware Breadcrumb */}
+      {hierarchyData && hierarchyData.ancestors && hierarchyData.ancestors.length > 0 ? (
+        <ProjectBreadcrumb
+          ancestors={hierarchyData.ancestors.map((a: any) => ({
+            id: a.id,
+            title: a.title,
+            href: `/projects/${a.id}`,
+          }))}
+          current={{
+            id: projectId,
+            title: selectedProject.title,
+            href: `/projects/${projectId}`,
+          }}
+          showHome={true}
+          className="mb-4"
+        />
+      ) : (
+        <BreadCrumb
+          items={[
+            { label: "Projects", href: "/projects" },
+            { label: selectedProject.title, href: `/projects/${projectId}` }
+          ]}
+          className="mb-4"
+        />
+      )}
 
       {/* Back Button */}
       <button
@@ -369,22 +454,44 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
         </div>
       )}
 
-      {/* View Mode Toggle & Create Task Button */}
-      <div className="mb-4 flex items-center justify-between">
-        <button
-          onClick={handleCreateTask}
-          disabled={selectedProject.archived}
-          className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create Task
-        </button>
+      {/* Phase 3.6: Project Hierarchy Tree */}
+      {hierarchyData && (hierarchyData.parent || hierarchyData.children.length > 0 || hierarchyData.siblings.length > 0) && (
+        <div className="mb-6">
+          <ProjectHierarchyTree
+            projectId={projectId}
+            onAddSubproject={handleAddSubproject}
+          />
+        </div>
+      )}
 
-        {/* Three-mode view toggle: Kanban / Table / Grid - uses reusable ViewModeToggle */}
+      {/* View Mode Toggle & Action Buttons */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCreateTask}
+            disabled={selectedProject.archived}
+            className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create Task
+          </button>
+
+          <button
+            onClick={handleCreateSprint}
+            disabled={selectedProject.archived}
+            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Create a new sprint (⌘⇧S / Ctrl+Shift+S)"
+          >
+            <HiPlus className="h-5 w-5" />
+            New Sprint
+          </button>
+        </div>
+
+        {/* Six-mode view toggle: Kanban / Table / Grid / Sprints / Timeline / Members - uses reusable ViewModeToggle */}
         <ViewModeToggle
-          modes={["kanban", "table", "grid"]}
+          modes={["kanban", "table", "grid", "sprints", "timeline", "members"]}
           currentMode={viewMode}
           onChange={setViewMode}
           size="md"
@@ -430,6 +537,18 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           emptyMessage="No tasks found. Create your first task to get started!"
           caption="Tasks in this project"
         />
+      ) : viewMode === "sprints" ? (
+        // Sprints view - List of all sprints with cards
+        <SprintListView projectId={projectId} />
+      ) : viewMode === "timeline" ? (
+        // Timeline view - Jira-style Gantt chart with sprint lanes
+        <TimelineView projectId={projectId} projectTitle={selectedProject?.title} />
+      ) : viewMode === "members" ? (
+        // Members view - Project members management
+        <ProjectMembersView
+          projectId={projectId}
+          projectTitle={selectedProject?.title || ""}
+        />
       ) : (
         // Grid view - uses DataTable with TaskCard customRender
         <DataTable<Task>
@@ -460,6 +579,24 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
         projectId={projectId}
         mode={taskModalMode}
       />
+
+      {/* Sprint Creation Modal */}
+      <CreateSprintModal
+        projectId={projectId}
+        isOpen={isSprintModalOpen}
+        onClose={() => setIsSprintModalOpen(false)}
+        onSprintCreated={handleSprintCreated}
+      />
+
+      {/* Phase 3.6: Subproject Creation Modal */}
+      {selectedProject && (
+        <SubprojectModal
+          isOpen={isSubprojectModalOpen}
+          onClose={() => setIsSubprojectModalOpen(false)}
+          parentProject={selectedProject}
+          onSubprojectCreated={handleSubprojectCreated}
+        />
+      )}
     </div>
   );
 }

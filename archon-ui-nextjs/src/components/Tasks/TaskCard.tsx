@@ -17,11 +17,13 @@ import {
   HiMinus,
   HiArrowUp,
   HiExclamation,
+  HiCalendar,
 } from "react-icons/hi";
 import { Task } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { useState, useRef, useEffect } from "react";
 import React from "react";
+import { useSprints } from "@/features/sprints/hooks/useSprintQueries";
 
 interface TaskCardProps {
   task: Task;
@@ -128,6 +130,10 @@ export function TaskCard({
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const descriptionRef = useRef<HTMLParagraphElement>(null);
 
+  // Fetch sprint data if task has sprint_id
+  const { data: sprintsData } = useSprints(task.project_id);
+  const sprint = sprintsData?.sprints?.find((s) => s.id === task.sprint_id);
+
   const formattedCreatedAt = formatDistanceToNow(new Date(task.created_at), {
     addSuffix: true,
   });
@@ -233,7 +239,7 @@ export function TaskCard({
             <h4 className="truncate text-sm font-semibold text-gray-900 dark:text-white">
               {task.title}
             </h4>
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
               <Badge color={getPriorityConfig(task.priority).color} size="xs">
                 {React.createElement(getPriorityConfig(task.priority).icon, {
                   className: "w-3 h-3 mr-0.5 inline",
@@ -241,6 +247,12 @@ export function TaskCard({
                 })}
                 {(task.priority || "medium").charAt(0).toUpperCase() + (task.priority || "medium").slice(1)}
               </Badge>
+              {sprint && (
+                <Badge color="info" size="xs">
+                  <HiCalendar className="w-3 h-3 mr-0.5 inline" />
+                  {sprint.name}
+                </Badge>
+              )}
               {task.feature && (
                 <Badge color="purple" size="xs">
                   {task.feature}
@@ -323,14 +335,14 @@ export function TaskCard({
             onEdit?.(task);
           }
         }}
-        aria-label={`Task: ${task.title}. Status: ${task.status}. Priority: ${task.priority}. Click to edit.`}
+        aria-label={`Task: ${task.title}. Status: ${task.status}. Priority: ${task.priority}. ${sprint ? `Sprint: ${sprint.name}.` : ""} Click to edit.`}
       >
         {/* Title - single line, truncated */}
         <h4 className="truncate text-sm font-semibold text-gray-900 dark:text-white mb-1.5" title={task.title}>
           {task.title}
         </h4>
-        {/* Status + Priority badges */}
-        <div className="flex items-center gap-1.5">
+        {/* Status + Priority + Sprint badges */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           <Badge color={statusColors[task.status]} size="xs">
             {task.status}
           </Badge>
@@ -341,6 +353,12 @@ export function TaskCard({
             })}
             {task.priority.charAt(0).toUpperCase()}
           </Badge>
+          {sprint && (
+            <Badge color="info" size="xs">
+              <HiCalendar className="w-3 h-3 mr-0.5 inline" />
+              {sprint.name.length > 15 ? sprint.name.substring(0, 12) + "..." : sprint.name}
+            </Badge>
+          )}
         </div>
       </div>
     );
@@ -359,6 +377,16 @@ export function TaskCard({
               <HiArchive className="w-3 h-3" />
               <span>ARCHIVED</span>
             </div>
+          )}
+
+          {/* Sprint badge */}
+          {sprint && (
+            <Tooltip content={`Sprint: ${sprint.name}${sprint.goal ? ` - ${sprint.goal}` : ""}`} style="light" trigger="hover">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 text-xs font-medium transition-opacity duration-200 hover:opacity-80">
+                <HiCalendar className="w-3 h-3" />
+                {sprint.name}
+              </span>
+            </Tooltip>
           )}
 
           {/* Feature tag */}

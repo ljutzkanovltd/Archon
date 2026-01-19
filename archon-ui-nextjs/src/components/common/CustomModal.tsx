@@ -50,12 +50,12 @@ const CustomModal: FC<Props> = ({
       >
         <div
           ref={modalRef}
-          className="relative bg-white rounded-lg shadow-sm dark:bg-gray-700 max-h-screen overflow-auto"
+          className="relative bg-white rounded-lg shadow-sm dark:bg-gray-700 max-h-screen flex flex-col"
         >
           {/* Modal Header */}
           <div
             className={cn(
-              "flex flex-col justify-between p-4 md:p-5 border-b border-gray-200 dark:border-gray-600 rounded-t",
+              "flex-shrink-0 flex flex-col justify-between p-4 md:p-5 border-b border-gray-200 dark:border-gray-600 rounded-t",
               headerClassName
             )}
           >
@@ -77,7 +77,7 @@ const CustomModal: FC<Props> = ({
           {/* Modal Body */}
           <div
             className={cn(
-              "flex gap-8 flex-col max-h-[80vh] overflow-auto",
+              "flex gap-8 flex-col flex-1 overflow-auto min-h-0",
               containerClassName
             )}
           >

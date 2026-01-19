@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { HiX, HiCheck } from "react-icons/hi";
 import { Task } from "@/lib/types";
 import { WorkflowStageSelector } from "./WorkflowStageSelector";
+import { SprintSelector } from "@/features/sprints/components/SprintSelector";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export interface TaskFormData {
   priority: "low" | "medium" | "high" | "urgent";
   assignee: string;
   feature?: string;
+  sprint_id?: string; // Sprint assignment
   project_id: string;
 }
 
@@ -39,6 +41,7 @@ export function TaskModal({
     priority: "medium",
     assignee: "User",
     feature: "",
+    sprint_id: undefined,
     project_id: projectId,
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -54,6 +57,7 @@ export function TaskModal({
         priority: task.priority,
         assignee: task.assignee,
         feature: task.feature || "",
+        sprint_id: task.sprint_id,
         project_id: task.project_id,
       });
     } else if (mode === "create") {
@@ -65,6 +69,7 @@ export function TaskModal({
         priority: "medium",
         assignee: "User",
         feature: "",
+        sprint_id: undefined,
         project_id: projectId,
       });
     }
@@ -218,6 +223,17 @@ export function TaskModal({
                 onChange={(e) => handleChange("feature", e.target.value)}
                 className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                 placeholder="e.g., Documentation, Backend, Frontend"
+              />
+            </div>
+
+            {/* Sprint Assignment */}
+            <div>
+              <SprintSelector
+                projectId={projectId}
+                value={formData.sprint_id}
+                onChange={(sprintId) => handleChange("sprint_id", sprintId || "")}
+                label="Sprint Assignment"
+                helperText="Assign this task to an active or planned sprint, or leave unassigned for the backlog."
               />
             </div>
           </form>

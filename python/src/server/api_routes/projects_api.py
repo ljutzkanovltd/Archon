@@ -13,12 +13,13 @@ from datetime import datetime, timezone
 from email.utils import format_datetime
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi import status as http_status
 from pydantic import BaseModel
 
 # Removed direct logging import - using unified config
 # Set up standard logger for background tasks
+from ..auth.dependencies import get_current_user_optional
 from ..config.logfire_config import get_logger, logfire
 from ..utils import get_supabase_client
 from ..utils.etag_utils import check_etag, generate_etag
@@ -81,24 +82,36 @@ async def list_projects(
     response: Response,
     include_content: bool = True,
     include_archived: bool = False,
-    if_none_match: str | None = Header(None)
+    if_none_match: str | None = Header(None),
+    current_user: dict | None = Depends(get_current_user_optional)
 ):
     """
-    List all projects.
+    List all projects, filtered by user access for authenticated users.
 
     Args:
         include_content: If True (default), returns full project content.
                         If False, returns lightweight metadata with statistics.
         include_archived: If True, includes archived projects. Default: False.
+        current_user: Authenticated user (optional). If authenticated, filters projects by access.
+
+    Returns:
+        - Admins: See all projects
+        - Regular users: See only projects they have access to
+        - Anonymous users: See all projects (for backward compatibility)
     """
     try:
-        logfire.debug(f"Listing all projects | include_content={include_content} | include_archived={include_archived}")
+        user_id = str(current_user["id"]) if current_user else None
+        logfire.debug(
+            f"Listing projects | include_content={include_content} | "
+            f"include_archived={include_archived} | user_id={user_id}"
+        )
 
-        # Use ProjectService to get projects with include_content parameter
+        # Use ProjectService to get projects with user access filtering
         project_service = ProjectService()
-        success, result = project_service.list_projects(
+        success, result = await project_service.list_projects(
             include_content=include_content,
-            include_archived=include_archived
+            include_archived=include_archived,
+            user_id=user_id
         )
 
         if not success:
@@ -228,7 +241,7 @@ async def projects_health():
         try:
             project_service = ProjectService(supabase_client)
             # Try to list projects with limit 1 to test table access
-            success, _ = project_service.list_projects()
+            success, _ = await project_service.list_projects()
             projects_table_exists = success
             if success:
                 logfire.info("Projects table detected successfully")

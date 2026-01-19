@@ -90,23 +90,13 @@ apiClient.interceptors.response.use(
 
     // Handle specific error codes
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
+      // Unauthorized - use auth store's handleSessionExpiry
       if (typeof window !== "undefined") {
-        localStorage.removeItem("archon_token");
-        localStorage.removeItem("archon_user");
-
-        // Show toast notification about session expiration
-        import("react-hot-toast").then(({ toast }) => {
-          toast.error("Your session has expired. Please log in again.", {
-            duration: 4000,
-            position: "top-center",
-          });
+        // Dynamically import useAuthStore to avoid circular dependency
+        import("@/store/useAuthStore").then(({ useAuthStore }) => {
+          const store = useAuthStore.getState();
+          store.handleSessionExpiry();
         });
-
-        // Redirect to login after showing toast
-        setTimeout(() => {
-          window.location.href = "/login";
-        }, 1500);
       }
       apiError.message = "Authentication required. Please log in.";
     } else if (error.response?.status === 403) {
@@ -206,6 +196,43 @@ export const projectsApi = {
    */
   delete: async (id: string): Promise<ApiResponse<void>> => {
     const response = await apiClient.delete(`/api/projects/${id}`);
+    return response.data;
+  },
+
+  /**
+   * Get project hierarchy
+   * Phase 3.1: Project hierarchy tree
+   */
+  getProjectHierarchy: async (id: string): Promise<{
+    parent: {
+      id: string;
+      title: string;
+      description?: string;
+      workflow_id?: string;
+      relationship_type?: string;
+    } | null;
+    children: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      workflow_id?: string;
+      relationship_type?: string;
+      task_count?: number;
+    }>;
+    ancestors: Array<{
+      id: string;
+      title: string;
+      description?: string;
+    }>;
+    siblings: Array<{
+      id: string;
+      title: string;
+      description?: string;
+    }>;
+    children_count: number;
+    siblings_count: number;
+  }> => {
+    const response = await apiClient.get(`/api/projects/${id}/hierarchy`);
     return response.data;
   },
 };
@@ -1012,6 +1039,63 @@ export const adminApi = {
     const response = await apiClient.put(`/api/admin/users/${userId}/permissions`, data);
     return response.data;
   },
+
+  /**
+   * Update user details (name, email, role)
+   */
+  updateUser: async (
+    userId: string,
+    data: import("./admin-types").UpdateUserRequest
+  ): Promise<import("./admin-types").UpdateUserResponse> => {
+    const response = await apiClient.put(`/api/admin/users/${userId}`, data);
+    return response.data;
+  },
+
+  /**
+   * Send password reset email to user
+   */
+  sendPasswordReset: async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/api/admin/users/${userId}/password-reset`);
+    return response.data;
+  },
+
+  /**
+   * Get user's accessible projects
+   */
+  getUserProjects: async (userId: string): Promise<import("./admin-types").UserProjectsResponse> => {
+    const response = await apiClient.get(`/api/admin/users/${userId}/projects`);
+    return response.data;
+  },
+
+  /**
+   * Get project members
+   */
+  getProjectMembers: async (projectId: string): Promise<import("./admin-types").ProjectMembersResponse> => {
+    const response = await apiClient.get(`/api/admin/projects/${projectId}/members`);
+    return response.data;
+  },
+
+  /**
+   * Add user to project
+   */
+  addProjectMember: async (
+    projectId: string,
+    data: import("./admin-types").AddProjectMemberRequest
+  ): Promise<import("./admin-types").AddProjectMemberResponse> => {
+    const response = await apiClient.post(`/api/admin/projects/${projectId}/members`, data);
+    return response.data;
+  },
+
+  /**
+   * Remove user from project
+   */
+  removeProjectMember: async (
+    projectId: string,
+    userId: string
+  ): Promise<import("./admin-types").RemoveProjectMemberResponse> => {
+    const response = await apiClient.delete(`/api/admin/projects/${projectId}/members/${userId}`);
+    return response.data;
+  },
 };
 
 // ==================== WORKFLOW ENDPOINTS ====================
@@ -1031,11 +1115,11 @@ export const workflowsApi = {
 
   /**
    * Get a single workflow by ID
-   * API returns: { workflow: Workflow }
+   * API returns: Workflow object directly (with stages included)
    */
   getById: async (workflowId: string): Promise<import("./types").Workflow> => {
     const response = await apiClient.get(`/api/workflows/${workflowId}`);
-    return response.data.workflow;
+    return response.data; // API returns workflow directly, not wrapped
   },
 
   /**

@@ -71,6 +71,17 @@ export function ProjectCard({
                 {project.project_type.name}
               </Badge>
             )}
+            {/* Phase 3.5: Hierarchy Badges */}
+            {project.has_parent && (
+              <Badge color="purple" size="xs">
+                Subproject
+              </Badge>
+            )}
+            {project.children_count && project.children_count > 0 && (
+              <Badge color="indigo" size="xs">
+                {project.children_count} {project.children_count === 1 ? "Subproject" : "Subprojects"}
+              </Badge>
+            )}
             {project.archived && (
               <Badge color="gray" size="xs">
                 Archived

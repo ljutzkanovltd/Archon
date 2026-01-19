@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { HiUserAdd, HiKey, HiStatusOnline, HiStatusOffline } from "react-icons/hi";
+import { HiUserAdd, HiKey, HiStatusOnline, HiStatusOffline, HiPencil, HiOfficeBuilding } from "react-icons/hi";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { usePageTitle } from "@/hooks";
@@ -10,12 +10,16 @@ import { adminApi } from "@/lib/apiClient";
 import { UserListItem } from "@/lib/admin-types";
 import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
+import Image from "next/image";
 import {
   StatusBadge,
   VerifiedBadge,
+  RoleBadge,
   UsersHeader,
   InviteUserModal,
+  EditUserModal,
   EditPermissionsModal,
+  ManageProjectsModal,
 } from "../components";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Forbidden } from "@/components/Forbidden";
@@ -42,7 +46,9 @@ export function UsersListView() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [editUserModalOpen, setEditUserModalOpen] = useState(false);
   const [permissionsModalOpen, setPermissionsModalOpen] = useState(false);
+  const [manageProjectsModalOpen, setManageProjectsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
 
   // Fetch users with error handling (MUST be called unconditionally per Rules of Hooks)
@@ -97,9 +103,19 @@ export function UsersListView() {
     setInviteModalOpen(true);
   };
 
+  const handleEditUser = (user: UserListItem) => {
+    setSelectedUser(user);
+    setEditUserModalOpen(true);
+  };
+
   const handleEditPermissions = (user: UserListItem) => {
     setSelectedUser(user);
     setPermissionsModalOpen(true);
+  };
+
+  const handleManageProjects = (user: UserListItem) => {
+    setSelectedUser(user);
+    setManageProjectsModalOpen(true);
   };
 
   const handleToggleStatus = async (user: UserListItem) => {
@@ -117,6 +133,29 @@ export function UsersListView() {
 
   const columns: DataTableColumn<UserListItem>[] = [
     {
+      key: "avatar_url",
+      label: "Avatar",
+      sortable: false,
+      width: "80px",
+      render: (value, user) => (
+        <div className="flex items-center">
+          {value ? (
+            <Image
+              src={value}
+              alt={user.full_name || user.email}
+              width={40}
+              height={40}
+              className="rounded-full"
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-white font-semibold">
+              {(user.full_name || user.email).charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
       key: "email",
       label: "User",
       sortable: true,
@@ -132,6 +171,13 @@ export function UsersListView() {
       ),
     },
     {
+      key: "role",
+      label: "Role",
+      sortable: true,
+      width: "120px",
+      render: (value) => <RoleBadge role={value} />,
+    },
+    {
       key: "is_active",
       label: "Status",
       sortable: true,
@@ -144,6 +190,19 @@ export function UsersListView() {
       sortable: true,
       width: "140px",
       render: (value) => <VerifiedBadge isVerified={value} />,
+    },
+    {
+      key: "last_login_at",
+      label: "Last Login",
+      sortable: true,
+      width: "150px",
+      render: (value) => (
+        <span className="text-sm text-gray-500 dark:text-gray-400">
+          {value
+            ? formatDistanceToNow(new Date(value), { addSuffix: true })
+            : "Never"}
+        </span>
+      ),
     },
     {
       key: "created_at",
@@ -169,10 +228,22 @@ export function UsersListView() {
 
   const rowButtons = (user: UserListItem): DataTableButton[] => [
     {
-      label: "Edit Permissions",
+      label: "Edit User",
+      icon: HiPencil,
+      onClick: () => handleEditUser(user),
+      ariaLabel: `Edit ${user.full_name || user.email}`,
+    },
+    {
+      label: "Permissions",
       icon: HiKey,
       onClick: () => handleEditPermissions(user),
       ariaLabel: `Edit permissions for ${user.full_name || user.email}`,
+    },
+    {
+      label: "Manage Projects",
+      icon: HiOfficeBuilding,
+      onClick: () => handleManageProjects(user),
+      ariaLabel: `Manage projects for ${user.full_name || user.email}`,
     },
     {
       label: user.is_active ? "Deactivate" : "Activate",
@@ -263,10 +334,26 @@ export function UsersListView() {
         isOpen={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
       />
+      <EditUserModal
+        isOpen={editUserModalOpen}
+        onClose={() => {
+          setEditUserModalOpen(false);
+          setSelectedUser(null);
+        }}
+        user={selectedUser}
+      />
       <EditPermissionsModal
         isOpen={permissionsModalOpen}
         onClose={() => {
           setPermissionsModalOpen(false);
+          setSelectedUser(null);
+        }}
+        user={selectedUser}
+      />
+      <ManageProjectsModal
+        isOpen={manageProjectsModalOpen}
+        onClose={() => {
+          setManageProjectsModalOpen(false);
           setSelectedUser(null);
         }}
         user={selectedUser}

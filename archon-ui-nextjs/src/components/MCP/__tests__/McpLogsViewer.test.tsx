@@ -7,19 +7,24 @@ import { http, HttpResponse } from 'msw';
 import { mockMcpLogEntry } from '@/test/test-utils';
 
 // Mock react-window to avoid virtualization issues in tests
-vi.mock('react-window', () => ({
-  FixedSizeList: ({ children, itemCount }: any) => (
+vi.mock('react-window', () => {
+  const MockList = ({ children, itemCount }: any) => (
     <div data-testid="virtualized-list">
       {Array.from({ length: Math.min(itemCount, 10) }).map((_, index) =>
         children({ index, style: {} })
       )}
     </div>
-  ),
-}));
+  );
+
+  return {
+    FixedSizeList: MockList,
+    List: MockList,
+  };
+});
 
 // Mock react-window-infinite-loader
 vi.mock('react-window-infinite-loader', () => ({
-  default: ({ children }: any) => children({ onItemsRendered: vi.fn(), ref: vi.fn() }),
+  InfiniteLoader: ({ children }: any) => children({ onItemsRendered: vi.fn(), ref: vi.fn() }),
 }));
 
 describe('McpLogsViewer', () => {

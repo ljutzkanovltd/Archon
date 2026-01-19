@@ -51,10 +51,8 @@ describe('DataTablePagination', () => {
         />
       );
 
-      expect(screen.getByText(/showing/i)).toBeInTheDocument();
-      expect(screen.getByText(/1/)).toBeInTheDocument();
-      expect(screen.getByText(/10/)).toBeInTheDocument();
-      expect(screen.getByText(/30/)).toBeInTheDocument();
+      // Check for complete "Showing X to Y of Z results" text
+      expect(screen.getByText(/showing\s+1\s+to\s+10\s+of\s+30\s+results/i)).toBeInTheDocument();
     });
 
     it('should show per-page selector', () => {

@@ -14,6 +14,12 @@ vi.mock('../hooks/useSprintQueries', () => ({
   useSprints: vi.fn(),
 }));
 
+// Mock CreateSprintModal component
+vi.mock('../components/CreateSprintModal', () => ({
+  CreateSprintModal: ({ isOpen, onClose, onSprintCreated }: any) =>
+    isOpen ? <div data-testid="create-sprint-modal">Mock CreateSprintModal</div> : null,
+}));
+
 import { useSprints } from '../hooks/useSprintQueries';
 
 describe('SprintSelector Component', () => {
@@ -311,8 +317,8 @@ describe('SprintSelector Component', () => {
 
     const option = screen.getByRole('option', { name: /Sprint Q1/i });
 
-    // Check that dates are displayed (formatted)
-    expect(option.textContent).toMatch(/1\/15\/2024/);
-    expect(option.textContent).toMatch(/1\/29\/2024/);
+    // Check that dates are displayed (formatted as "Jan 15 - Jan 29")
+    expect(option.textContent).toMatch(/Jan 15/);
+    expect(option.textContent).toMatch(/Jan 29/);
   });
 });

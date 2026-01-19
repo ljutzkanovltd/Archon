@@ -116,7 +116,8 @@ export function McpAnalytics({ days = 30, compare = true, className = "" }: McpA
   // Helper functions
   const formatCost = (cost: number) => `$${cost.toFixed(6)}`;
   const formatNumber = (num: number) => num.toLocaleString();
-  const formatDuration = (ms: number) => {
+  const formatDuration = (ms: number | null | undefined) => {
+    if (ms === null || ms === undefined) return "N/A";
     if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
     return `${ms.toFixed(0)}ms`;
   };

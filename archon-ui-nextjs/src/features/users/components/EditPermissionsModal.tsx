@@ -131,10 +131,10 @@ export function EditPermissionsModal({
     <CustomModal
       open={isOpen}
       close={onClose}
-      title={`Edit Permissions - ${user.full_name || user.email} [DEBUG: v10-FLOWBITE-CHECKBOX]`}
+      title={`Edit Permissions - ${user.full_name || user.email}`}
       description="Grant or revoke access permissions for this user"
       size="LARGE"
-      containerClassName="p-0 !overflow-visible"
+      containerClassName="p-0 flex flex-col h-full"
     >
       {/* Loading State */}
       {isLoading ? (
@@ -145,9 +145,9 @@ export function EditPermissionsModal({
           </p>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="flex flex-col max-h-[600px]">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6">
+          <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6 min-h-0">
             {/* User Info */}
             <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
               <p className="text-sm text-gray-600 dark:text-gray-400">

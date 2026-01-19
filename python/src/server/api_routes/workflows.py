@@ -61,6 +61,40 @@ class TransitionTaskRequest(BaseModel):
     to_stage_id: str
 
 
+@router.get("/project-types")
+async def list_project_types():
+    """
+    Get all available project types.
+
+    Returns:
+        Array of project type objects (id, name, description)
+    """
+    try:
+        logfire.debug("Listing all project types")
+
+        from ..utils import get_supabase_client
+        supabase_client = get_supabase_client()
+
+        response = supabase_client.table("archon_project_types").select("*").execute()
+
+        if not response.data:
+            logfire.debug("No project types found")
+            return {"project_types": [], "count": 0}
+
+        logfire.debug(f"Retrieved {len(response.data)} project types")
+        return {
+            "project_types": response.data,
+            "count": len(response.data)
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing project types: {str(e)}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @router.get("/workflows")
 async def list_workflows():
     """

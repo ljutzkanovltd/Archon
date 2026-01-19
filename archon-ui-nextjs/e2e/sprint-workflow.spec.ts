@@ -300,6 +300,118 @@ test.describe('Sprint Workflow', () => {
     });
   });
 
+  test.describe('Inline Sprint Creation (Phase 3.5)', () => {
+    test('should show "+ New Sprint" button in SprintSelector', async ({ page }) => {
+      // Navigate to task creation modal
+      const newTaskButton = page.locator('button').filter({ hasText: /New Task|Create Task/i }).first();
+      await newTaskButton.click();
+
+      // Wait for task modal to open
+      await expect(page.locator('text=/Create Task|New Task/i').first()).toBeVisible({ timeout: 5000 });
+
+      // Check for "+ New Sprint" button in SprintSelector
+      const newSprintButton = page.locator('button').filter({ hasText: /New Sprint/i });
+      await expect(newSprintButton).toBeVisible({ timeout: 5000 });
+    });
+
+    test('should open sprint modal from SprintSelector', async ({ page }) => {
+      // Open task creation modal
+      const newTaskButton = page.locator('button').filter({ hasText: /New Task|Create Task/i }).first();
+      await newTaskButton.click();
+
+      // Click "+ New Sprint" button within SprintSelector
+      const newSprintButton = page.locator('button').filter({ hasText: /New Sprint/i });
+      await newSprintButton.click();
+
+      // Verify sprint creation modal opens
+      await expect(page.locator('text=Create New Sprint')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('input#sprint-name')).toBeVisible();
+    });
+
+    test('should auto-select newly created sprint in dropdown', async ({ page }) => {
+      // Open task creation modal
+      const newTaskButton = page.locator('button').filter({ hasText: /New Task|Create Task/i }).first();
+      await newTaskButton.click();
+
+      // Open sprint creation from SprintSelector
+      const newSprintButton = page.locator('button').filter({ hasText: /New Sprint/i });
+      await newSprintButton.click();
+
+      // Fill sprint form
+      const uniqueName = `Inline Sprint ${Date.now()}`;
+      await page.fill('input#sprint-name', uniqueName);
+      await page.fill('textarea#sprint-goal', 'Test auto-selection');
+
+      // Submit sprint creation
+      const createSprintButton = page.locator('button').filter({ hasText: /^Create Sprint$/i });
+      await createSprintButton.click();
+
+      // Wait for success message
+      await expect(page.locator('text=/Sprint created successfully/i')).toBeVisible({ timeout: 5000 });
+
+      // Verify sprint is auto-selected in dropdown
+      await page.waitForTimeout(500); // Allow time for auto-selection
+      const sprintSelector = page.locator('select#sprint-selector');
+      const selectedValue = await sprintSelector.inputValue();
+      expect(selectedValue).not.toBe(''); // Should have a selected value (not empty)
+
+      // Verify the selected option contains the sprint name
+      const selectedOption = await sprintSelector.locator('option:checked').textContent();
+      expect(selectedOption).toContain(uniqueName);
+    });
+
+    test('should show "Create Sprint & Assign" when no sprints available', async ({ page }) => {
+      // Create a fresh project with no sprints
+      const projectResponse = await page.request.post('/api/projects', {
+        data: {
+          title: 'Empty Sprint Project',
+          description: 'Project with no sprints for testing',
+        },
+      });
+      const projectData = await projectResponse.json();
+      const emptyProjectId = projectData.project.id;
+
+      try {
+        // Navigate to the empty project
+        await page.goto(`/projects/${emptyProjectId}`);
+        await page.waitForLoadState('networkidle');
+
+        // Open task creation modal
+        const newTaskButton = page.locator('button').filter({ hasText: /New Task|Create Task/i }).first();
+        await newTaskButton.click();
+
+        // Check for "Create Sprint & Assign" button when no sprints exist
+        await expect(page.locator('text=/No active or planned sprints available/i')).toBeVisible({ timeout: 5000 });
+        const createAssignButton = page.locator('button').filter({ hasText: /Create Sprint.*Assign/i });
+        await expect(createAssignButton).toBeVisible();
+      } finally {
+        // Cleanup
+        await page.request.delete(`/api/projects/${emptyProjectId}`);
+      }
+    });
+
+    test('should display formatted sprint options with status and dates', async ({ page }) => {
+      // Open task creation modal
+      const newTaskButton = page.locator('button').filter({ hasText: /New Task|Create Task/i }).first();
+      await newTaskButton.click();
+
+      // Check sprint selector dropdown
+      const sprintSelector = page.locator('select#sprint-selector');
+      await expect(sprintSelector).toBeVisible({ timeout: 5000 });
+
+      // Get sprint options
+      const options = await sprintSelector.locator('option').allTextContents();
+
+      // Verify options include status emoji and date formatting
+      const sprintOptions = options.filter(opt => opt.includes('🟢') || opt.includes('📅'));
+      expect(sprintOptions.length).toBeGreaterThan(0);
+
+      // Verify date format is present (short format: "Jan 1")
+      const hasDateFormat = sprintOptions.some(opt => /[A-Z][a-z]{2}\s\d{1,2}/.test(opt));
+      expect(hasDateFormat).toBe(true);
+    });
+  });
+
   test.afterAll(async ({ request }) => {
     // Cleanup: Delete test project
     if (testProjectId) {

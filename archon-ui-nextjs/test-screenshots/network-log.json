@@ -1,0 +1,532 @@
+[
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DARK_MODE_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/PROJECTS_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/STYLE_GUIDE_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/AGENT_WORK_ORDERS_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/LOGFIRE_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DISCONNECT_SCREEN_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/TASKS_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/KNOWLEDGE_BASE_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/MCP_SERVER_DASHBOARD_ENABLED",
+    "time": "2026-01-19T14:04:30.369Z"
+  },
+  {
+    "method": "POST",
+    "url": "http://localhost:3738/api/auth/login",
+    "time": "2026-01-19T14:04:35.283Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:8053/api/agent-work-orders/",
+    "time": "2026-01-19T14:04:35.924Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:35.960Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/v1/active-users",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&assignee=User",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=done",
+    "time": "2026-01-19T14:04:35.969Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=in_progress",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=review",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=backlog",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&assignee=User",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=done",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=in_progress",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=review",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1&status=backlog",
+    "time": "2026-01-19T14:04:35.970Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:8053/api/agent-work-orders/",
+    "time": "2026-01-19T14:04:42.740Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DARK_MODE_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/PROJECTS_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/STYLE_GUIDE_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/AGENT_WORK_ORDERS_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/LOGFIRE_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DISCONNECT_SCREEN_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/TASKS_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/KNOWLEDGE_BASE_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/MCP_SERVER_DASHBOARD_ENABLED",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects?per_page=1000&include_archived=true",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:04:42.772Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff",
+    "time": "2026-01-19T14:04:45.583Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:45.583Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:45.607Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:45.607Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:8053/api/agent-work-orders/",
+    "time": "2026-01-19T14:04:45.747Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DARK_MODE_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/PROJECTS_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/STYLE_GUIDE_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/AGENT_WORK_ORDERS_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/LOGFIRE_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/DISCONNECT_SCREEN_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/TASKS_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/KNOWLEDGE_BASE_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/credentials/MCP_SERVER_DASHBOARD_ENABLED",
+    "time": "2026-01-19T14:04:45.775Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=b8c93ec9-966f-43ca-9756-e08ca6d36cc7",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=6868d070-cb4a-433d-bbd4-7736501859f8",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=49d8860e-cc65-4bee-9647-691c255a343f",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=ec21abac-6631-4a5d-bbf1-e7eca9dfe833",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=98cdb85e-5bed-4862-8cf0-a3dc1703c078",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=289417ad-52c1-4a80-be03-e653b273caba",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=76c28d89-ed2b-436f-b3a1-e09426074c58",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=a22cc86a-023a-4421-ab89-5a9bf02ef232",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=ea6a11ed-0eaa-4712-b96a-f086cd90fb54",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=05db3c21-6750-49ac-b245-27c1c4d285fd",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=912e41f4-c723-461c-a14e-af98a1f13606",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=a86cb605-e25d-4246-8c32-b0c3cb4c9051",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=ebbf0dea-58e6-4d0a-9a5c-e737fc5e6876",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=b6b89cf2-09e8-4a83-8f79-0b9a23ba525e",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=59fc7f95-84b0-44b4-b753-e02c5a1ad3a4",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=7751ad89-81cc-406d-9a8c-a4343ff53c4b",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=52ccc5f6-c416-4965-ac91-fbd7339aa9ff",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=false",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&include_closed=true&project_id=91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:04:45.776Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:47.071Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/workflows/29d6341c-0352-46e7-95d3-c26ae27a1aff/stages",
+    "time": "2026-01-19T14:04:47.071Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/a86cb605-e25d-4246-8c32-b0c3cb4c9051/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/912e41f4-c723-461c-a14e-af98a1f13606/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/b6b89cf2-09e8-4a83-8f79-0b9a23ba525e/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/05db3c21-6750-49ac-b245-27c1c4d285fd/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/a22cc86a-023a-4421-ab89-5a9bf02ef232/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/ea6a11ed-0eaa-4712-b96a-f086cd90fb54/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/76c28d89-ed2b-436f-b3a1-e09426074c58/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/49d8860e-cc65-4bee-9647-691c255a343f/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/289417ad-52c1-4a80-be03-e653b273caba/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/ec21abac-6631-4a5d-bbf1-e7eca9dfe833/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/98cdb85e-5bed-4862-8cf0-a3dc1703c078/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/b8c93ec9-966f-43ca-9756-e08ca6d36cc7/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/ebbf0dea-58e6-4d0a-9a5c-e737fc5e6876/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/52ccc5f6-c416-4965-ac91-fbd7339aa9ff/sprints",
+    "time": "2026-01-19T14:04:53.626Z"
+  },
+  {
+    "method": "POST",
+    "url": "http://localhost:3738/api/projects/91239a27-174a-42f8-b8b0-bbe4624887f0/sprints",
+    "time": "2026-01-19T14:05:12.367Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/projects/91239a27-174a-42f8-b8b0-bbe4624887f0/sprints",
+    "time": "2026-01-19T14:05:22.390Z"
+  },
+  {
+    "method": "GET",
+    "url": "http://localhost:3738/api/tasks?per_page=1000&project_id=91239a27-174a-42f8-b8b0-bbe4624887f0",
+    "time": "2026-01-19T14:05:22.390Z"
+  }
+]

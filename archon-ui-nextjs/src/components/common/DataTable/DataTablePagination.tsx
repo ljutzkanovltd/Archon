@@ -71,6 +71,7 @@ export function DataTablePagination() {
           onClick={prevPage}
           disabled={!hasPrev}
           className="px-2"
+          aria-label="Go to previous page"
         >
           <HiChevronLeft className="h-5 w-5" />
         </Button>
@@ -106,6 +107,7 @@ export function DataTablePagination() {
           onClick={nextPage}
           disabled={!hasNext}
           className="px-2"
+          aria-label="Go to next page"
         >
           <HiChevronRight className="h-5 w-5" />
         </Button>

@@ -146,6 +146,11 @@ export interface Project {
   document_count?: number;
   pinned?: boolean;
   archived?: boolean;
+  // Phase 3: Hierarchy metadata
+  parent_id?: string;
+  children_count?: number;
+  has_parent?: boolean;
+  relationship_type?: string;
 }
 
 export interface ProjectType {

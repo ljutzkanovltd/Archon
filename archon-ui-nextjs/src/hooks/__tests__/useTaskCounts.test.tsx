@@ -1,13 +1,14 @@
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { vi } from 'vitest';
 import { useTaskCounts } from '../useTaskCounts';
 import { tasksApi } from '@/lib/apiClient';
 
 // Mock the tasksApi
-jest.mock('@/lib/apiClient', () => ({
+vi.mock('@/lib/apiClient', () => ({
   tasksApi: {
-    getAll: jest.fn(),
+    getAll: vi.fn(),
   },
 }));
 
@@ -30,7 +31,7 @@ const createWrapper = () => {
 
 describe('useTaskCounts', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should fetch and count tasks by status', async () => {
@@ -43,7 +44,7 @@ describe('useTaskCounts', () => {
       { id: '6', status: 'done', title: 'Task 6' },
     ];
 
-    (tasksApi.getAll as jest.Mock).mockResolvedValue({
+    (tasksApi.getAll as ReturnType<typeof vi.fn>).mockResolvedValue({
       items: mockTasks,
       total: 6,
     });
@@ -64,7 +65,7 @@ describe('useTaskCounts', () => {
   });
 
   it('should handle empty task list', async () => {
-    (tasksApi.getAll as jest.Mock).mockResolvedValue({
+    (tasksApi.getAll as ReturnType<typeof vi.fn>).mockResolvedValue({
       items: [],
       total: 0,
     });
@@ -85,20 +86,26 @@ describe('useTaskCounts', () => {
   });
 
   it('should handle API errors gracefully', async () => {
-    (tasksApi.getAll as jest.Mock).mockRejectedValue(new Error('API Error'));
+    (tasksApi.getAll as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API Error'));
 
     const { result } = renderHook(() => useTaskCounts(), {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    // Should catch error and return zero counts (based on catch block in hook)
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    // Should still return zero counts on error (based on catch block)
-    expect(result.current.data).toBeUndefined();
+    expect(result.current.data).toEqual({
+      total: 0,
+      todo: 0,
+      doing: 0,
+      review: 0,
+      done: 0,
+    });
   });
 
   it('should call API with correct parameters', async () => {
-    (tasksApi.getAll as jest.Mock).mockResolvedValue({
+    (tasksApi.getAll as ReturnType<typeof vi.fn>).mockResolvedValue({
       items: [],
       total: 0,
     });

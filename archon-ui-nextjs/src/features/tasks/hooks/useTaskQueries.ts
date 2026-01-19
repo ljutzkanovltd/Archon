@@ -24,6 +24,14 @@ export function useTask(taskId: string) {
   });
 }
 
+export function useTasksByProject(projectId: string) {
+  return useQuery({
+    queryKey: ["tasks", "project", projectId],
+    queryFn: () => tasksApi.getAll({ project_id: projectId, per_page: 1000 }),
+    enabled: !!projectId,
+  });
+}
+
 export function useCreateTask() {
   const queryClient = useQueryClient();
 

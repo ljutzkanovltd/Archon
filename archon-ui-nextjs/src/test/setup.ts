@@ -73,6 +73,14 @@ global.IntersectionObserver = class IntersectionObserver {
 // Mock fetch globally
 global.fetch = vi.fn();
 
+// Mock Zustand persist middleware to avoid localStorage issues in tests
+vi.mock('zustand/middleware', () => ({
+  persist: (config: any) => config,
+  // Pass through other middlewares if needed
+  devtools: (config: any) => config,
+  subscribeWithSelector: (config: any) => config,
+}));
+
 // Mock react-icons
 vi.mock('react-icons/hi', () => ({
   HiExclamationCircle: () => null,
@@ -105,6 +113,7 @@ vi.mock('react-icons/hi', () => ({
   HiTrash: () => null,
   HiPencil: () => null,
   HiEye: () => null,
+  HiEyeOff: () => null,
   HiDownload: () => null,
   HiUpload: () => null,
   HiCog: () => null,
@@ -112,6 +121,8 @@ vi.mock('react-icons/hi', () => ({
   HiMenuAlt2: () => null,
   HiCheck: () => null,
   HiArchive: () => null,
+  HiDuplicate: () => null, // For CustomModal copy functionality
+  HiLockClosed: () => null, // For CustomModal lock functionality
   // Additional icons that might be needed
   HiOutlineX: () => null,
   HiOutlineSearch: () => null,
@@ -124,6 +135,33 @@ vi.mock('react-icons/hi', () => ({
   HiTrendingUp: () => null,
   HiTrendingDown: () => null,
   HiInformationCircle: () => null,
+  // Status icons
+  HiCheckCircle: () => null,
+  HiXCircle: () => null,
+  HiClock: () => null,
+  HiExclamation: () => null,
+  HiCalendar: () => null,
+  HiClipboard: () => null,
+  HiDocumentText: () => null,
+  HiFolder: () => null,
+  HiFolderOpen: () => null,
+  HiUser: () => null,
+  HiUsers: () => null,
+  HiLightningBolt: () => null,
+  // ReactIcons component icons
+  HiHome: () => null,
+  HiUserGroup: () => null,
+  HiAcademicCap: () => null,
+  HiBell: () => null,
+  HiBookmark: () => null,
+  HiChatAlt2: () => null,
+  HiNewspaper: () => null,
+  HiPause: () => null,
+  HiPlay: () => null,
+  HiQuestionMarkCircle: () => null,
+  HiShoppingBag: () => null,
+  HiSortAscending: () => null,
+  HiSortDescending: () => null,
 }));
 
 beforeAll(() => {

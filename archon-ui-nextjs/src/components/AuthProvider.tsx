@@ -17,6 +17,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuth = useAuthStore((state) => state.checkAuth);
   const login = useAuthStore((state) => state.login);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const stopSessionMonitoring = useAuthStore((state) => state.stopSessionMonitoring);
 
   useEffect(() => {
     // Initialize auth state on mount
@@ -51,8 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearTimeout(timer);
       window.removeEventListener("storage", handleStorageChange);
+      // Stop session monitoring when component unmounts
+      stopSessionMonitoring();
     };
-  }, [checkAuth, login, isAuthenticated]);
+  }, [checkAuth, login, isAuthenticated, stopSessionMonitoring]);
 
   return <>{children}</>;
 }
