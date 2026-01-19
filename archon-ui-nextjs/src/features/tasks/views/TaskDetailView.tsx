@@ -8,6 +8,7 @@ import { Task } from "@/lib/types";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow, format } from "date-fns";
+import { EditTaskModal } from "../components/EditTaskModal";
 
 interface TaskDetailViewProps {
   taskId: string;
@@ -36,6 +37,7 @@ export function TaskDetailView({ taskId }: TaskDetailViewProps) {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   usePageTitle(
     task ? task.title : "Task Details",
@@ -96,8 +98,7 @@ export function TaskDetailView({ taskId }: TaskDetailViewProps) {
   };
 
   const handleEdit = () => {
-    // TODO: Implement edit modal or navigate to edit page
-    alert(`Edit task: ${task?.title}`);
+    setIsEditModalOpen(true);
   };
 
   const handleDelete = async () => {
@@ -435,6 +436,16 @@ export function TaskDetailView({ taskId }: TaskDetailViewProps) {
           </div>
         )}
       </div>
+
+      {/* Edit Task Modal */}
+      {task && (
+        <EditTaskModal
+          task={task}
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          onSuccess={loadTask}
+        />
+      )}
     </div>
   );
 }

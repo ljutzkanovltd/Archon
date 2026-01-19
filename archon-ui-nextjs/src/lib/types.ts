@@ -137,6 +137,9 @@ export interface Project {
   title: string;
   description: string;
   github_repo?: string;
+  workflow_id?: string;
+  project_type_id?: string;
+  project_type?: ProjectType;
   created_at: string;
   updated_at: string;
   task_count?: number;
@@ -145,12 +148,46 @@ export interface Project {
   archived?: boolean;
 }
 
+export interface ProjectType {
+  id: string;
+  name: string;
+  description?: string;
+  default_workflow_id?: string;
+  color?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  project_type_id?: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowStage {
+  id: string;
+  name: string;
+  stage_order: number;
+  workflow_id: string;
+  color?: string;
+  description?: string;
+  default_agent?: string | null;
+}
+
 export interface Task {
   id: string;
   project_id: string;
   title: string;
   description: string;
-  status: "todo" | "doing" | "review" | "done";
+  // New workflow system fields
+  workflow_stage_id: string;
+  workflow_stage?: WorkflowStage;
+  // Legacy field (mapped from workflow_stage.name for backward compatibility)
+  status: string;
   priority: "low" | "medium" | "high" | "urgent";
   assignee: string;
   feature?: string;
@@ -163,6 +200,11 @@ export interface Task {
   archived?: boolean;
   archived_by?: string;
   archived_at?: string;
+  // Sprint assignment
+  sprint_id?: string;
+  // Optional fields for knowledge linking
+  sources?: string[];
+  code_examples?: string[];
 }
 
 export interface Document {
@@ -176,6 +218,31 @@ export interface Document {
   created_at: string;
   updated_at: string;
   version?: number;
+}
+
+// ==================== SPRINT TYPES ====================
+
+export type SprintStatus = "planned" | "active" | "completed" | "cancelled";
+
+export interface Sprint {
+  id: string;
+  project_id: string;
+  name: string;
+  goal?: string;
+  start_date: string;
+  end_date: string;
+  status: SprintStatus;
+  velocity?: number;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface SprintWithStats extends Sprint {
+  task_count: number;
+  completed_count: number;
+  in_progress_count: number;
+  planned_count: number;
 }
 
 // ==================== KNOWLEDGE BASE TYPES ====================

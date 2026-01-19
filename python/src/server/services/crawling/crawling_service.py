@@ -116,6 +116,7 @@ class CrawlingService:
         self.supabase_client = supabase_client or get_supabase_client()
         self.progress_id = progress_id
         self.progress_tracker = None
+        self.external_progress_callback = None  # For queue worker integration
 
         # Initialize helpers
         self.url_handler = URLHandler()
@@ -160,6 +161,15 @@ class CrawlingService:
             self.progress_state = {"progressId": self.progress_id}
             # Initialize progress tracker for HTTP polling
             self.progress_tracker = ProgressTracker(progress_id, operation_type="crawl")
+
+    def set_progress_callback(self, callback):
+        """
+        Set an external progress callback (e.g., for queue worker integration).
+
+        Args:
+            callback: Async callback function with signature (status: str, progress: int, message: str, **kwargs) -> None
+        """
+        self.external_progress_callback = callback
 
     def cancel(self):
         """Cancel the crawl operation."""
@@ -263,6 +273,13 @@ class CrawlingService:
                     f"raw_progress={progress} | mapped_progress={mapped_progress} | "
                     f"total_pages={kwargs.get('total_pages', 'N/A')} | processed_pages={kwargs.get('processed_pages', 'N/A')}"
                 )
+
+            # Call external callback if set (e.g., for queue worker integration)
+            if self.external_progress_callback:
+                try:
+                    await self.external_progress_callback(base_status, progress, message, **kwargs)
+                except Exception as e:
+                    logger.warning(f"External progress callback failed: {e}")
 
         return callback
 

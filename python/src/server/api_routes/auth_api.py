@@ -263,13 +263,26 @@ async def login(
         """
         updated = await conn.fetchrow(update_query, client_ip, user["id"])
 
-        # Create JWT token
+        # Load user permissions from archon_user_permissions table (RBAC Phase 4)
+        permissions_query = """
+            SELECT permission_key
+            FROM archon_user_permissions
+            WHERE user_id = $1 AND is_active = TRUE
+            ORDER BY permission_key
+        """
+        permissions_rows = await conn.fetch(permissions_query, user["id"])
+        permissions = [row["permission_key"] for row in permissions_rows]
+
+        logger.info(f"User {user['email']} logged in | permissions={len(permissions)} | role={user['role']}")
+
+        # Create JWT token (include permissions for enhanced security)
         access_token = create_access_token(
             data={
                 "sub": str(user["id"]),
                 "email": user["email"],
                 "full_name": user["full_name"],
                 "role": user["role"] or "member",
+                "permissions": permissions,  # Include permissions in JWT for stateless validation
             }
         )
 
@@ -282,6 +295,7 @@ async def login(
                 "full_name": user["full_name"],
                 "is_verified": user["is_verified"],
                 "role": user["role"] or "member",
+                "permissions": permissions,  # Return permissions array for frontend
             },
         }
 

@@ -96,9 +96,27 @@ class CredentialService:
         return self._supabase
 
     def _get_encryption_key(self) -> bytes:
-        """Generate encryption key from environment variables."""
-        # Use Supabase service key as the basis for encryption key
-        service_key = os.getenv("SUPABASE_SERVICE_KEY", "default-key-for-development")
+        """Generate encryption key from environment variables.
+
+        Uses ENCRYPTION_KEY if available (recommended for stability), otherwise
+        falls back to SUPABASE_SERVICE_KEY for backward compatibility.
+
+        ENCRYPTION_KEY provides stable encryption independent of Supabase mode changes.
+        """
+        # Try dedicated encryption key first (stable, independent of Supabase mode)
+        encryption_key_raw = os.getenv("ENCRYPTION_KEY")
+
+        if encryption_key_raw:
+            # Use dedicated encryption key (recommended)
+            logger.debug("Using ENCRYPTION_KEY for credential encryption")
+            source_key = encryption_key_raw
+        else:
+            # Fallback to Supabase service key (legacy behavior)
+            logger.warning(
+                "Using SUPABASE_SERVICE_KEY for encryption (legacy mode). "
+                "Set ENCRYPTION_KEY in .env for stable encryption across Supabase mode changes."
+            )
+            source_key = os.getenv("SUPABASE_SERVICE_KEY", "default-key-for-development")
 
         # Generate a proper encryption key using PBKDF2
         kdf = PBKDF2HMAC(
@@ -107,7 +125,7 @@ class CredentialService:
             salt=b"static_salt_for_credentials",  # In production, consider using a configurable salt
             iterations=100000,
         )
-        key = base64.urlsafe_b64encode(kdf.derive(service_key.encode()))
+        key = base64.urlsafe_b64encode(kdf.derive(source_key.encode()))
         return key
 
     def _encrypt_value(self, value: str) -> str:

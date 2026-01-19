@@ -352,10 +352,10 @@ class QueueManager:
 
     async def get_queue_stats(self) -> Dict[str, Any]:
         """
-        Get queue statistics (counts by status).
+        Get queue statistics (counts by status) with detailed information for actively crawling sources.
 
         Returns:
-            Dict with counts for each status
+            Dict with counts for each status and detailed statistics for running sources
         """
         try:
             # Get counts by status
@@ -387,14 +387,80 @@ class QueueManager:
             )
             stats["pending"] = pending_result.count if pending_result.count else 0
 
-            # Count running
+            # Get running items with detailed information
             running_result = (
                 self.supabase.table("archon_crawl_queue")
-                .select("*", count="exact")
+                .select("*")
                 .eq("status", "running")
                 .execute()
             )
-            stats["running"] = running_result.count if running_result.count else 0
+            running_items = running_result.data if running_result.data else []
+            stats["running"] = len(running_items)
+
+            # Get detailed statistics for actively crawling sources
+            actively_crawling = []
+            for item in running_items:
+                source_id = item.get("source_id")
+                if source_id:
+                    try:
+                        # Get source details
+                        source_result = (
+                            self.supabase.table("archon_sources")
+                            .select("title, source_url, metadata")
+                            .eq("source_id", source_id)
+                            .single()
+                            .execute()
+                        )
+                        source = source_result.data if source_result.data else {}
+
+                        # Count pages crawled for this source
+                        pages_result = (
+                            self.supabase.table("archon_crawled_pages")
+                            .select("*", count="exact")
+                            .eq("source_id", source_id)
+                            .execute()
+                        )
+                        pages_crawled = pages_result.count if pages_result.count else 0
+
+                        # Count code examples for this source
+                        code_result = (
+                            self.supabase.table("archon_code_examples")
+                            .select("*", count="exact")
+                            .eq("source_id", source_id)
+                            .execute()
+                        )
+                        code_examples_count = code_result.count if code_result.count else 0
+
+                        # Get progress information from queue item metadata
+                        progress_metadata = item.get("metadata", {})
+                        progress_info = progress_metadata.get("progress_info", {}) if isinstance(progress_metadata, dict) else {}
+
+                        # Build detailed statistics
+                        detailed_stats = {
+                            "source_id": source_id,
+                            "source_title": source.get("title", "Unknown"),
+                            "source_url": source.get("source_url", ""),
+                            "pages_crawled": pages_crawled,
+                            "code_examples_count": code_examples_count,
+                            "priority": item.get("priority", 50),
+                            "started_at": item.get("started_at"),
+                            "created_at": item.get("created_at"),
+                            "progress": progress_info.get("progress", 0),
+                            "status": progress_info.get("status", "crawling"),
+                            "current_url": progress_info.get("currentUrl", ""),
+                            # Additional statistics
+                            "batch_info": {
+                                "batch_current": progress_info.get("batch_current", 1),
+                                "batch_total": progress_info.get("batch_total", 1),
+                                "urls_discovered": progress_info.get("urls_discovered", 0),
+                            }
+                        }
+
+                        actively_crawling.append(detailed_stats)
+
+                    except Exception as e:
+                        logger.warning(f"Failed to get detailed stats for source {source_id}: {e}")
+                        continue
 
             # Count completed
             completed_result = (
@@ -432,11 +498,15 @@ class QueueManager:
             )
             stats["requires_review"] = review_result.count if review_result.count else 0
 
-            safe_logfire_info(f"Queue stats: {stats}")
+            safe_logfire_info(
+                f"Queue stats: total={stats['total']}, running={stats['running']} "
+                f"(with {len(actively_crawling)} detailed), pending={stats['pending']}"
+            )
 
             return {
                 "success": True,
-                "stats": stats
+                "stats": stats,
+                "actively_crawling": actively_crawling
             }
 
         except Exception as e:
@@ -444,7 +514,8 @@ class QueueManager:
             return {
                 "success": False,
                 "error": str(e),
-                "stats": {}
+                "stats": {},
+                "actively_crawling": []
             }
 
     async def get_batch_progress(self, batch_id: str) -> Dict[str, Any]:

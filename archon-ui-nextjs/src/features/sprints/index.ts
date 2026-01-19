@@ -14,6 +14,7 @@ export { SprintSelector } from "./components/SprintSelector";
 
 // Views
 export { SprintListView } from "./views/SprintListView";
+export { SprintBacklogView } from "./views/SprintBacklogView";
 
 // Hooks
 export {

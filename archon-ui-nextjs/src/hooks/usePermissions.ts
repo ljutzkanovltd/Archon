@@ -35,13 +35,16 @@ export interface Permissions {
  *
  * Provides role-based access control (RBAC) for the application.
  *
- * **Current Implementation:**
+ * **Implementation (RBAC Phase 4):**
+ * - Loads user-specific permissions from archon_user_permissions table
+ * - Falls back to role-based checks for backward compatibility
  * - Admin users: Full access to all features
- * - Member users: Limited access to basic features
+ * - Member users: Permission-based access
  *
- * **Future Enhancement (Phase 4):**
- * Will load user-specific permissions from archon_user_permissions table
- * and support granular permission checks beyond role-based access.
+ * **Permission Checking:**
+ * 1. Checks if user has specific permission key in permissions array
+ * 2. Falls back to role-based check (admin = all permissions)
+ * 3. Core features available to all authenticated users
  *
  * @returns {Permissions} Object containing permission flags
  *
@@ -60,21 +63,20 @@ export function usePermissions(): Permissions {
   // Check if user is authenticated and has admin role
   const isAdmin = user?.role === "admin";
 
-  // Future: Load user-specific permissions from backend
-  // const userPermissions = user?.permissions || [];
-  // const hasPermission = (permission: string) =>
-  //   userPermissions.includes(permission);
+  // RBAC Phase 4: Load user-specific permissions from backend
+  const userPermissions = user?.permissions || [];
+  const hasPermission = (permission: string) =>
+    userPermissions.includes(permission);
 
   return {
-    // Admin-only features
-    canAccessDatabaseSync: isAdmin,
-    canManageUsers: isAdmin,
-    canViewMCPInspector: isAdmin,
-    canViewTestFoundation: isAdmin,
+    // Admin-only features - check permission or admin role
+    canAccessDatabaseSync: isAdmin || hasPermission('database_sync'),
+    canManageUsers: isAdmin || hasPermission('manage_users'),
+    canViewMCPInspector: isAdmin || hasPermission('view_mcp_inspector'),
+    canViewTestFoundation: isAdmin || hasPermission('view_test_foundation'),
 
     // Agent Work Orders - admin or has explicit permission
-    canViewAgentWorkOrders: isAdmin,
-    // Future: isAdmin || hasPermission('view_agent_work_orders')
+    canViewAgentWorkOrders: isAdmin || hasPermission('view_agent_work_orders'),
 
     // Core features - available to all authenticated users
     canViewProjects: !!user,

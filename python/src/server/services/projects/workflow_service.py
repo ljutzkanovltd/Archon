@@ -343,6 +343,33 @@ class WorkflowService:
             )
             return False, {"error": str(e)}
 
+    async def list_workflows(self) -> tuple[bool, dict[str, Any]]:
+        """
+        Get all available workflows.
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains workflows array with basic info (no stages)
+        """
+        try:
+            workflows_response = (
+                self.supabase_client.table("archon_workflows")
+                .select("id, name, project_type_id, is_default, created_at")
+                .order("name")
+                .execute()
+            )
+
+            if not workflows_response.data:
+                logger.warning("No workflows found in database")
+                return True, {"workflows": []}
+
+            logger.info(f"Retrieved {len(workflows_response.data)} workflows")
+            return True, {"workflows": workflows_response.data}
+
+        except Exception as e:
+            logger.error(f"Error listing workflows: {str(e)}")
+            return False, {"error": str(e)}
+
     async def clear_cache(self):
         """Clear the workflow cache (useful for testing or after workflow updates)"""
         self._workflow_cache.clear()

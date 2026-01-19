@@ -319,6 +319,30 @@ class CrawlQueueWorker:
                 supabase_client=self.supabase
             )
 
+            # Create progress callback that updates queue metadata
+            async def queue_progress_callback(status: str, progress: int, message: str, **kwargs):
+                """Update queue item metadata with progress information."""
+                try:
+                    # Build progress info object
+                    progress_info = {
+                        "progress": progress,
+                        "status": status,
+                        "currentUrl": kwargs.get("currentUrl", ""),
+                        "batch_current": kwargs.get("batch_current", 1),
+                        "batch_total": kwargs.get("batch_total", 1),
+                        "urls_discovered": kwargs.get("urls_discovered", 0),
+                        "total_pages": kwargs.get("total_pages", 0),
+                        "processed_pages": kwargs.get("processed_pages", 0),
+                    }
+
+                    # Update queue item metadata
+                    await self._update_queue_metadata(item_id, progress_info)
+                except Exception as e:
+                    logger.warning(f"Failed to update queue metadata: {e}")
+
+            # Set progress callback on crawl service
+            crawl_service.set_progress_callback(queue_progress_callback)
+
             # Prepare crawl request
             crawl_request = {
                 "url": url,
@@ -413,6 +437,39 @@ class CrawlQueueWorker:
                     f"🔁 Scheduled retry | item_id={item_id} | "
                     f"attempt={retry_result.get('retry_count')} | next_retry={next_retry}"
                 )
+
+    async def _update_queue_metadata(self, item_id: str, progress_info: Dict[str, Any]):
+        """
+        Update queue item metadata with progress information.
+
+        Args:
+            item_id: Queue item ID
+            progress_info: Progress information dict with keys like progress, status, currentUrl, etc.
+        """
+        try:
+            # Get current metadata
+            result = (
+                self.supabase.table("archon_crawl_queue")
+                .select("metadata")
+                .eq("item_id", item_id)
+                .single()
+                .execute()
+            )
+
+            current_metadata = result.data.get("metadata", {}) if result.data else {}
+            if not isinstance(current_metadata, dict):
+                current_metadata = {}
+
+            # Update metadata with progress info
+            current_metadata["progress_info"] = progress_info
+
+            # Store updated metadata
+            self.supabase.table("archon_crawl_queue").update({
+                "metadata": current_metadata
+            }).eq("item_id", item_id).execute()
+
+        except Exception as e:
+            logger.warning(f"Failed to update queue metadata for {item_id}: {e}")
 
     async def _delete_existing_data(self, source_id: str):
         """

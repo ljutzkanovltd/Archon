@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { HiArrowLeft, HiCheck, HiX } from "react-icons/hi";
 import { useProjectStore } from "@/store/useProjectStore";
 import { usePageTitle } from "@/hooks";
+import { ProjectTypeSelector } from "@/features/workflows";
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function NewProjectPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
+  const [projectTypeId, setProjectTypeId] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +30,7 @@ export default function NewProjectPage() {
         title,
         description,
         github_repo: githubRepo || undefined,
+        project_type_id: projectTypeId,
       });
 
       // Navigate to the new project detail page
@@ -135,6 +138,16 @@ export default function NewProjectPage() {
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Optional: Link to your GitHub repository
             </p>
+          </div>
+
+          {/* Project Type Field */}
+          <div className="mb-6">
+            <ProjectTypeSelector
+              value={projectTypeId}
+              onChange={setProjectTypeId}
+              label="Project Type"
+              helperText="Select the type of project to use the appropriate workflow"
+            />
           </div>
 
           {/* Action Buttons */}

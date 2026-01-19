@@ -29,7 +29,8 @@ interface TaskActions {
     project_id: string;
     title: string;
     description?: string;
-    status?: "todo" | "doing" | "review" | "done";
+    workflow_stage_id?: string;
+    status?: string;
     assignee?: string;
     priority?: "low" | "medium" | "high" | "urgent";
     feature?: string;
@@ -39,7 +40,8 @@ interface TaskActions {
     data: Partial<{
       title: string;
       description: string;
-      status: "todo" | "doing" | "review" | "done";
+      workflow_stage_id: string;
+      status: string;
       assignee: string;
       priority: "low" | "medium" | "high" | "urgent";
       feature: string;

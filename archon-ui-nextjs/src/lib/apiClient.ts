@@ -93,7 +93,20 @@ apiClient.interceptors.response.use(
       // Unauthorized - clear token and redirect to login
       if (typeof window !== "undefined") {
         localStorage.removeItem("archon_token");
-        // Note: Actual redirect would be handled by auth store
+        localStorage.removeItem("archon_user");
+
+        // Show toast notification about session expiration
+        import("react-hot-toast").then(({ toast }) => {
+          toast.error("Your session has expired. Please log in again.", {
+            duration: 4000,
+            position: "top-center",
+          });
+        });
+
+        // Redirect to login after showing toast
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 1500);
       }
       apiError.message = "Authentication required. Please log in.";
     } else if (error.response?.status === 403) {
@@ -264,7 +277,8 @@ export const tasksApi = {
     project_id: string;
     title: string;
     description?: string;
-    status?: "todo" | "doing" | "review" | "done";
+    workflow_stage_id?: string; // New: workflow stage ID
+    status?: string; // Legacy: for backward compatibility
     assignee?: string;
     priority?: "low" | "medium" | "high" | "urgent";
     task_order?: number;
@@ -282,7 +296,8 @@ export const tasksApi = {
     data: Partial<{
       title: string;
       description: string;
-      status: "todo" | "doing" | "review" | "done";
+      workflow_stage_id: string; // New: workflow stage ID
+      status: string; // Legacy: for backward compatibility
       assignee: string;
       priority: "low" | "medium" | "high" | "urgent";
       task_order: number;
@@ -995,6 +1010,196 @@ export const adminApi = {
     data: import("./admin-types").UpdateUserPermissionsRequest
   ): Promise<import("./admin-types").UpdateUserPermissionsResponse> => {
     const response = await apiClient.put(`/api/admin/users/${userId}/permissions`, data);
+    return response.data;
+  },
+};
+
+// ==================== WORKFLOW ENDPOINTS ====================
+
+export const workflowsApi = {
+  /**
+   * Get all workflows
+   * API returns: { workflows: Workflow[], count: number }
+   */
+  getAll: async (): Promise<{
+    workflows: import("./types").Workflow[];
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/workflows`);
+    return response.data;
+  },
+
+  /**
+   * Get a single workflow by ID
+   * API returns: { workflow: Workflow }
+   */
+  getById: async (workflowId: string): Promise<import("./types").Workflow> => {
+    const response = await apiClient.get(`/api/workflows/${workflowId}`);
+    return response.data.workflow;
+  },
+
+  /**
+   * Get workflow stages for a workflow
+   * API returns: { stages: WorkflowStage[], count: number }
+   */
+  getStages: async (workflowId: string): Promise<{
+    stages: import("./types").WorkflowStage[];
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/workflows/${workflowId}/stages`);
+    return response.data;
+  },
+
+  /**
+   * Get workflow stages for a workflow (legacy alias)
+   * @deprecated Use getStages instead
+   */
+  getWorkflowStages: async (workflowId: string): Promise<{
+    stages: import("./types").WorkflowStage[];
+    count: number;
+  }> => {
+    return workflowsApi.getStages(workflowId);
+  },
+
+  /**
+   * Get default workflow for a project (Standard Agile workflow)
+   * API returns: { stages: WorkflowStage[], count: number }
+   */
+  getDefaultWorkflow: async (): Promise<{
+    stages: import("./types").WorkflowStage[];
+    count: number;
+  }> => {
+    // Use the Standard Agile workflow ID (from seed data)
+    const workflowId = "29d6341c-0352-46e7-95d3-c26ae27a1aff";
+    const response = await apiClient.get(`/api/workflows/${workflowId}/stages`);
+    return response.data;
+  },
+
+  /**
+   * Get all project types
+   * API returns: { project_types: ProjectType[], count: number }
+   */
+  getProjectTypes: async (): Promise<{
+    project_types: import("./types").ProjectType[];
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/project-types`);
+    return response.data;
+  },
+
+  /**
+   * Update project workflow assignment
+   * API returns: { project: Project }
+   */
+  updateProjectWorkflow: async (projectId: string, workflowId: string): Promise<import("./types").Project> => {
+    const response = await apiClient.put(`/api/projects/${projectId}/workflow`, {
+      workflow_id: workflowId,
+    });
+    return response.data.project;
+  },
+
+  /**
+   * Update workflow stage agent assignment
+   * API returns: { stage: WorkflowStage }
+   */
+  updateStageAgent: async (stageId: string, agentName: string | null): Promise<import("./types").WorkflowStage> => {
+    const response = await apiClient.put(`/api/workflow-stages/${stageId}/agent`, {
+      default_agent: agentName,
+    });
+    return response.data.stage;
+  },
+
+  /**
+   * Transition task to a different workflow stage
+   * API returns: { task: Task }
+   */
+  transitionTask: async (taskId: string, newStageId: string): Promise<import("./types").Task> => {
+    const response = await apiClient.post(`/api/tasks/${taskId}/transition`, {
+      workflow_stage_id: newStageId,
+    });
+    return response.data.task;
+  },
+};
+
+// ==================== SPRINT ENDPOINTS ====================
+
+export const sprintsApi = {
+  /**
+   * Get all sprints for a project
+   * API returns: { sprints: Sprint[], count: number }
+   */
+  getAll: async (projectId: string): Promise<{
+    sprints: import("./types").Sprint[];
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/projects/${projectId}/sprints`);
+    return response.data;
+  },
+
+  /**
+   * Get active sprint for a project
+   * API returns: Sprint | null
+   */
+  getActive: async (projectId: string): Promise<import("./types").Sprint | null> => {
+    const response = await apiClient.get(`/api/projects/${projectId}/sprints/active`);
+    return response.data.sprint || null;
+  },
+
+  /**
+   * Get sprint by ID
+   * API returns: { sprint: Sprint }
+   */
+  getById: async (sprintId: string): Promise<import("./types").Sprint> => {
+    const response = await apiClient.get(`/api/sprints/${sprintId}`);
+    return response.data.sprint;
+  },
+
+  /**
+   * Create a new sprint
+   * API expects: { name: string, goal?: string, start_date: string, end_date: string }
+   * API returns: { sprint: Sprint }
+   */
+  create: async (
+    projectId: string,
+    data: {
+      name: string;
+      goal?: string;
+      start_date: string;
+      end_date: string;
+    }
+  ): Promise<import("./types").Sprint> => {
+    const response = await apiClient.post(`/api/projects/${projectId}/sprints`, data);
+    return response.data.sprint;
+  },
+
+  /**
+   * Start a sprint (change status from planned to active)
+   * API returns: { sprint: Sprint }
+   */
+  start: async (sprintId: string): Promise<import("./types").Sprint> => {
+    const response = await apiClient.post(`/api/sprints/${sprintId}/start`);
+    return response.data.sprint;
+  },
+
+  /**
+   * Complete a sprint (change status from active to completed)
+   * API returns: { sprint: Sprint }
+   */
+  complete: async (sprintId: string): Promise<import("./types").Sprint> => {
+    const response = await apiClient.post(`/api/sprints/${sprintId}/complete`);
+    return response.data.sprint;
+  },
+
+  /**
+   * Get sprint velocity
+   * API returns: { sprint_id: string, velocity: number, completed_points: number }
+   */
+  getVelocity: async (sprintId: string): Promise<{
+    sprint_id: string;
+    velocity: number;
+    completed_points: number;
+  }> => {
+    const response = await apiClient.get(`/api/sprints/${sprintId}/velocity`);
     return response.data;
   },
 };

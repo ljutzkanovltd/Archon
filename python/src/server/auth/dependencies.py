@@ -86,7 +86,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         query = """
             SELECT
                 id, email, full_name, avatar_url, is_active, is_verified,
-                email_verified_at, last_login_at, created_at, updated_at
+                email_verified_at, last_login_at, created_at, updated_at, role
             FROM archon_users
             WHERE id = $1
         """
@@ -108,6 +108,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive",
             )
+
+        # Load user permissions (RBAC Phase 4)
+        permissions_query = """
+            SELECT permission_key
+            FROM archon_user_permissions
+            WHERE user_id = $1 AND is_active = TRUE
+            ORDER BY permission_key
+        """
+        permissions_rows = await conn.fetch(permissions_query, user_id)
+        user["permissions"] = [row["permission_key"] for row in permissions_rows]
 
         return user
 

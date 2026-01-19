@@ -10,6 +10,8 @@ import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
 import { usePageTitle } from "@/hooks";
 import { formatDistanceToNow } from "date-fns";
+import { CreateTaskModal } from "../components/CreateTaskModal";
+import { EditTaskModal } from "../components/EditTaskModal";
 
 /**
  * TasksListView - List view for all tasks
@@ -30,6 +32,8 @@ export function TasksListView() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Fetch tasks on mount
   useEffect(() => {
@@ -65,8 +69,7 @@ export function TasksListView() {
   };
 
   const handleEdit = (task: Task) => {
-    // TODO: Implement edit modal or navigate to edit page
-    alert(`Edit task: ${task.title}`);
+    setEditingTask(task);
   };
 
   const handleDelete = async (task: Task) => {
@@ -97,8 +100,7 @@ export function TasksListView() {
   };
 
   const handleCreateTask = () => {
-    // TODO: Implement create task modal
-    alert("Create task functionality - coming soon!");
+    setIsCreateModalOpen(true);
   };
 
   const handleStatusChange = async (task: Task, newStatus: Task["status"]) => {
@@ -417,6 +419,24 @@ export function TasksListView() {
         keyExtractor={(task) => task.id}
         onRowClick={handleView}
       />
+
+      {/* Create Task Modal */}
+      <CreateTaskModal
+        projectId=""
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={loadTasks}
+      />
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <EditTaskModal
+          task={editingTask}
+          isOpen={true}
+          onClose={() => setEditingTask(null)}
+          onSuccess={loadTasks}
+        />
+      )}
     </div>
   );
 }

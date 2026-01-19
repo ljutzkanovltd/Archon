@@ -68,7 +68,8 @@ class CreateTaskRequest(BaseModel):
     project_id: str
     title: str
     description: str | None = None
-    status: str | None = "todo"
+    status: str | None = None  # DEPRECATED: Use workflow_stage_id instead
+    workflow_stage_id: str | None = None  # Preferred: UUID of workflow stage
     assignee: str | None = "User"
     task_order: int | None = 0
     priority: str | None = "medium"
@@ -661,10 +662,17 @@ async def list_project_tasks(
 
 @router.post("/tasks")
 async def create_task(request: CreateTaskRequest):
-    """Create a new task with automatic reordering."""
+    """Create a new task with automatic reordering. Supports both workflow_stage_id (new) and status (legacy)."""
     try:
         # Use TaskService to create the task
         task_service = TaskService()
+
+        # Determine workflow_stage_id (prefer explicit, fall back to status mapping)
+        workflow_stage_id = request.workflow_stage_id
+        if not workflow_stage_id and request.status:
+            # Map legacy status to workflow stage
+            workflow_stage_id = task_service.get_stage_id_by_name(request.status)
+
         success, result = await task_service.create_task(
             project_id=request.project_id,
             title=request.title,
@@ -673,6 +681,7 @@ async def create_task(request: CreateTaskRequest):
             task_order=request.task_order or 0,
             priority=request.priority or "medium",
             feature=request.feature,
+            workflow_stage_id=workflow_stage_id,  # Pass workflow stage ID
         )
 
         if not success:
@@ -695,7 +704,8 @@ async def create_task(request: CreateTaskRequest):
 
 @router.get("/tasks")
 async def list_tasks(
-    status: str | None = None,
+    status: str | None = None,  # DEPRECATED: Use workflow_stage_id
+    workflow_stage_id: str | None = None,  # Preferred: Filter by workflow stage
     project_id: str | None = None,
     assignee: str | None = None,
     include_closed: bool = True,
@@ -704,17 +714,18 @@ async def list_tasks(
     exclude_large_fields: bool = False,
     q: str | None = None,  # Search query parameter
 ):
-    """List tasks with optional filters including status, project, assignee, and keyword search."""
+    """List tasks with optional filters. Supports both status (legacy) and workflow_stage_id (new)."""
     try:
         logfire.info(
-            f"Listing tasks | status={status} | project_id={project_id} | assignee={assignee} | include_closed={include_closed} | page={page} | per_page={per_page} | q={q}"
+            f"Listing tasks | workflow_stage_id={workflow_stage_id} | status={status} | project_id={project_id} | assignee={assignee} | include_closed={include_closed} | page={page} | per_page={per_page} | q={q}"
         )
 
         # Use TaskService to list tasks
         task_service = TaskService()
         success, result = task_service.list_tasks(
             project_id=project_id,
-            status=status,
+            status=status,  # Legacy support
+            workflow_stage_id=workflow_stage_id,  # Preferred
             assignee=assignee,
             include_closed=include_closed,
             exclude_large_fields=exclude_large_fields,
@@ -930,6 +941,7 @@ class UpdateTaskRequest(BaseModel):
     task_order: int | None = None
     priority: str | None = None
     feature: str | None = None
+    workflow_stage_id: str | None = None  # Phase 1.9: Workflow stage transition
 
 
 class CreateDocumentRequest(BaseModel):
@@ -980,6 +992,15 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
             update_fields["priority"] = request.priority
         if request.feature is not None:
             update_fields["feature"] = request.feature
+        if request.workflow_stage_id is not None:
+            update_fields["workflow_stage_id"] = request.workflow_stage_id
+
+        # Phase 1.9: Validate workflow stage transition if workflow_stage_id is being updated
+        if request.workflow_stage_id is not None:
+            from ..middleware import validate_workflow_stage_transition
+
+            logfire.debug(f"Validating stage transition | task_id={task_id} | new_stage={request.workflow_stage_id}")
+            await validate_workflow_stage_transition(task_id, request.workflow_stage_id)
 
         # Use TaskService to update the task
         task_service = TaskService()
@@ -1402,8 +1423,164 @@ async def restore_project_version(
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+class ChangeWorkflowRequest(BaseModel):
+    workflow_id: str
+
+
 class ArchiveProjectRequest(BaseModel):
     archived_by: str = "User"
+
+
+@router.put("/projects/{project_id}/workflow")
+async def change_project_workflow(project_id: str, request: ChangeWorkflowRequest):
+    """
+    Change a project's workflow and reassign all tasks to compatible stages.
+
+    This endpoint:
+    1. Validates the new workflow exists
+    2. Maps current task stages to new workflow stages by stage_order
+    3. Updates project workflow_id
+    4. Reassigns all non-archived tasks to new workflow stages
+
+    Args:
+        project_id: UUID of the project
+        request: Contains workflow_id (UUID of new workflow)
+
+    Returns:
+        Success message with count of tasks reassigned
+    """
+    try:
+        logfire.debug(f"Changing project workflow | project_id={project_id} | new_workflow_id={request.workflow_id}")
+
+        project_service = ProjectService()
+        success, result = project_service.change_project_workflow(project_id, request.workflow_id)
+
+        if not success:
+            error_msg = result.get("error", "Failed to change workflow")
+            logfire.error(f"Workflow change failed | project_id={project_id} | error={error_msg}")
+
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            else:
+                raise HTTPException(status_code=400, detail=error_msg)
+
+        logfire.info(
+            f"Workflow changed successfully | project_id={project_id} | workflow_id={request.workflow_id} | tasks_reassigned={result.get('tasks_reassigned', 0)}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to change workflow | error={str(e)} | project_id={project_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+class CreateSubprojectRequest(BaseModel):
+    title: str
+    description: str = None
+    relationship_type: str = "subproject"
+    github_repo: str = None
+
+
+@router.post("/projects/{project_id}/subprojects")
+async def create_subproject(project_id: str, request: CreateSubprojectRequest):
+    """
+    Create a subproject under a parent project.
+
+    This endpoint:
+    1. Validates parent project exists
+    2. Creates new child project
+    3. Creates hierarchy relationship
+    4. Inherits workflow from parent
+
+    Args:
+        project_id: UUID of the parent project
+        request: Contains title, description, relationship_type, github_repo
+
+    Returns:
+        Subproject details and hierarchy relationship
+    """
+    try:
+        logfire.debug(
+            f"Creating subproject | parent_id={project_id} | title={request.title} | type={request.relationship_type}"
+        )
+
+        project_service = ProjectService()
+        success, result = project_service.create_subproject(
+            parent_project_id=project_id,
+            title=request.title,
+            description=request.description,
+            relationship_type=request.relationship_type,
+            github_repo=request.github_repo
+        )
+
+        if not success:
+            error_msg = result.get("error", "Failed to create subproject")
+            logfire.error(f"Subproject creation failed | parent_id={project_id} | error={error_msg}")
+
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            else:
+                raise HTTPException(status_code=400, detail=error_msg)
+
+        logfire.info(
+            f"Subproject created | parent_id={project_id} | child_id={result['subproject']['id']} | title={request.title}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to create subproject | error={str(e)} | parent_id={project_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.get("/projects/{project_id}/hierarchy")
+async def get_project_hierarchy(project_id: str):
+    """
+    Get the complete hierarchy tree for a project.
+
+    Returns:
+    - parent: Direct parent project (if any)
+    - children: Direct child projects
+    - siblings: Projects with same parent
+
+    Args:
+        project_id: UUID of the project
+
+    Returns:
+        Hierarchy tree with parent, children, and siblings
+    """
+    try:
+        logfire.debug(f"Getting project hierarchy | project_id={project_id}")
+
+        project_service = ProjectService()
+        success, result = project_service.get_project_hierarchy(project_id)
+
+        if not success:
+            error_msg = result.get("error", "Failed to get project hierarchy")
+            logfire.error(f"Hierarchy retrieval failed | project_id={project_id} | error={error_msg}")
+
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            else:
+                raise HTTPException(status_code=500, detail=error_msg)
+
+        logfire.info(
+            f"Hierarchy retrieved | project_id={project_id} | "
+            f"children={result['children_count']} | siblings={result['siblings_count']}"
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to get hierarchy | error={str(e)} | project_id={project_id}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @router.post("/projects/{project_id}/archive")

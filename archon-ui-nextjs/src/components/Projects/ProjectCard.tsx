@@ -54,11 +54,29 @@ export function ProjectCard({
           <h3 className="truncate text-lg font-semibold text-gray-900 dark:text-white">
             {project.title}
           </h3>
-          {project.archived && (
-            <Badge color="gray" size="xs" className="mt-1">
-              Archived
-            </Badge>
-          )}
+          <div className="mt-1 flex flex-wrap gap-1">
+            {project.project_type && (
+              <Badge
+                color="info"
+                size="xs"
+                style={
+                  project.project_type.color
+                    ? {
+                        backgroundColor: project.project_type.color,
+                        color: "#ffffff",
+                      }
+                    : undefined
+                }
+              >
+                {project.project_type.name}
+              </Badge>
+            )}
+            {project.archived && (
+              <Badge color="gray" size="xs">
+                Archived
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import {
+  isTokenExpired,
+  getTimeUntilExpiry,
+  isTokenExpiringSoon,
+} from "@/lib/jwt-utils";
+import toast from "react-hot-toast";
 
 // User interface
 export interface User {
@@ -8,6 +14,7 @@ export interface User {
   name: string;
   role?: string;
   avatar?: string;
+  permissions?: string[]; // RBAC Phase 4: User-specific permissions from archon_user_permissions
 }
 
 // Auth state interface
@@ -17,16 +24,20 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  sessionCheckInterval: ReturnType<typeof setInterval> | null;
 }
 
 // Auth actions interface
 interface AuthActions {
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: (message?: string) => void;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
   clearError: () => void;
   checkAuth: () => Promise<void>;
+  startSessionMonitoring: () => void;
+  stopSessionMonitoring: () => void;
+  handleSessionExpiry: () => void;
 }
 
 // Combined store type
@@ -75,6 +86,7 @@ export const useAuthStore = create<AuthStore>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      sessionCheckInterval: null,
 
       // Login action
       login: async (email: string, password: string) => {
@@ -107,6 +119,7 @@ export const useAuthStore = create<AuthStore>()(
             name: data.user.full_name || email.split("@")[0],
             role: data.user.role || "member",
             avatar: data.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.full_name || email.split("@")[0])}&background=random`,
+            permissions: data.user.permissions || [], // RBAC Phase 4: Load permissions from backend
           };
 
           const token = data.access_token;
@@ -123,6 +136,9 @@ export const useAuthStore = create<AuthStore>()(
             isLoading: false,
             error: null,
           });
+
+          // Start session monitoring after successful login
+          get().startSessionMonitoring();
         } catch (error) {
           set({
             user: null,
@@ -135,11 +151,23 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      // Logout action
-      logout: () => {
-        // Clear token from localStorage
+      // Logout action - enhanced with message support
+      logout: (message?: string) => {
+        // Stop session monitoring
+        get().stopSessionMonitoring();
+
+        // Clear ALL persisted state
         if (typeof window !== "undefined") {
           localStorage.removeItem("archon_token");
+          localStorage.removeItem("archon-auth-storage"); // Zustand persist key
+        }
+
+        // Show logout message if provided
+        if (message) {
+          toast.error(message, {
+            duration: 4000,
+            position: "top-center",
+          });
         }
 
         set({
@@ -148,6 +176,7 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: false,
           isLoading: false,
           error: null,
+          sessionCheckInterval: null,
         });
       },
 
@@ -187,16 +216,22 @@ export const useAuthStore = create<AuthStore>()(
           return;
         }
 
+        // Check if token is expired
+        const expired = isTokenExpired(token);
+        if (expired) {
+          get().handleSessionExpiry();
+          return;
+        }
+
         set({ isLoading: true });
 
         try {
-          // TODO: Verify token with backend when auth endpoint is ready
-          // For now, assume token is valid if it exists
-
           // If we have a persisted user, we're authenticated
           const { user } = get();
           if (user) {
             set({ isAuthenticated: true, isLoading: false });
+            // Start session monitoring
+            get().startSessionMonitoring();
           } else {
             // Token exists but no user - clear everything
             set({
@@ -220,6 +255,73 @@ export const useAuthStore = create<AuthStore>()(
             localStorage.removeItem("archon_token");
           }
         }
+      },
+
+      // Start monitoring session expiry
+      startSessionMonitoring: () => {
+        // Clear any existing interval
+        get().stopSessionMonitoring();
+
+        // Only run in browser environment
+        if (typeof window === "undefined") return;
+
+        // Check token expiry every 30 seconds
+        const interval = setInterval(() => {
+          const { token, isAuthenticated } = get();
+
+          if (!token || !isAuthenticated) {
+            get().stopSessionMonitoring();
+            return;
+          }
+
+          const expired = isTokenExpired(token);
+          if (expired) {
+            get().handleSessionExpiry();
+          }
+        }, 30000); // Check every 30 seconds
+
+        set({ sessionCheckInterval: interval });
+      },
+
+      // Stop session monitoring
+      stopSessionMonitoring: () => {
+        const { sessionCheckInterval } = get();
+        if (sessionCheckInterval) {
+          clearInterval(sessionCheckInterval);
+          set({ sessionCheckInterval: null });
+        }
+      },
+
+      // Handle session expiry
+      handleSessionExpiry: () => {
+        // Stop monitoring
+        get().stopSessionMonitoring();
+
+        // Clear all state
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("archon_token");
+          localStorage.removeItem("archon-auth-storage");
+
+          // Show session expired message
+          toast.error("Your session has expired. Please log in again.", {
+            duration: 5000,
+            position: "top-center",
+          });
+
+          // Redirect to login after a short delay
+          setTimeout(() => {
+            window.location.href = "/login";
+          }, 1500);
+        }
+
+        set({
+          user: null,
+          token: null,
+          isAuthenticated: false,
+          isLoading: false,
+          error: "Session expired",
+          sessionCheckInterval: null,
+        });
       },
     }),
     {

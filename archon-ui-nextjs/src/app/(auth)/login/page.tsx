@@ -194,6 +194,7 @@ export default function LoginPage() {
                 {/* Submit Button */}
                 <Button
                   type="submit"
+                  color="blue"
                   className="w-full"
                   disabled={isLoading}
                 >
@@ -240,6 +241,7 @@ export default function LoginPage() {
                   {/* Submit Button */}
                   <Button
                     type="submit"
+                    color="blue"
                     className="w-full"
                     disabled={magicLinkLoading}
                   >

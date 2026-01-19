@@ -58,12 +58,17 @@ const AVAILABLE_ASSIGNEES = [
 
 /**
  * Status badge color mapping
+ * Updated for new workflow statuses: backlog, in_progress, review, done
  */
 const statusColors = {
-  todo: "gray",
-  doing: "blue",
+  // New workflow statuses
+  backlog: "gray",
+  in_progress: "blue",
   review: "yellow",
   done: "success",
+  // Legacy support
+  todo: "gray",
+  doing: "blue",
 } as const;
 
 /**
@@ -163,8 +168,9 @@ export function TaskCard({
   }, [focusedIndex, showAssigneeDropdown]);
 
   // Get next status for quick status change
+  // Updated for new workflow statuses: backlog → in_progress → review → done
   const getNextStatus = (): Task["status"] | null => {
-    const statusFlow: Task["status"][] = ["todo", "doing", "review", "done"];
+    const statusFlow: Task["status"][] = ["backlog", "in_progress", "review", "done"];
     const currentIndex = statusFlow.indexOf(task.status);
     return currentIndex < statusFlow.length - 1
       ? statusFlow[currentIndex + 1]
@@ -251,24 +257,39 @@ export function TaskCard({
   }
 
   // Status-specific border color and glow (matching original Archon pattern)
-  const statusStyles = {
-    todo: {
-      border: "border-l-pink-500 dark:border-l-pink-400",
-      glow: "shadow-[0_0_15px_rgba(236,72,153,0.2)] dark:shadow-[0_0_15px_rgba(236,72,153,0.4)]",
+  // Map new workflow status names to visual styles
+  // New: backlog, in_progress, review, done
+  // Old (legacy): todo, doing, review, done
+  const statusStylesMap: Record<string, { border: string; glow: string }> = {
+    // New workflow statuses
+    backlog: {
+      border: "border-l-gray-500 dark:border-l-gray-400",
+      glow: "shadow-[0_0_15px_rgba(107,114,128,0.2)] dark:shadow-[0_0_15px_rgba(107,114,128,0.4)]",
     },
-    doing: {
+    in_progress: {
       border: "border-l-blue-500 dark:border-l-blue-400",
       glow: "shadow-[0_0_15px_rgba(59,130,246,0.2)] dark:shadow-[0_0_15px_rgba(59,130,246,0.4)]",
     },
     review: {
-      border: "border-l-purple-500 dark:border-l-purple-400",
-      glow: "shadow-[0_0_15px_rgba(168,85,247,0.2)] dark:shadow-[0_0_15px_rgba(168,85,247,0.4)]",
+      border: "border-l-yellow-500 dark:border-l-yellow-400",
+      glow: "shadow-[0_0_15px_rgba(245,158,11,0.2)] dark:shadow-[0_0_15px_rgba(245,158,11,0.4)]",
     },
     done: {
       border: "border-l-green-500 dark:border-l-green-400",
       glow: "shadow-[0_0_15px_rgba(34,197,94,0.2)] dark:shadow-[0_0_15px_rgba(34,197,94,0.4)]",
     },
-  }[task.status];
+    // Legacy support (for backward compatibility)
+    todo: {
+      border: "border-l-gray-500 dark:border-l-gray-400",
+      glow: "shadow-[0_0_15px_rgba(107,114,128,0.2)] dark:shadow-[0_0_15px_rgba(107,114,128,0.4)]",
+    },
+    doing: {
+      border: "border-l-blue-500 dark:border-l-blue-400",
+      glow: "shadow-[0_0_15px_rgba(59,130,246,0.2)] dark:shadow-[0_0_15px_rgba(59,130,246,0.4)]",
+    },
+  };
+
+  const statusStyles = statusStylesMap[task.status] || statusStylesMap.backlog;
 
   // Copy task ID to clipboard
   const handleCopyId = async (e: React.MouseEvent) => {

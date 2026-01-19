@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { HiX, HiCheck } from "react-icons/hi";
 import { Task } from "@/lib/types";
+import { WorkflowStageSelector } from "./WorkflowStageSelector";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface TaskModalProps {
 export interface TaskFormData {
   title: string;
   description: string;
-  status: "todo" | "doing" | "review" | "done";
+  workflow_stage_id: string; // NEW: workflow stage ID
   priority: "low" | "medium" | "high" | "urgent";
   assignee: string;
   feature?: string;
@@ -34,7 +35,7 @@ export function TaskModal({
   const [formData, setFormData] = useState<TaskFormData>({
     title: "",
     description: "",
-    status: "todo",
+    workflow_stage_id: "", // Will be set by WorkflowStageSelector
     priority: "medium",
     assignee: "User",
     feature: "",
@@ -49,7 +50,7 @@ export function TaskModal({
       setFormData({
         title: task.title,
         description: task.description || "",
-        status: task.status,
+        workflow_stage_id: task.workflow_stage_id,
         priority: task.priority,
         assignee: task.assignee,
         feature: task.feature || "",
@@ -60,7 +61,7 @@ export function TaskModal({
       setFormData({
         title: "",
         description: "",
-        status: "todo",
+        workflow_stage_id: "", // Will be set by WorkflowStageSelector default
         priority: "medium",
         assignee: "User",
         feature: "",
@@ -158,23 +159,16 @@ export function TaskModal({
               />
             </div>
 
-            {/* Status */}
+            {/* Workflow Stage */}
             <div>
-              <label htmlFor="status" className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
-                Status *
+              <label htmlFor="workflow_stage" className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
+                Workflow Stage *
               </label>
-              <select
-                id="status"
-                value={formData.status}
-                onChange={(e) => handleChange("status", e.target.value)}
+              <WorkflowStageSelector
+                value={formData.workflow_stage_id}
+                onChange={(stageId) => handleChange("workflow_stage_id", stageId)}
                 required
-                className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="todo">To Do</option>
-                <option value="doing">In Progress</option>
-                <option value="review">Review</option>
-                <option value="done">Done</option>
-              </select>
+              />
             </div>
 
             {/* Priority */}

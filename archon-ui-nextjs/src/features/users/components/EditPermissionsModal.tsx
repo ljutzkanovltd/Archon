@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Label, Button, Checkbox } from "flowbite-react";
+import { Button, Checkbox, Label } from "flowbite-react";
 import toast from "react-hot-toast";
 import CustomModal from "@/components/common/CustomModal";
 import { adminApi } from "@/lib/apiClient";
@@ -131,10 +131,10 @@ export function EditPermissionsModal({
     <CustomModal
       open={isOpen}
       close={onClose}
-      title={`Edit Permissions - ${user.full_name || user.email} [DEBUG: v3]`}
+      title={`Edit Permissions - ${user.full_name || user.email} [DEBUG: v10-FLOWBITE-CHECKBOX]`}
       description="Grant or revoke access permissions for this user"
       size="LARGE"
-      containerClassName="p-0"
+      containerClassName="p-0 !overflow-visible"
     >
       {/* Loading State */}
       {isLoading ? (
@@ -171,30 +171,36 @@ export function EditPermissionsModal({
                 </p>
               </div>
               <div className="space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-600">
-                {availablePermissions.map((perm) => (
-                  <div
-                    key={perm.key}
-                    className="flex items-start gap-3 rounded-lg p-2 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  >
-                    <Checkbox
-                      id={`perm-${perm.key}`}
-                      checked={selectedPermissions.includes(perm.key)}
-                      onChange={() => handlePermissionToggle(perm.key)}
-                      disabled={updatePermissionsMutation.isPending}
-                    />
-                    <div className="flex-1">
-                      <label
-                        htmlFor={`perm-${perm.key}`}
-                        className="cursor-pointer text-sm font-medium text-gray-900 dark:text-white"
-                      >
-                        {perm.label}
-                      </label>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {perm.description}
-                      </p>
+                {availablePermissions.map((perm) => {
+                  const isChecked = selectedPermissions.includes(perm.key);
+                  return (
+                    <div
+                      key={perm.key}
+                      className="flex items-start gap-3 rounded-lg p-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <Checkbox
+                        id={`perm-${perm.key}`}
+                        checked={isChecked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handlePermissionToggle(perm.key);
+                        }}
+                        disabled={updatePermissionsMutation.isPending}
+                      />
+                      <div className="flex-1">
+                        <Label
+                          htmlFor={`perm-${perm.key}`}
+                          className="cursor-pointer text-sm font-medium text-gray-900 dark:text-white"
+                        >
+                          {perm.label}
+                        </Label>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {perm.description}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -203,7 +209,7 @@ export function EditPermissionsModal({
           <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="flex justify-end gap-3">
               <Button
-                color="light"
+                color="gray"
                 onClick={onClose}
                 disabled={updatePermissionsMutation.isPending}
               >
@@ -211,7 +217,7 @@ export function EditPermissionsModal({
               </Button>
               <Button
                 type="submit"
-                color="purple"
+                color="blue"
                 disabled={updatePermissionsMutation.isPending}
               >
                 {updatePermissionsMutation.isPending && (

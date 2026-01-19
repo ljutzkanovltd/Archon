@@ -23,8 +23,10 @@ export interface UserListItem {
   email: string;
   full_name: string;
   avatar_url: string | null;
+  role?: string; // "admin" | "member" | "viewer"
   is_active: boolean;
   is_verified: boolean;
+  last_login_at?: string | null;
   created_at: string;
 }
 
@@ -83,4 +85,83 @@ export interface UpdateUserPermissionsResponse {
   user_id: string;
   granted: PermissionKey[];
   revoked: PermissionKey[];
+}
+
+// Update user request (for editing user details)
+export interface UpdateUserRequest {
+  full_name?: string;
+  email?: string;
+  role?: "admin" | "member" | "viewer";
+}
+
+// Update user response
+export interface UpdateUserResponse {
+  success: boolean;
+  message: string;
+  user: UserListItem;
+}
+
+// Project member item
+export interface ProjectMemberItem {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string;
+  avatar_url: string | null;
+  role: string;
+  access_level: "owner" | "member";
+  added_at: string | null;
+  added_by: string | null;
+  added_by_name: string | null;
+}
+
+// Project members response
+export interface ProjectMembersResponse {
+  success: boolean;
+  project_id: string;
+  members: ProjectMemberItem[];
+  total: number;
+}
+
+// Add project member request
+export interface AddProjectMemberRequest {
+  user_id: string;
+  access_level: "owner" | "member";
+}
+
+// Add project member response
+export interface AddProjectMemberResponse {
+  success: boolean;
+  message: string;
+  project_id: string;
+  user_id: string;
+  access_level: string;
+}
+
+// Remove project member response
+export interface RemoveProjectMemberResponse {
+  success: boolean;
+  message: string;
+}
+
+// User project item
+export interface UserProjectItem {
+  project_id: string;
+  title: string;
+  description: string | null;
+  github_repo: string | null;
+  pinned: boolean;
+  archived: boolean;
+  access_level: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// User projects response
+export interface UserProjectsResponse {
+  success: boolean;
+  user_id: string;
+  projects: UserProjectItem[];
+  total: number;
+  is_admin: boolean;
 }

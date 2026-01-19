@@ -36,6 +36,17 @@ interface QueueStats {
   cancelled: number;
 }
 
+interface ActivelyCrawlingStats {
+  source_id: string;
+  pages_crawled: number;
+  code_examples_count?: number;
+  batch_info: {
+    batch_current: number;
+    batch_total: number;
+    urls_discovered: number;
+  };
+}
+
 interface CrawlQueueMonitorProps {
   sources: KnowledgeSource[];
   className?: string;
@@ -48,9 +59,13 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isExpanded, setIsExpanded] = useState(true);
   const [workerStatus, setWorkerStatus] = useState<"idle" | "running" | "paused">("running");
+  const [activelyCrawling, setActivelyCrawling] = useState<ActivelyCrawlingStats[]>([]);
 
   // Create source lookup map
   const sourceMap = new Map(sources.map(s => [s.source_id, s]));
+
+  // Create actively crawling stats lookup map
+  const activelyCrawlingMap = new Map(activelyCrawling.map(stat => [stat.source_id, stat]));
 
   const loadQueue = async () => {
     try {
@@ -62,6 +77,12 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData.stats);
+        // Store detailed statistics for actively crawling sources
+        if (statsData.actively_crawling && Array.isArray(statsData.actively_crawling)) {
+          setActivelyCrawling(statsData.actively_crawling);
+        } else {
+          setActivelyCrawling([]);
+        }
       }
 
       if (itemsRes.ok) {
@@ -421,9 +442,30 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Crawl Queue
-          </h3>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Crawl Queue
+            </h3>
+            {/* Crawl Statistics */}
+            <div className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+              Crawling from {new Set(items.map(item => item.source_id)).size} source{new Set(items.map(item => item.source_id)).size !== 1 ? 's' : ''}
+              {stats && stats.total > 0 && ` • ${stats.total} total item${stats.total !== 1 ? 's' : ''} in queue`}
+              {/* Show pages crawled from completed items */}
+              {(() => {
+                const totalPages = items
+                  .filter(item => item.status === "completed" && item.error_details?.validation_result)
+                  .reduce((sum, item) => sum + (item.error_details?.validation_result?.pages_count || 0), 0);
+                const totalCodeExamples = items
+                  .filter(item => item.status === "completed" && item.error_details?.validation_result)
+                  .reduce((sum, item) => sum + (item.error_details?.validation_result?.code_examples_count || 0), 0);
+
+                if (totalPages > 0) {
+                  return ` • ${totalPages} page${totalPages !== 1 ? 's' : ''} crawled` + (totalCodeExamples > 0 ? `, ${totalCodeExamples} code example${totalCodeExamples !== 1 ? 's' : ''}` : '');
+                }
+                return '';
+              })()}
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 md:gap-4">
@@ -561,6 +603,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         key={item.item_id}
                         item={item}
                         source={sourceMap.get(item.source_id)}
+                        crawlStats={activelyCrawlingMap.get(item.source_id)}
                         getStatusIcon={getStatusIcon}
                         getStatusColor={getStatusColor}
                         formatDate={formatDate}
@@ -686,6 +729,7 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
 interface QueueItemCardProps {
   item: QueueItem;
   source?: KnowledgeSource;
+  crawlStats?: ActivelyCrawlingStats;
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
   formatDate: (dateString: string | null) => string;
@@ -700,6 +744,7 @@ interface QueueItemCardProps {
 function QueueItemCard({
   item,
   source,
+  crawlStats,
   getStatusIcon,
   getStatusColor,
   formatDate,
@@ -723,7 +768,6 @@ function QueueItemCard({
     }`}>
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
-          {getStatusIcon(item.status)}
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-900 dark:text-white">
@@ -781,15 +825,44 @@ function QueueItemCard({
                   </button>
                 </div>
 
-                {/* Progress Information */}
-                <div className="flex flex-col py-2 text-xs text-gray-600 dark:text-gray-400">
-                  <span className="font-medium">
-                    Crawling: {source?.url || source?.title || `Source ${item.source_id.slice(0, 8)}`}
-                  </span>
-                  <span className="text-gray-500 dark:text-gray-500 mt-1">
-                    Check queue completion for full statistics
-                  </span>
-                </div>
+                {/* Progress Information - Enhanced with detailed statistics */}
+                {crawlStats ? (
+                  <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-brand-700 dark:bg-brand-900/20">
+                    {/* Batch Information Header */}
+                    <div className="text-xs font-medium text-brand-900 dark:text-brand-100">
+                      Processing batch {crawlStats.batch_info.batch_current}-{crawlStats.batch_info.batch_total} of {crawlStats.batch_info.urls_discovered} URLs...
+                    </div>
+
+                    {/* Summary Line */}
+                    <div className="text-xs text-brand-700 dark:text-brand-300">
+                      Crawling from 1 source(s), {crawlStats.pages_crawled} page(s)
+                    </div>
+
+                    {/* Pages Crawled - Prominent Display */}
+                    <div className="flex items-center gap-2 rounded-md bg-white p-2 dark:bg-gray-800">
+                      <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">
+                        {crawlStats.pages_crawled}
+                      </div>
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                        Pages Crawled
+                      </div>
+                    </div>
+
+                    {/* Source URL */}
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      <span className="font-medium">Source:</span> {source?.url || source?.title || `Source ${item.source_id.slice(0, 8)}`}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col py-2 text-xs text-gray-600 dark:text-gray-400">
+                    <span className="font-medium">
+                      Crawling: {source?.url || source?.title || `Source ${item.source_id.slice(0, 8)}`}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-500 mt-1">
+                      Loading statistics...
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 

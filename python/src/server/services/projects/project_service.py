@@ -73,22 +73,48 @@ class ProjectService:
             logger.error(f"Error creating project: {e}")
             return False, {"error": f"Database error: {str(e)}"}
 
-    def list_projects(self, include_content: bool = True, include_archived: bool = False) -> tuple[bool, dict[str, Any]]:
+    async def list_projects(self, include_content: bool = True, include_archived: bool = False, user_id: str = None) -> tuple[bool, dict[str, Any]]:
         """
-        List all projects.
+        List all projects, optionally filtered by user access.
 
         Args:
             include_content: If True (default), includes docs, features, data fields.
                            If False, returns lightweight metadata only with counts.
             include_archived: If True, includes archived projects. Default: False (only active projects)
+            user_id: If provided, filters projects by user access. Admins see all projects.
 
         Returns:
             Tuple of (success, result_dict)
         """
         try:
+            # Import here to avoid circular dependency
+            from ..user_access_service import UserAccessService
+            from uuid import UUID
+
+            # Check if user access filtering should be applied
+            accessible_project_ids = None
+            if user_id:
+                access_service = UserAccessService()
+
+                # Check if user is admin
+                success, is_admin = await access_service.is_user_admin(UUID(user_id))
+                if success and is_admin:
+                    logger.debug(f"list_projects: user_id={user_id} is admin, showing all projects")
+                    # Admins see all projects - no filtering needed
+                else:
+                    # Get accessible project IDs for non-admin users
+                    success, result = await access_service.get_user_accessible_project_ids(UUID(user_id))
+                    if success:
+                        accessible_project_ids = result
+                        logger.debug(f"list_projects: user_id={user_id} has access to {len(accessible_project_ids)} projects")
+                    else:
+                        logger.error(f"list_projects: Failed to get accessible projects for user_id={user_id}: {result}")
+                        # On error, show no projects (safe default)
+                        accessible_project_ids = []
+
             if include_content:
                 # Current behavior - maintain backward compatibility
-                logger.debug(f"list_projects: include_content=True, include_archived={include_archived}")
+                logger.debug(f"list_projects: include_content=True, include_archived={include_archived}, user_id={user_id}")
                 query = self.supabase_client.table("archon_projects").select("*")
 
                 # Filter archived projects by default
@@ -97,6 +123,11 @@ class ProjectService:
 
                 response = query.order("created_at", desc=True).execute()
                 logger.debug(f"list_projects: Fetched {len(response.data)} projects from database")
+
+                # Apply user access filtering if needed
+                if accessible_project_ids is not None:
+                    response.data = [p for p in response.data if p["id"] in accessible_project_ids]
+                    logger.debug(f"list_projects: After access filter, {len(response.data)} projects remain")
 
                 # Batch fetch task counts for all projects (efficient single query)
                 task_counts = self._get_task_counts_batch([p["id"] for p in response.data])
@@ -128,6 +159,7 @@ class ProjectService:
             else:
                 # Lightweight response for MCP - fetch all data but only return metadata + stats
                 # FIXED: N+1 query problem - now using single query
+                logger.debug(f"list_projects: include_content=False, include_archived={include_archived}, user_id={user_id}")
                 query = self.supabase_client.table("archon_projects").select("*")
 
                 # Filter archived projects by default
@@ -135,6 +167,11 @@ class ProjectService:
                     query = query.eq("archived", False)
 
                 response = query.order("created_at", desc=True).execute()
+
+                # Apply user access filtering if needed
+                if accessible_project_ids is not None:
+                    response.data = [p for p in response.data if p["id"] in accessible_project_ids]
+                    logger.debug(f"list_projects: After access filter (lightweight), {len(response.data)} projects remain")
 
                 # Batch fetch task counts for all projects (efficient single query)
                 task_counts = self._get_task_counts_batch([p["id"] for p in response.data])
@@ -457,6 +494,21 @@ class ProjectService:
                 if field in update_fields:
                     update_data[field] = update_fields[field]
 
+            # Handle workflow_id separately with validation
+            if "workflow_id" in update_fields:
+                workflow_id = update_fields["workflow_id"]
+                if workflow_id:  # Allow null to remove workflow
+                    # Validate workflow exists
+                    workflow_check = (
+                        self.supabase_client.table("archon_workflows")
+                        .select("id")
+                        .eq("id", workflow_id)
+                        .execute()
+                    )
+                    if not workflow_check.data:
+                        return False, {"error": f"Workflow with ID {workflow_id} not found"}
+                update_data["workflow_id"] = workflow_id
+
             # Handle pinning logic - only one project can be pinned at a time
             if update_fields.get("pinned") is True:
                 # Unpin any other pinned projects first
@@ -497,6 +549,342 @@ class ProjectService:
         except Exception as e:
             logger.error(f"Error updating project: {e}")
             return False, {"error": f"Error updating project: {str(e)}"}
+
+    def change_project_workflow(
+        self, project_id: str, new_workflow_id: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Change a project's workflow and reassign tasks to compatible stages.
+
+        This method:
+        1. Validates the new workflow exists
+        2. Gets current project workflow (if any)
+        3. Maps current task stages to new workflow stages by stage_order
+        4. Updates project workflow_id
+        5. Reassigns all tasks to new workflow stages
+
+        Args:
+            project_id: UUID of the project
+            new_workflow_id: UUID of the new workflow
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # 1. Validate new workflow exists and get its stages
+            new_workflow_response = (
+                self.supabase_client.table("archon_workflows")
+                .select("id, name, project_type_id")
+                .eq("id", new_workflow_id)
+                .execute()
+            )
+            if not new_workflow_response.data:
+                return False, {"error": f"Workflow with ID {new_workflow_id} not found"}
+
+            new_workflow = new_workflow_response.data[0]
+
+            # Get new workflow stages
+            new_stages_response = (
+                self.supabase_client.table("archon_workflow_stages")
+                .select("id, name, stage_order")
+                .eq("workflow_id", new_workflow_id)
+                .order("stage_order")
+                .execute()
+            )
+            if not new_stages_response.data:
+                return False, {"error": f"No stages found for workflow {new_workflow_id}"}
+
+            new_stages = new_stages_response.data
+
+            # 2. Get current project data
+            project_response = (
+                self.supabase_client.table("archon_projects")
+                .select("id, title, workflow_id")
+                .eq("id", project_id)
+                .execute()
+            )
+            if not project_response.data:
+                return False, {"error": f"Project with ID {project_id} not found"}
+
+            project = project_response.data[0]
+            old_workflow_id = project.get("workflow_id")
+
+            # 3. Get current project tasks
+            tasks_response = (
+                self.supabase_client.table("archon_tasks")
+                .select("id, workflow_stage_id, workflow_stage:archon_workflow_stages!archon_tasks_workflow_stage_id_fkey(id, stage_order)")
+                .eq("project_id", project_id)
+                .eq("archived", False)
+                .execute()
+            )
+
+            tasks_to_reassign = tasks_response.data if tasks_response.data else []
+
+            # 4. Create stage mapping (by stage_order)
+            stage_mapping = {}
+            for task in tasks_to_reassign:
+                current_stage = task.get("workflow_stage")
+                if current_stage and "stage_order" in current_stage:
+                    current_order = current_stage["stage_order"]
+                    # Find new stage with same order (or closest lower order)
+                    matching_stage = None
+                    for new_stage in new_stages:
+                        if new_stage["stage_order"] == current_order:
+                            matching_stage = new_stage
+                            break
+
+                    # Fallback: use stage at same index or last stage
+                    if not matching_stage:
+                        if current_order < len(new_stages):
+                            matching_stage = new_stages[current_order]
+                        else:
+                            matching_stage = new_stages[-1]  # Last stage
+
+                    stage_mapping[task["workflow_stage_id"]] = matching_stage["id"]
+
+            # 5. Update project workflow_id
+            update_project_response = (
+                self.supabase_client.table("archon_projects")
+                .update({"workflow_id": new_workflow_id, "updated_at": datetime.now().isoformat()})
+                .eq("id", project_id)
+                .execute()
+            )
+
+            if not update_project_response.data:
+                return False, {"error": "Failed to update project workflow"}
+
+            # 6. Reassign tasks to new workflow stages
+            tasks_updated = 0
+            for task in tasks_to_reassign:
+                old_stage_id = task["workflow_stage_id"]
+                new_stage_id = stage_mapping.get(old_stage_id)
+
+                if new_stage_id and new_stage_id != old_stage_id:
+                    self.supabase_client.table("archon_tasks").update({
+                        "workflow_stage_id": new_stage_id,
+                        "updated_at": datetime.now().isoformat()
+                    }).eq("id", task["id"]).execute()
+                    tasks_updated += 1
+
+            return True, {
+                "message": f"Workflow changed successfully. {tasks_updated} tasks reassigned.",
+                "project": update_project_response.data[0],
+                "workflow": new_workflow,
+                "tasks_reassigned": tasks_updated,
+                "old_workflow_id": old_workflow_id,
+                "new_workflow_id": new_workflow_id
+            }
+
+        except Exception as e:
+            logger.error(f"Error changing project workflow: {e}")
+            return False, {"error": f"Error changing project workflow: {str(e)}"}
+
+    def create_subproject(
+        self, parent_project_id: str, title: str, description: str = None,
+        relationship_type: str = "subproject", github_repo: str = None
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Create a subproject under a parent project.
+
+        This method:
+        1. Validates parent project exists
+        2. Creates new child project
+        3. Creates hierarchy relationship in archon_project_hierarchy
+        4. Inherits workflow from parent (if parent has one)
+
+        Args:
+            parent_project_id: UUID of the parent project
+            title: Title for the new subproject
+            description: Optional description
+            relationship_type: Type of relationship (subproject/program/portfolio)
+            github_repo: Optional GitHub repository URL
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # Validate parent project exists
+            parent_response = (
+                self.supabase_client.table("archon_projects")
+                .select("id, title, workflow_id")
+                .eq("id", parent_project_id)
+                .execute()
+            )
+
+            if not parent_response.data:
+                return False, {"error": f"Parent project {parent_project_id} not found"}
+
+            parent_project = parent_response.data[0]
+
+            # Create child project
+            child_data = {
+                "title": title,
+                "description": description or "",
+                "github_repo": github_repo,
+                "workflow_id": parent_project.get("workflow_id"),  # Inherit workflow
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            child_response = (
+                self.supabase_client.table("archon_projects")
+                .insert(child_data)
+                .execute()
+            )
+
+            if not child_response.data:
+                return False, {"error": "Failed to create child project"}
+
+            child_project = child_response.data[0]
+
+            # Create hierarchy relationship
+            hierarchy_data = {
+                "parent_project_id": parent_project_id,
+                "child_project_id": child_project["id"],
+                "relationship_type": relationship_type,
+                "created_at": datetime.now().isoformat(),
+            }
+
+            hierarchy_response = (
+                self.supabase_client.table("archon_project_hierarchy")
+                .insert(hierarchy_data)
+                .execute()
+            )
+
+            if not hierarchy_response.data:
+                # Rollback: delete child project
+                self.supabase_client.table("archon_projects").delete().eq(
+                    "id", child_project["id"]
+                ).execute()
+                return False, {"error": "Failed to create hierarchy relationship"}
+
+            logger.info(
+                f"Created subproject '{title}' under parent '{parent_project['title']}'"
+            )
+
+            return True, {
+                "message": f"Subproject created successfully",
+                "subproject": child_project,
+                "parent_project_id": parent_project_id,
+                "relationship_type": relationship_type,
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating subproject: {e}")
+            return False, {"error": f"Error creating subproject: {str(e)}"}
+
+    def get_project_hierarchy(self, project_id: str) -> tuple[bool, dict[str, Any]]:
+        """
+        Get the complete hierarchy tree for a project (parents, siblings, children).
+
+        Returns:
+        - parent: Direct parent project (if any)
+        - children: Direct child projects
+        - ancestors: All ancestor projects (ordered from root to immediate parent)
+        - siblings: Projects with same parent
+
+        Args:
+            project_id: UUID of the project
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # Validate project exists
+            project_response = (
+                self.supabase_client.table("archon_projects")
+                .select("id, title, description, hierarchy_path, workflow_id")
+                .eq("id", project_id)
+                .execute()
+            )
+
+            if not project_response.data:
+                return False, {"error": f"Project {project_id} not found"}
+
+            project = project_response.data[0]
+
+            # Get parent (if any)
+            parent_response = (
+                self.supabase_client.table("archon_project_hierarchy")
+                .select("parent_project_id, relationship_type, parent:archon_projects!parent_project_id(id, title, description, workflow_id)")
+                .eq("child_project_id", project_id)
+                .execute()
+            )
+
+            parent = None
+            if parent_response.data and len(parent_response.data) > 0:
+                parent_data = parent_response.data[0]
+                parent = {
+                    "id": parent_data["parent"]["id"],
+                    "title": parent_data["parent"]["title"],
+                    "description": parent_data["parent"]["description"],
+                    "workflow_id": parent_data["parent"]["workflow_id"],
+                    "relationship_type": parent_data["relationship_type"]
+                }
+
+            # Get children
+            children_response = (
+                self.supabase_client.table("archon_project_hierarchy")
+                .select("child_project_id, relationship_type, child:archon_projects!child_project_id(id, title, description, workflow_id)")
+                .eq("parent_project_id", project_id)
+                .execute()
+            )
+
+            children = []
+            if children_response.data:
+                for child_data in children_response.data:
+                    children.append({
+                        "id": child_data["child"]["id"],
+                        "title": child_data["child"]["title"],
+                        "description": child_data["child"]["description"],
+                        "workflow_id": child_data["child"]["workflow_id"],
+                        "relationship_type": child_data["relationship_type"]
+                    })
+
+            # Get siblings (projects with same parent)
+            siblings = []
+            if parent:
+                siblings_response = (
+                    self.supabase_client.table("archon_project_hierarchy")
+                    .select("child_project_id, relationship_type, child:archon_projects!child_project_id(id, title, description, workflow_id)")
+                    .eq("parent_project_id", parent["id"])
+                    .neq("child_project_id", project_id)
+                    .execute()
+                )
+
+                if siblings_response.data:
+                    for sibling_data in siblings_response.data:
+                        siblings.append({
+                            "id": sibling_data["child"]["id"],
+                            "title": sibling_data["child"]["title"],
+                            "description": sibling_data["child"]["description"],
+                            "workflow_id": sibling_data["child"]["workflow_id"],
+                            "relationship_type": sibling_data["relationship_type"]
+                        })
+
+            logger.info(
+                f"Retrieved hierarchy for project '{project['title']}': "
+                f"{len(children)} children, {len(siblings)} siblings, "
+                f"{'has parent' if parent else 'no parent'}"
+            )
+
+            return True, {
+                "project": {
+                    "id": project["id"],
+                    "title": project["title"],
+                    "description": project["description"],
+                    "workflow_id": project["workflow_id"]
+                },
+                "parent": parent,
+                "children": children,
+                "siblings": siblings,
+                "children_count": len(children),
+                "siblings_count": len(siblings)
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting project hierarchy: {e}")
+            return False, {"error": f"Error getting project hierarchy: {str(e)}"}
 
     def archive_project(self, project_id: str, archived_by: str = "User") -> tuple[bool, dict[str, Any]]:
         """

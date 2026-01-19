@@ -153,6 +153,7 @@ export function DataTableList({
                   checked={isAllSelected}
                   onChange={toggleSelectAll}
                   aria-label="Select all rows"
+                  className="focus:ring-2 focus:ring-brand-500 text-brand-600 border-gray-300 rounded"
                 />
               </th>
             )}
@@ -301,6 +302,7 @@ export function DataTableList({
                       }}
                       aria-label={`Select row ${itemKey}`}
                       title="Click to select, Shift+Click to select range"
+                      className="focus:ring-2 focus:ring-brand-500 text-brand-600 border-gray-300 rounded"
                     />
                   </td>
                 )}

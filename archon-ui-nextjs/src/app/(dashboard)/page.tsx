@@ -43,14 +43,15 @@ export default function DashboardPage() {
         setStats((prev) => ({ ...prev, loading: true, error: null }));
 
         // Fetch all data in parallel
+        // Note: Using new workflow stage status names (backlog, in_progress, review, done)
         const [projectsData, allTasksData, userTasksData, completedTasksData, inProgressTasksData, reviewTasksData, todoTasksData] = await Promise.all([
           projectsApi.getAll({ per_page: 1 }), // Just need count
           tasksApi.getAll({ per_page: 1 }), // Just need total count
           tasksApi.getAll({ filter_by: "assignee", filter_value: "User", per_page: 1 }),
           tasksApi.getAll({ filter_by: "status", filter_value: "done", per_page: 1 }),
-          tasksApi.getAll({ filter_by: "status", filter_value: "doing", per_page: 1 }),
+          tasksApi.getAll({ filter_by: "status", filter_value: "in_progress", per_page: 1 }),
           tasksApi.getAll({ filter_by: "status", filter_value: "review", per_page: 1 }),
-          tasksApi.getAll({ filter_by: "status", filter_value: "todo", per_page: 1 }),
+          tasksApi.getAll({ filter_by: "status", filter_value: "backlog", per_page: 1 }),
         ]);
 
         const totalTasks = allTasksData.total;

@@ -7,6 +7,10 @@
 // Components
 export { WorkflowStageSelector } from './components/WorkflowStageSelector';
 export type { WorkflowStageSelectorProps } from './components/WorkflowStageSelector';
+export { ProjectTypeSelector } from './components/ProjectTypeSelector';
+export type { ProjectTypeSelectorProps } from './components/ProjectTypeSelector';
+export { WorkflowVisualization, WorkflowVisualizationSkeleton } from './components/WorkflowVisualization';
+export type { WorkflowVisualizationProps } from './components/WorkflowVisualization';
 
 // Hooks
 export {

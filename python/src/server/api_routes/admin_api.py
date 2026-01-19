@@ -16,6 +16,7 @@ from slowapi.util import get_remote_address
 from ..auth.dependencies import get_current_user, require_admin
 from ..config.logfire_config import get_logger
 from ..models.permission import PermissionKey
+from ..services.user_access_service import UserAccessService
 from ..utils.db_utils import get_direct_db_connection
 from ..utils.email_service import send_email
 from ..utils.email_templates import invitation_email
@@ -36,8 +37,10 @@ class UserListItem(BaseModel):
     email: str
     full_name: str
     avatar_url: Optional[str] = None
+    role: Optional[str] = None
     is_active: bool
     is_verified: bool
+    last_login_at: Optional[str] = None
     created_at: str
 
 
@@ -77,6 +80,26 @@ class UpdateUserStatusResponse(BaseModel):
     is_active: bool
 
 
+class UpdateUserRequest(BaseModel):
+    """Update user basic info request schema"""
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = Field(None, pattern="^(admin|member|viewer)$")
+
+
+class UpdateUserResponse(BaseModel):
+    """Update user response schema"""
+    success: bool
+    message: str
+    user: UserListItem
+
+
+class SendPasswordResetResponse(BaseModel):
+    """Send password reset response schema"""
+    success: bool
+    message: str
+
+
 class UserPermissionsResponse(BaseModel):
     """User permissions response schema"""
     user_id: UUID
@@ -96,6 +119,71 @@ class UpdateUserPermissionsResponse(BaseModel):
     user_id: UUID
     granted: List[PermissionKey]
     revoked: List[PermissionKey]
+
+
+class ProjectMemberItem(BaseModel):
+    """Project member item schema"""
+    id: str
+    user_id: str
+    email: str
+    full_name: str
+    avatar_url: Optional[str]
+    role: str
+    access_level: str
+    added_at: Optional[str]
+    added_by: Optional[str]
+    added_by_name: Optional[str]
+
+
+class ProjectMembersResponse(BaseModel):
+    """Project members list response schema"""
+    success: bool
+    project_id: str
+    members: List[ProjectMemberItem]
+    total: int
+
+
+class AddProjectMemberRequest(BaseModel):
+    """Add project member request schema"""
+    user_id: UUID
+    access_level: str = Field(..., pattern="^(owner|member)$")
+
+
+class AddProjectMemberResponse(BaseModel):
+    """Add project member response schema"""
+    success: bool
+    message: str
+    project_id: str
+    user_id: str
+    access_level: str
+
+
+class RemoveProjectMemberResponse(BaseModel):
+    """Remove project member response schema"""
+    success: bool
+    message: str
+
+
+class UserProjectItem(BaseModel):
+    """User project item schema"""
+    project_id: str
+    title: str
+    description: Optional[str]
+    github_repo: Optional[str]
+    pinned: bool
+    archived: bool
+    access_level: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+class UserProjectsResponse(BaseModel):
+    """User projects list response schema"""
+    success: bool
+    user_id: str
+    projects: List[UserProjectItem]
+    total: int
+    is_admin: bool
 
 
 # ============================================================================
@@ -182,8 +270,8 @@ async def list_users(
         # Get paginated users
         users_query = f"""
             SELECT
-                id, email, full_name, avatar_url, is_active, is_verified,
-                created_at
+                id, email, full_name, avatar_url, role, is_active, is_verified,
+                last_login_at, created_at
             FROM archon_users
             {where_sql}
             ORDER BY created_at DESC
@@ -199,8 +287,10 @@ async def list_users(
                 email=row["email"],
                 full_name=row["full_name"],
                 avatar_url=row["avatar_url"],
+                role=row["role"],
                 is_active=row["is_active"],
                 is_verified=row["is_verified"],
+                last_login_at=row["last_login_at"].isoformat() if row["last_login_at"] else None,
                 created_at=row["created_at"].isoformat(),
             )
             for row in users_rows
@@ -314,6 +404,230 @@ async def invite_user(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send invitation email. Please try again later.",
             )
+
+    finally:
+        await conn.close()
+
+
+@router.put("/users/{user_id}", response_model=UpdateUserResponse)
+@limiter.limit("20/minute")
+async def update_user(
+    request: Request,
+    user_id: UUID,
+    update_request: UpdateUserRequest,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Update user basic information (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - user_id: UUID of user to update
+
+    **Request Body:**
+    - full_name: User's full name (optional)
+    - email: User's email address (optional)
+    - role: User's role - 'admin', 'member', or 'viewer' (optional)
+
+    **Returns:**
+    - success: Whether update was successful
+    - message: Status message
+    - user: Updated user object
+    """
+    # Prevent admin from demoting themselves
+    if str(user_id) == str(admin["id"]) and update_request.role and update_request.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own role from admin",
+        )
+
+    conn = await get_direct_db_connection()
+    try:
+        # Check if user exists
+        user = await conn.fetchrow(
+            "SELECT id, email, full_name, role FROM archon_users WHERE id = $1",
+            user_id,
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} not found",
+            )
+
+        # Build update query dynamically
+        update_fields = []
+        params = []
+        param_index = 1
+
+        if update_request.full_name is not None:
+            update_fields.append(f"full_name = ${param_index}")
+            params.append(update_request.full_name)
+            param_index += 1
+
+        if update_request.email is not None:
+            # Check if email is already taken by another user
+            existing_user = await conn.fetchval(
+                "SELECT id FROM archon_users WHERE email = $1 AND id != $2",
+                update_request.email,
+                user_id,
+            )
+            if existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Email {update_request.email} is already in use",
+                )
+
+            update_fields.append(f"email = ${param_index}")
+            params.append(update_request.email)
+            param_index += 1
+
+        if update_request.role is not None:
+            update_fields.append(f"role = ${param_index}")
+            params.append(update_request.role)
+            param_index += 1
+
+        if not update_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update",
+            )
+
+        # Add updated_at timestamp
+        update_fields.append(f"updated_at = ${param_index}")
+        params.append("NOW()")
+        param_index += 1
+
+        # Add user_id for WHERE clause
+        params.append(user_id)
+
+        # Execute update
+        update_query = f"""
+            UPDATE archon_users
+            SET {", ".join(update_fields)}
+            WHERE id = ${param_index}
+            RETURNING id, email, full_name, avatar_url, role, is_active, is_verified,
+                      last_login_at, created_at
+        """
+        updated_user = await conn.fetchrow(update_query, *params)
+
+        logger.info(
+            f"Admin {admin['email']} updated user {user['email']} "
+            f"(fields: {', '.join(f.split('=')[0].strip() for f in update_fields)})"
+        )
+
+        return UpdateUserResponse(
+            success=True,
+            message=f"User {updated_user['email']} updated successfully",
+            user=UserListItem(
+                id=updated_user["id"],
+                email=updated_user["email"],
+                full_name=updated_user["full_name"],
+                avatar_url=updated_user["avatar_url"],
+                role=updated_user["role"],
+                is_active=updated_user["is_active"],
+                is_verified=updated_user["is_verified"],
+                last_login_at=updated_user["last_login_at"].isoformat() if updated_user["last_login_at"] else None,
+                created_at=updated_user["created_at"].isoformat(),
+            ),
+        )
+
+    finally:
+        await conn.close()
+
+
+@router.post("/users/{user_id}/password-reset", response_model=SendPasswordResetResponse)
+@limiter.limit("5/minute")
+async def send_password_reset(
+    request: Request,
+    user_id: UUID,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Send password reset email to a user (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - user_id: UUID of user to send password reset to
+
+    **Returns:**
+    - success: Whether email was sent successfully
+    - message: Status message
+    """
+    conn = await get_direct_db_connection()
+    try:
+        # Check if user exists
+        user = await conn.fetchrow(
+            "SELECT id, email, full_name FROM archon_users WHERE id = $1",
+            user_id,
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} not found",
+            )
+
+        # Generate password reset token (expires in 1 hour)
+        import secrets
+        from datetime import datetime, timedelta
+
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(hours=1)
+
+        # Store token in database
+        await conn.execute(
+            """
+            INSERT INTO archon_password_reset_tokens (user_id, token, expires_at)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id)
+            DO UPDATE SET token = $2, expires_at = $3, created_at = NOW()
+            """,
+            user_id,
+            token,
+            expires_at,
+        )
+
+        # Send password reset email
+        reset_url = f"{request.base_url}reset-password?token={token}"
+
+        try:
+            await send_email(
+                to_email=user["email"],
+                subject="Password Reset Request - Archon",
+                html_content=f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Password Reset Request</h2>
+                    <p>Hi {user['full_name']},</p>
+                    <p>An administrator has requested a password reset for your account.</p>
+                    <p>Click the link below to reset your password (link expires in 1 hour):</p>
+                    <p><a href="{reset_url}" style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Reset Password</a></p>
+                    <p>If you did not request this reset, please contact your administrator.</p>
+                    <p style="color: #666; font-size: 12px; margin-top: 40px;">
+                        This email was sent from Archon Project Management System.
+                    </p>
+                </body>
+                </html>
+                """,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send password reset email | user_id={user_id} | error={str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send password reset email: {str(e)}",
+            )
+
+        logger.info(
+            f"Admin {admin['email']} sent password reset email to {user['email']}"
+        )
+
+        return SendPasswordResetResponse(
+            success=True,
+            message=f"Password reset email sent to {user['email']}",
+        )
 
     finally:
         await conn.close()
@@ -561,3 +875,267 @@ async def update_user_permissions(
 
     finally:
         await conn.close()
+
+
+# ============================================================================
+# User Project Access Management Endpoints
+# ============================================================================
+
+
+@router.get("/users/{user_id}/projects", response_model=UserProjectsResponse)
+@limiter.limit("30/minute")
+async def get_user_projects(
+    request: Request,
+    user_id: UUID,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Get all projects a user has access to (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - user_id: UUID of user
+
+    **Returns:**
+    - success: Whether request was successful
+    - user_id: UUID of user
+    - projects: List of projects with access level
+    - total: Number of projects
+    - is_admin: Whether user is an admin (admins see all projects)
+    """
+    access_service = UserAccessService()
+
+    # Check if user is admin
+    is_admin_success, is_admin = await access_service.is_user_admin(user_id)
+    if not is_admin_success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check user role",
+        )
+
+    # Get user's accessible projects
+    success, result = await access_service.get_user_projects(user_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve user projects: {result}",
+        )
+
+    logger.info(
+        f"Admin {admin['email']} retrieved projects for user {user_id}"
+    )
+
+    return UserProjectsResponse(
+        success=True,
+        user_id=str(user_id),
+        projects=[UserProjectItem(**proj) for proj in result],
+        total=len(result),
+        is_admin=is_admin,
+    )
+
+
+@router.get("/projects/{project_id}/members", response_model=ProjectMembersResponse)
+@limiter.limit("30/minute")
+async def get_project_members(
+    request: Request,
+    project_id: UUID,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Get all members of a project (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - project_id: UUID of project
+
+    **Returns:**
+    - success: Whether request was successful
+    - project_id: UUID of project
+    - members: List of users with access to the project
+    - total: Number of members
+    """
+    access_service = UserAccessService()
+
+    # Get project members
+    success, result = await access_service.get_project_members(project_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve project members: {result}",
+        )
+
+    logger.info(
+        f"Admin {admin['email']} retrieved members for project {project_id}"
+    )
+
+    return ProjectMembersResponse(
+        success=True,
+        project_id=str(project_id),
+        members=[ProjectMemberItem(**member) for member in result],
+        total=len(result),
+    )
+
+
+@router.post("/projects/{project_id}/members", response_model=AddProjectMemberResponse)
+@limiter.limit("20/minute")
+async def add_project_member(
+    request: Request,
+    project_id: UUID,
+    member_request: AddProjectMemberRequest,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Add a user to a project with specified access level (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - project_id: UUID of project
+
+    **Request Body:**
+    - user_id: UUID of user to add
+    - access_level: 'owner' or 'member'
+
+    **Returns:**
+    - success: Whether request was successful
+    - message: Status message
+    - project_id: UUID of project
+    - user_id: UUID of user added
+    - access_level: Access level granted
+    """
+    access_service = UserAccessService()
+
+    # Verify user exists
+    conn = await get_direct_db_connection()
+    try:
+        user = await conn.fetchrow(
+            "SELECT id, email, full_name FROM archon_users WHERE id = $1",
+            member_request.user_id,
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {member_request.user_id} not found",
+            )
+
+        # Verify project exists
+        project = await conn.fetchrow(
+            "SELECT id, title FROM archon_projects WHERE id = $1",
+            project_id,
+        )
+
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project {project_id} not found",
+            )
+
+    finally:
+        await conn.close()
+
+    # Add user to project
+    success, result = await access_service.add_user_to_project(
+        user_id=member_request.user_id,
+        project_id=project_id,
+        access_level=member_request.access_level,
+        added_by=admin["id"],
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add user to project: {result}",
+        )
+
+    logger.info(
+        f"Admin {admin['email']} added user {user['email']} to project {project['title']} "
+        f"with access level '{member_request.access_level}'"
+    )
+
+    return AddProjectMemberResponse(
+        success=True,
+        message=f"User {user['full_name']} added to project {project['title']}",
+        project_id=str(project_id),
+        user_id=str(member_request.user_id),
+        access_level=member_request.access_level,
+    )
+
+
+@router.delete("/projects/{project_id}/members/{user_id}", response_model=RemoveProjectMemberResponse)
+@limiter.limit("20/minute")
+async def remove_project_member(
+    request: Request,
+    project_id: UUID,
+    user_id: UUID,
+    admin: dict = Depends(require_admin),
+):
+    """
+    Remove a user from a project (admin only).
+
+    **Permissions Required:** manage_users
+
+    **Path Parameters:**
+    - project_id: UUID of project
+    - user_id: UUID of user to remove
+
+    **Returns:**
+    - success: Whether request was successful
+    - message: Status message
+    """
+    access_service = UserAccessService()
+
+    # Verify user exists
+    conn = await get_direct_db_connection()
+    try:
+        user = await conn.fetchrow(
+            "SELECT id, email, full_name FROM archon_users WHERE id = $1",
+            user_id,
+        )
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} not found",
+            )
+
+        # Verify project exists
+        project = await conn.fetchrow(
+            "SELECT id, title FROM archon_projects WHERE id = $1",
+            project_id,
+        )
+
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project {project_id} not found",
+            )
+
+    finally:
+        await conn.close()
+
+    # Remove user from project
+    success, message = await access_service.remove_user_from_project(
+        user_id=user_id,
+        project_id=project_id,
+        removed_by=admin["id"],
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=message,
+        )
+
+    logger.info(
+        f"Admin {admin['email']} removed user {user['email']} from project {project['title']}"
+    )
+
+    return RemoveProjectMemberResponse(
+        success=True,
+        message=f"User {user['full_name']} removed from project {project['title']}",
+    )

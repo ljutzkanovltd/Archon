@@ -61,6 +61,43 @@ class TransitionTaskRequest(BaseModel):
     to_stage_id: str
 
 
+@router.get("/workflows")
+async def list_workflows():
+    """
+    Get all available workflows.
+
+    Returns:
+        Array of workflow objects with basic info (id, name, project_type_id)
+    """
+    try:
+        logfire.debug("Listing all workflows")
+
+        workflow_service = WorkflowService()
+        success, result = await workflow_service.list_workflows()
+
+        if not success:
+            error_msg = result.get("error", "Unknown error")
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg
+            )
+
+        logfire.debug(f"Retrieved {len(result['workflows'])} workflows")
+        return {
+            "workflows": result["workflows"],
+            "count": len(result["workflows"])
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing workflows: {str(e)}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @router.get("/workflows/{workflow_id}")
 async def get_workflow(workflow_id: str):
     """

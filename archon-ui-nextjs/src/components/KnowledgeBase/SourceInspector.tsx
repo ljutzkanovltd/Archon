@@ -22,6 +22,9 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
   const [searchQuery, setSearchQuery] = useState("");
   const [totalChunks, setTotalChunks] = useState(0);
   const [totalCodeExamples, setTotalCodeExamples] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMorePages, setHasMorePages] = useState(true);
+  const [hasMoreCode, setHasMoreCode] = useState(true);
 
   useEffect(() => {
     if (isOpen && source) {
@@ -63,6 +66,7 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
         }));
 
         setPages(transformedChunks);
+        setHasMorePages(transformedChunks.length < total);
         console.log("[SourceInspector] Loaded", transformedChunks.length, "document chunks of", total, "total");
       }
 
@@ -89,6 +93,7 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
           metadata: example.metadata,
         }));
         setCodeExamples(transformedExamples);
+        setHasMoreCode(transformedExamples.length < total);
         console.log("[SourceInspector] Loaded", transformedExamples.length, "code examples of", total, "total");
       }
     } catch (err) {
@@ -96,6 +101,75 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
       setError(err instanceof Error ? err.message : "Failed to load source content");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMoreDocuments = async () => {
+    if (!source || isLoadingMore || !hasMorePages) return;
+
+    setIsLoadingMore(true);
+
+    try {
+      const nextBatch = await knowledgeBaseApi.listPages({
+        source_id: source.source_id,
+        limit: 100,
+        offset: pages.length,
+      });
+
+      if (nextBatch.success && nextBatch.chunks) {
+        const transformedChunks = nextBatch.chunks.map((chunk: any) => ({
+          page_id: chunk.id.toString(),
+          url: chunk.url || "",
+          title: chunk.title || chunk.metadata?.title || "Untitled",
+          content: chunk.content,
+          full_content: chunk.content,
+          section_title: chunk.section || chunk.metadata?.section || null,
+          word_count: chunk.metadata?.word_count || 0,
+          metadata: chunk.metadata,
+        }));
+
+        setPages(prev => [...prev, ...transformedChunks]);
+        setHasMorePages(pages.length + transformedChunks.length < totalChunks);
+        console.log("[SourceInspector] Loaded", transformedChunks.length, "more documents. Total:", pages.length + transformedChunks.length);
+      }
+    } catch (err) {
+      console.error("[SourceInspector] Error loading more documents:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const loadMoreCodeExamples = async () => {
+    if (!source || isLoadingMore || !hasMoreCode) return;
+
+    setIsLoadingMore(true);
+
+    try {
+      // Note: searchCodeExamples API might not support offset, using match_count as workaround
+      const nextBatch = await knowledgeBaseApi.searchCodeExamples({
+        source_id: source.source_id,
+        match_count: codeExamples.length + 100,
+      });
+
+      if (nextBatch.success && nextBatch.code_examples) {
+        const transformedExamples = nextBatch.code_examples.map((example: any) => ({
+          id: example.id.toString(),
+          content: example.content,
+          language: example.language || example.metadata?.language || "",
+          description: example.metadata?.description || "",
+          summary: example.summary || example.example_name || "",
+          source_id: example.source_id,
+          metadata: example.metadata,
+        }));
+
+        setCodeExamples(transformedExamples);
+        setHasMoreCode(transformedExamples.length < totalCodeExamples);
+        console.log("[SourceInspector] Loaded", transformedExamples.length, "code examples");
+      }
+    } catch (err) {
+      console.error("[SourceInspector] Error loading more code examples:", err);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -275,6 +349,42 @@ export function SourceInspector({ source, isOpen, onClose }: SourceInspectorProp
                   <div className="rounded-lg border border-gray-200 p-4 text-center text-gray-500 dark:border-gray-700">
                     No code examples found
                   </div>
+                )}
+
+                {/* Load More Documents Button */}
+                {activeTab === "pages" && hasMorePages && pages.length > 0 && (
+                  <button
+                    onClick={loadMoreDocuments}
+                    disabled={isLoadingMore}
+                    className="w-full rounded-lg border-2 border-brand-500 bg-transparent px-4 py-3 text-sm font-medium text-brand-600 transition-all hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-brand-400 dark:text-brand-400 dark:hover:bg-brand-900/20"
+                  >
+                    {isLoadingMore ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent dark:border-brand-400" />
+                        <span>Loading...</span>
+                      </div>
+                    ) : (
+                      `Load More Documents`
+                    )}
+                  </button>
+                )}
+
+                {/* Load More Code Examples Button */}
+                {activeTab === "code" && hasMoreCode && codeExamples.length > 0 && (
+                  <button
+                    onClick={loadMoreCodeExamples}
+                    disabled={isLoadingMore}
+                    className="w-full rounded-lg border-2 border-brand-500 bg-transparent px-4 py-3 text-sm font-medium text-brand-600 transition-all hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-brand-400 dark:text-brand-400 dark:hover:bg-brand-900/20"
+                  >
+                    {isLoadingMore ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent dark:border-brand-400" />
+                        <span>Loading...</span>
+                      </div>
+                    ) : (
+                      `Load More`
+                    )}
+                  </button>
                 )}
               </div>
             )}

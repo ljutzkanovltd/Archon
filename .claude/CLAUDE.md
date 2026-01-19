@@ -2,6 +2,8 @@
 
 This file provides guidance for Claude Code when working with Archon, the knowledge base and task management system for SportERP.
 
+**🚀 NEW TO ARCHON?** → Start with [QUICK_START.md](.claude/QUICK_START.md) (30 seconds)
+
 ## Overview
 
 Archon is a Model Context Protocol (MCP) server that provides knowledge base management, documentation indexing, and task tracking capabilities for the SportERP platform. It enables AI assistants like Claude Code to access project documentation, search code examples, and manage development tasks.

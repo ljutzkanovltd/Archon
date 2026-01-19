@@ -44,6 +44,48 @@ case "$TOOL_NAME" in
   mcp__supabase__*)
     SQL_QUERY=$(echo "$TOOL_INPUT_JSON" | jq -r '.query // ""')
     ;;
+  mcp__archon__manage_task)
+    # Validate project_id requirement for task creation
+    ACTION=$(echo "$TOOL_INPUT_JSON" | jq -r '.action // ""')
+    PROJECT_ID=$(echo "$TOOL_INPUT_JSON" | jq -r '.project_id // ""')
+
+    if [[ "$ACTION" == "create" && -z "$PROJECT_ID" ]]; then
+      cat >&2 <<'TASKEOF'
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  TASK CREATION WITHOUT project_id
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CRASH RECOVERY REQUIREMENT VIOLATED
+
+A task is being created without project_id parameter.
+This prevents:
+  ❌ Crash recovery (tasks orphaned on session crash)
+  ❌ Task discovery (cannot find tasks by project)
+  ❌ Project analytics (completion stats broken)
+
+Required: Include project_id parameter
+  manage_task("create",
+    project_id="<uuid>",  ← REQUIRED FOR CRASH RECOVERY
+    title="Task description",
+    description="...",
+    ...
+  )
+
+How to get project_id:
+  1. Find existing: find_projects(query="feature name")
+  2. Create new: manage_project("create", title="...", description="...")
+  3. Extract ID: project_id = project['project']['id']
+
+See: .claude/CLAUDE.md → ARCHON TASK CREATION WORKFLOW → Phase 1
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASKEOF
+
+      cat >&1 <<'TASKJSON'
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"⚠️ Task creation without project_id detected. This violates crash recovery requirements. Continue anyway? (NOT RECOMMENDED)"}}
+TASKJSON
+      exit 0
+    fi
+    ;;
 esac
 
 # Combine all text to check for dangerous patterns

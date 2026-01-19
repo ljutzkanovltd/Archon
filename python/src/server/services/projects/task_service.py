@@ -21,20 +21,79 @@ logger = get_logger(__name__)
 class TaskService:
     """Service class for task operations"""
 
-    VALID_STATUSES = ["todo", "doing", "review", "done"]
+    # Default workflow ID for Standard Agile workflow
+    DEFAULT_WORKFLOW_ID = "29d6341c-0352-46e7-95d3-c26ae27a1aff"
+
+    # Default stage IDs for Standard Agile workflow (cached for performance)
+    DEFAULT_STAGES = {
+        "backlog": "36ff9fe9-4668-4472-a6b2-408ba5db06f7",      # stage_order 0
+        "in_progress": "96c533b1-c1f7-479a-8e8c-f0d377a4e050",  # stage_order 1
+        "review": "e9af2088-1c61-4634-8255-9955965fb1ee",       # stage_order 2
+        "done": "6795f26d-7d47-4490-8b0b-ff65d212dbb4",         # stage_order 3
+    }
 
     def __init__(self, supabase_client=None):
         """Initialize with optional supabase client"""
         self.supabase_client = supabase_client or get_supabase_client()
 
-    def validate_status(self, status: str) -> tuple[bool, str]:
-        """Validate task status"""
-        if status not in self.VALID_STATUSES:
-            return (
-                False,
-                f"Invalid status '{status}'. Must be one of: {', '.join(self.VALID_STATUSES)}",
+    def get_stage_id_by_name(self, stage_name: str, workflow_id: str = None) -> str | None:
+        """
+        Get workflow stage ID by name.
+
+        Args:
+            stage_name: Name of stage (backlog, in_progress, review, done)
+            workflow_id: Optional workflow ID (defaults to Standard Agile)
+
+        Returns:
+            Stage UUID or None if not found
+        """
+        # Use cached default stages if using Standard Agile workflow
+        if workflow_id is None or workflow_id == self.DEFAULT_WORKFLOW_ID:
+            return self.DEFAULT_STAGES.get(stage_name.lower())
+
+        # Query database for custom workflow stages
+        try:
+            response = (
+                self.supabase_client.table("archon_workflow_stages")
+                .select("id")
+                .eq("workflow_id", workflow_id)
+                .ilike("name", stage_name)
+                .limit(1)
+                .execute()
             )
-        return True, ""
+            if response.data:
+                return response.data[0]["id"]
+        except Exception as e:
+            logger.error(f"Error fetching stage ID for {stage_name}: {e}")
+
+        return None
+
+    def validate_workflow_stage(self, stage_id: str, workflow_id: str = None) -> tuple[bool, str]:
+        """
+        Validate that a workflow_stage_id exists and optionally belongs to a workflow.
+
+        Args:
+            stage_id: UUID of the workflow stage
+            workflow_id: Optional workflow UUID to validate against
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            query = self.supabase_client.table("archon_workflow_stages").select("id, name").eq("id", stage_id)
+
+            if workflow_id:
+                query = query.eq("workflow_id", workflow_id)
+
+            response = query.limit(1).execute()
+
+            if not response.data:
+                return False, f"Invalid workflow_stage_id '{stage_id}'"
+
+            return True, ""
+        except Exception as e:
+            logger.error(f"Error validating workflow stage: {e}")
+            return False, f"Error validating workflow stage: {str(e)}"
 
     def validate_assignee(self, assignee: str) -> tuple[bool, str]:
         """Validate task assignee"""
@@ -63,9 +122,13 @@ class TaskService:
         feature: str | None = None,
         sources: list[dict[str, Any]] = None,
         code_examples: list[dict[str, Any]] = None,
+        workflow_stage_id: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Create a new task under a project with automatic reordering.
+
+        Args:
+            workflow_stage_id: Optional workflow stage ID. Defaults to "Backlog" stage.
 
         Returns:
             Tuple of (success, result_dict)
@@ -88,16 +151,23 @@ class TaskService:
             if not is_valid:
                 return False, {"error": error_msg}
 
-            task_status = "todo"
+            # Get or validate workflow_stage_id
+            if workflow_stage_id:
+                is_valid, error_msg = self.validate_workflow_stage(workflow_stage_id)
+                if not is_valid:
+                    return False, {"error": error_msg}
+            else:
+                # Default to "Backlog" stage
+                workflow_stage_id = self.DEFAULT_STAGES["backlog"]
 
             # REORDERING LOGIC: If inserting at a specific position, increment existing tasks
             if task_order > 0:
-                # Get all tasks in the same project and status with task_order >= new task's order
+                # Get all tasks in the same project and workflow stage with task_order >= new task's order
                 existing_tasks_response = (
                     self.supabase_client.table("archon_tasks")
                     .select("id, task_order")
                     .eq("project_id", project_id)
-                    .eq("status", task_status)
+                    .eq("workflow_stage_id", workflow_stage_id)
                     .gte("task_order", task_order)
                     .execute()
                 )
@@ -117,7 +187,7 @@ class TaskService:
                 "project_id": project_id,
                 "title": title,
                 "description": description,
-                "status": task_status,
+                "workflow_stage_id": workflow_stage_id,
                 "assignee": assignee,
                 "task_order": task_order,
                 "priority": priority,
@@ -135,14 +205,13 @@ class TaskService:
             if response.data:
                 task = response.data[0]
 
-
                 return True, {
                     "task": {
                         "id": task["id"],
                         "project_id": task["project_id"],
                         "title": task["title"],
                         "description": task["description"],
-                        "status": task["status"],
+                        "workflow_stage_id": task["workflow_stage_id"],
                         "assignee": task["assignee"],
                         "task_order": task["task_order"],
                         "priority": task["priority"],
@@ -164,35 +233,41 @@ class TaskService:
         include_closed: bool = False,
         exclude_large_fields: bool = False,
         include_archived: bool = False,
-        search_query: str = None
+        search_query: str = None,
+        workflow_stage_id: str = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         List tasks with various filters.
 
         Args:
             project_id: Filter by project
-            status: Filter by status
+            status: DEPRECATED - Map to workflow stage name (backlog/in_progress/review/done)
             assignee: Filter by assignee (User, planner, agents, etc.)
             include_closed: Include done tasks
             exclude_large_fields: If True, excludes sources and code_examples fields
             include_archived: If True, includes archived tasks
             search_query: Keyword search in title, description, and feature fields
+            workflow_stage_id: Filter by workflow stage ID (preferred over status)
 
         Returns:
             Tuple of (success, result_dict)
         """
         try:
-            # Start with base query
+            # Start with base query - join with workflow_stages to get stage info
+            # Use explicit relationship name to avoid ambiguity
             if exclude_large_fields:
-                # Select all fields except large JSONB ones
+                # Select task fields + stage info
                 query = self.supabase_client.table("archon_tasks").select(
                     "id, project_id, parent_task_id, title, description, "
-                    "status, assignee, task_order, priority, feature, archived, "
+                    "workflow_stage_id, assignee, task_order, priority, feature, archived, "
                     "archived_at, archived_by, created_at, updated_at, "
-                    "sources, code_examples"  # Still fetch for counting, but will process differently
+                    "sources, code_examples, "  # Still fetch for counting
+                    "workflow_stage:archon_workflow_stages!archon_tasks_workflow_stage_id_fkey(id, name, stage_order, workflow_id)"
                 )
             else:
-                query = self.supabase_client.table("archon_tasks").select("*")
+                query = self.supabase_client.table("archon_tasks").select(
+                    "*, workflow_stage:archon_workflow_stages!archon_tasks_workflow_stage_id_fkey(id, name, stage_order, workflow_id)"
+                )
 
             # Track filters for debugging
             filters_applied = []
@@ -202,18 +277,25 @@ class TaskService:
                 query = query.eq("project_id", project_id)
                 filters_applied.append(f"project_id={project_id}")
 
-            if status:
-                # Validate status
-                is_valid, error_msg = self.validate_status(status)
+            # Support both status (legacy) and workflow_stage_id (new)
+            if workflow_stage_id:
+                # Validate workflow stage
+                is_valid, error_msg = self.validate_workflow_stage(workflow_stage_id)
                 if not is_valid:
                     return False, {"error": error_msg}
-                query = query.eq("status", status)
-                filters_applied.append(f"status={status}")
-                # When filtering by specific status, don't apply include_closed filter
-                # as it would be redundant or potentially conflicting
+                query = query.eq("workflow_stage_id", workflow_stage_id)
+                filters_applied.append(f"workflow_stage_id={workflow_stage_id}")
+            elif status:
+                # Map legacy status to workflow stage name
+                stage_id = self.get_stage_id_by_name(status)
+                if not stage_id:
+                    return False, {"error": f"Invalid status '{status}'. Must be one of: backlog, in_progress, review, done"}
+                query = query.eq("workflow_stage_id", stage_id)
+                filters_applied.append(f"status={status} (mapped to stage)")
             elif not include_closed:
-                # Only exclude done tasks if no specific status filter is applied
-                query = query.neq("status", "done")
+                # Exclude "Done" stage tasks
+                done_stage_id = self.DEFAULT_STAGES["done"]
+                query = query.neq("workflow_stage_id", done_stage_id)
                 filters_applied.append("exclude done tasks")
 
             if assignee:
@@ -262,14 +344,16 @@ class TaskService:
                 query.order("task_order", desc=False).order("created_at", desc=False).execute()
             )
 
-            # Debug: Log task status distribution and filter effectiveness
+            # Debug: Log task workflow stage distribution
             if response.data:
-                status_counts = {}
+                stage_counts = {}
                 archived_counts = {"null": 0, "true": 0, "false": 0}
 
                 for task in response.data:
-                    task_status = task.get("status", "unknown")
-                    status_counts[task_status] = status_counts.get(task_status, 0) + 1
+                    workflow_stage = task.get("workflow_stage")
+                    if workflow_stage:
+                        stage_name = workflow_stage.get("name", "unknown")
+                        stage_counts[stage_name] = stage_counts.get(stage_name, 0) + 1
 
                     # Check archived field
                     archived_value = task.get("archived")
@@ -281,27 +365,24 @@ class TaskService:
                         archived_counts["false"] += 1
 
                 logger.debug(
-                    f"Retrieved {len(response.data)} tasks. Status distribution: {status_counts}"
+                    f"Retrieved {len(response.data)} tasks. Stage distribution: {stage_counts}"
                 )
                 logger.debug(f"Archived field distribution: {archived_counts}")
-
-                # If we're filtering by status and getting wrong results, log sample
-                if status and len(response.data) > 0:
-                    first_task = response.data[0]
-                    logger.warning(
-                        f"Status filter: {status}, First task status: {first_task.get('status')}, archived: {first_task.get('archived')}"
-                    )
             else:
                 logger.debug("No tasks found with current filters")
 
             tasks = []
             for task in response.data:
+                workflow_stage = task.get("workflow_stage", {})
+
                 task_data = {
                     "id": task["id"],
                     "project_id": task["project_id"],
                     "title": task["title"],
                     "description": task["description"],
-                    "status": task["status"],
+                    "workflow_stage_id": task["workflow_stage_id"],
+                    "workflow_stage": workflow_stage,  # Include stage details
+                    "status": workflow_stage.get("name", "").lower().replace(" ", "_") if workflow_stage else "backlog",  # Legacy compatibility
                     "assignee": task.get("assignee", "User"),
                     "task_order": task.get("task_order", 0),
                     "priority": task.get("priority", "medium"),
@@ -327,7 +408,9 @@ class TaskService:
             filter_info = []
             if project_id:
                 filter_info.append(f"project_id={project_id}")
-            if status:
+            if workflow_stage_id:
+                filter_info.append(f"workflow_stage_id={workflow_stage_id}")
+            elif status:
                 filter_info.append(f"status={status}")
             if not include_closed:
                 filter_info.append("excluding closed tasks")
@@ -345,18 +428,25 @@ class TaskService:
 
     def get_task(self, task_id: str) -> tuple[bool, dict[str, Any]]:
         """
-        Get a specific task by ID.
+        Get a specific task by ID with workflow stage information.
 
         Returns:
             Tuple of (success, result_dict)
         """
         try:
             response = (
-                self.supabase_client.table("archon_tasks").select("*").eq("id", task_id).execute()
+                self.supabase_client.table("archon_tasks")
+                .select("*, workflow_stage:archon_workflow_stages!archon_tasks_workflow_stage_id_fkey(id, name, stage_order, workflow_id)")
+                .eq("id", task_id)
+                .execute()
             )
 
             if response.data:
                 task = response.data[0]
+                # Add legacy status field for backward compatibility
+                workflow_stage = task.get("workflow_stage", {})
+                if workflow_stage:
+                    task["status"] = workflow_stage.get("name", "").lower().replace(" ", "_")
                 return True, {"task": task}
             else:
                 return False, {"error": f"Task with ID {task_id} not found"}
@@ -370,6 +460,10 @@ class TaskService:
     ) -> tuple[bool, dict[str, Any]]:
         """
         Update task with specified fields.
+
+        Args:
+            task_id: UUID of task to update
+            update_fields: Dict of fields to update. Supports both status (legacy) and workflow_stage_id (new).
 
         Returns:
             Tuple of (success, result_dict)
@@ -385,11 +479,19 @@ class TaskService:
             if "description" in update_fields:
                 update_data["description"] = update_fields["description"]
 
-            if "status" in update_fields:
-                is_valid, error_msg = self.validate_status(update_fields["status"])
+            # Support both status (legacy) and workflow_stage_id (new)
+            if "workflow_stage_id" in update_fields:
+                stage_id = update_fields["workflow_stage_id"]
+                is_valid, error_msg = self.validate_workflow_stage(stage_id)
                 if not is_valid:
                     return False, {"error": error_msg}
-                update_data["status"] = update_fields["status"]
+                update_data["workflow_stage_id"] = stage_id
+            elif "status" in update_fields:
+                # Map legacy status to workflow stage
+                stage_id = self.get_stage_id_by_name(update_fields["status"])
+                if not stage_id:
+                    return False, {"error": f"Invalid status '{update_fields['status']}'. Must be one of: backlog, in_progress, review, done"}
+                update_data["workflow_stage_id"] = stage_id
 
             if "assignee" in update_fields:
                 is_valid, error_msg = self.validate_assignee(update_fields["assignee"])
@@ -409,7 +511,7 @@ class TaskService:
             if "feature" in update_fields:
                 update_data["feature"] = update_fields["feature"]
 
-            # Update task
+            # Update task and return with workflow stage info
             response = (
                 self.supabase_client.table("archon_tasks")
                 .update(update_data)
@@ -419,9 +521,13 @@ class TaskService:
 
             if response.data:
                 task = response.data[0]
-
-
-                return True, {"task": task, "message": "Task updated successfully"}
+                # Fetch full task with workflow stage info
+                success, result = self.get_task(task_id)
+                if success:
+                    return True, {"task": result["task"], "message": "Task updated successfully"}
+                else:
+                    # Fallback to basic response
+                    return True, {"task": task, "message": "Task updated successfully"}
             else:
                 return False, {"error": f"Task with ID {task_id} not found"}
 

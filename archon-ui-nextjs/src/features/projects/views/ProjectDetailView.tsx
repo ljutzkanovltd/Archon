@@ -16,6 +16,7 @@ import { ProjectHeader } from "../components";
 import { DataTable, DataTableColumn, DataTableButton } from "@/components/common/DataTable";
 import { TaskCard } from "@/components/Tasks/TaskCard";
 import { formatDistanceToNow } from "date-fns";
+import { WorkflowVisualization } from "@/features/workflows";
 
 // Use ViewMode from ViewModeToggle component (supports: "kanban" | "table" | "grid" | "list")
 
@@ -358,6 +359,15 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Workflow Visualization */}
+      {selectedProject.workflow_id && (
+        <div className="mb-6">
+          <WorkflowVisualization
+            workflowId={selectedProject.workflow_id}
+          />
+        </div>
+      )}
 
       {/* View Mode Toggle & Create Task Button */}
       <div className="mb-4 flex items-center justify-between">
