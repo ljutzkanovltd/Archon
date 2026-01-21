@@ -840,9 +840,9 @@ class TaskService:
     def get_all_project_task_counts(self) -> tuple[bool, dict[str, dict[str, int]]]:
         """
         Get task counts for all projects in a single optimized query.
-        
-        Returns task counts grouped by project_id and status.
-        
+
+        Returns task counts grouped by project_id and status (mapped from workflow stages).
+
         Returns:
             Tuple of (success, counts_dict) where counts_dict is:
             {"project-id": {"todo": 5, "doing": 2, "review": 3, "done": 10}}
@@ -850,10 +850,11 @@ class TaskService:
         try:
             logger.debug("Fetching task counts for all projects in batch")
 
-            # Query all non-archived tasks grouped by project_id and status
+            # Query all non-archived tasks with workflow stage information
+            # Join with workflow stages to get stage name and properties
             response = (
                 self.supabase_client.table("archon_tasks")
-                .select("project_id, status")
+                .select("project_id, workflow_stage_id, archon_workflow_stages(name, is_initial, is_final, stage_order)")
                 .or_("archived.is.null,archived.is.false")
                 .execute()
             )
@@ -867,10 +868,27 @@ class TaskService:
 
             for task in response.data:
                 project_id = task.get("project_id")
-                status = task.get("status")
+                stage_data = task.get("archon_workflow_stages")
 
-                if not project_id or not status:
+                if not project_id or not stage_data:
                     continue
+
+                # Map workflow stage to legacy status
+                stage_name = stage_data.get("name", "").lower()
+                is_initial = stage_data.get("is_initial", False)
+                is_final = stage_data.get("is_final", False)
+                stage_order = stage_data.get("stage_order", 0)
+
+                # Determine legacy status based on stage properties and name
+                if is_initial or stage_name in ["backlog", "planning", "literature review", "reported"]:
+                    status = "todo"
+                elif is_final or stage_name in ["done", "completed", "published", "resolved"]:
+                    status = "done"
+                elif "review" in stage_name or "testing" in stage_name:
+                    status = "review"
+                else:
+                    # Middle stages default to "doing"
+                    status = "doing"
 
                 # Initialize project counts if not exists
                 if project_id not in counts_by_project:
@@ -881,9 +899,8 @@ class TaskService:
                         "done": 0
                     }
 
-                # Count all statuses separately
-                if status in ["todo", "doing", "review", "done"]:
-                    counts_by_project[project_id][status] += 1
+                # Increment count for the mapped status
+                counts_by_project[project_id][status] += 1
 
             logger.debug(f"Task counts fetched for {len(counts_by_project)} projects")
 

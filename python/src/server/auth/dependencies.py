@@ -23,7 +23,8 @@ from ..utils.db_utils import get_direct_db_connection
 from .jwt_utils import verify_token
 
 # OAuth2 password bearer for token extraction from Authorization header
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# auto_error=False allows optional authentication (get_current_user_optional dependency)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
@@ -113,7 +114,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         permissions_query = """
             SELECT permission_key
             FROM archon_user_permissions
-            WHERE user_id = $1 AND is_active = TRUE
+            WHERE user_id = $1 AND revoked_at IS NULL
             ORDER BY permission_key
         """
         permissions_rows = await conn.fetch(permissions_query, user_id)

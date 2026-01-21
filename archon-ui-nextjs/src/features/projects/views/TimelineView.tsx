@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Gantt } from "@svar-ui/react-gantt";
+import dynamic from "next/dynamic";
 import "@svar-ui/react-gantt/style.css";
 import { useSprints } from "@/features/sprints/hooks/useSprintQueries";
 import { useTasksByProject } from "@/features/tasks/hooks/useTaskQueries";
@@ -9,6 +9,13 @@ import { Task, Sprint } from "@/lib/types";
 import { format, addDays, differenceInDays } from "date-fns";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { HiCalendar, HiZoomIn, HiZoomOut } from "react-icons/hi";
+import { GanttErrorBoundary } from "@/features/projects/components/GanttErrorBoundary";
+
+// Dynamically import Gantt wrapper to disable SSR (SVAR Gantt requires client-side only)
+const GanttChart = dynamic(
+  () => import("@/features/projects/components/GanttChart").then((mod) => mod.GanttChart),
+  { ssr: false }
+);
 
 interface TimelineViewProps {
   projectId: string;
@@ -20,9 +27,10 @@ type ZoomLevel = "day" | "week" | "month";
 interface GanttTask {
   id: string;
   text: string;
-  start: string;
-  end: string;
-  duration?: number;
+  start: Date; // SVAR Gantt requires Date objects, not strings
+  end: Date; // SVAR Gantt requires BOTH end and duration
+  duration: number; // Required - number of days
+  data?: GanttTask[]; // Required by SVAR Gantt internals (even if empty) to prevent forEach null errors
   progress?: number;
   type?: "task" | "summary";
   parent?: string;
@@ -70,11 +78,17 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
       }
 
       try {
+        const startDate = new Date(sprint.start_date);
+        const endDate = new Date(sprint.end_date);
+        const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
         data.push({
           id: `sprint-${sprint.id}`,
           text: sprint.name,
-          start: format(new Date(sprint.start_date), "yyyy-MM-dd"),
-          end: format(new Date(sprint.end_date), "yyyy-MM-dd"),
+          start: startDate,
+          end: endDate, // SVAR Gantt requires BOTH end and duration
+          duration: duration > 0 ? duration : 1,
+          data: [], // Required by SVAR Gantt to prevent null forEach errors
           type: "summary",
           open: true, // Expand by default to show nested tasks
         });
@@ -86,11 +100,15 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
     // Add "Backlog" lane for tasks without sprint
     const backlogTasks = tasks.filter((t: Task) => !t.sprint_id);
     if (backlogTasks.length > 0) {
+      const backlogStart = new Date();
+      const backlogEnd = addDays(backlogStart, 30);
       data.push({
         id: "backlog",
         text: "Backlog (No Sprint)",
-        start: format(new Date(), "yyyy-MM-dd"),
-        end: format(addDays(new Date(), 30), "yyyy-MM-dd"),
+        start: backlogStart,
+        end: backlogEnd, // SVAR Gantt requires BOTH end and duration
+        duration: 30, // 30 days default duration for backlog
+        data: [], // Required by SVAR Gantt to prevent null forEach errors
         type: "summary",
         open: true,
       });
@@ -103,28 +121,31 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
           ? new Date(task.created_at)
           : new Date();
 
-        // Calculate end date based on estimated hours (default 1 day if no estimate)
+        // Calculate duration based on estimated hours (default 1 day if no estimate)
         const durationDays = task.estimated_hours
           ? Math.ceil(task.estimated_hours / 8)
           : 1;
+
+        // Calculate end date from start + duration
         const endDate = addDays(startDate, durationDays);
 
-        // Calculate progress based on status
+        // Calculate progress based on workflow stage
         let progress = 0;
-        if (task.status === "done") progress = 100;
-        else if (task.status === "review") progress = 80;
-        else if (task.status === "in_progress") progress = 50;
+        const stageName = task.workflow_stage?.name?.toLowerCase() || task.status?.toLowerCase() || "";
+        if (stageName.includes("done") || stageName.includes("complete")) progress = 100;
+        else if (stageName.includes("review")) progress = 80;
+        else if (stageName.includes("progress") || stageName.includes("doing")) progress = 50;
 
         data.push({
           id: `task-${task.id}`,
           text: task.title,
-          start: format(startDate, "yyyy-MM-dd"),
-          end: format(endDate, "yyyy-MM-dd"),
+          start: startDate,
+          end: endDate, // SVAR Gantt requires BOTH end and duration
           duration: durationDays,
+          data: [], // Required by SVAR Gantt to prevent null forEach errors
           progress,
           type: "task",
           parent: task.sprint_id ? `sprint-${task.sprint_id}` : "backlog",
-          status: task.status,
           assignee: task.assignee || "Unassigned",
         });
       } catch (error) {
@@ -166,7 +187,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
     () => [
       { name: "text", label: "Task Name", width: 300, resize: true },
       { name: "start", label: "Start", align: "center" as const, width: 100 },
-      { name: "end", label: "End", align: "center" as const, width: 100 },
+      { name: "duration", label: "Duration", align: "center" as const, width: 80 },
       { name: "assignee", label: "Assignee", align: "center" as const, width: 120 },
     ],
     []
@@ -175,9 +196,44 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
   const isLoading = sprintsLoading || tasksLoading;
 
   // Validate ganttData has proper structure for Gantt component
-  const hasValidGanttData = ganttData && ganttData.length > 0 && ganttData.every(item =>
-    item.id && item.text && item.start && item.end
-  );
+  const hasValidGanttData = useMemo(() => {
+    if (!ganttData || ganttData.length === 0) {
+      console.log('[Timeline] No gantt data available');
+      return false;
+    }
+    if (!scales || scales.length === 0) {
+      console.error('[Timeline] Scales configuration is missing');
+      return false;
+    }
+    if (!columns || columns.length === 0) {
+      console.error('[Timeline] Columns configuration is missing');
+      return false;
+    }
+
+    // Validate each item has required fields for SVAR Gantt
+    const isValid = ganttData.every(item => {
+      const hasRequiredFields =
+        item.id &&
+        item.text &&
+        item.start instanceof Date &&
+        item.end instanceof Date &&
+        typeof item.duration === 'number' &&
+        Array.isArray(item.data); // Required to prevent null forEach errors
+      if (!hasRequiredFields) {
+        console.error('[Timeline] Invalid gantt item:', item);
+      }
+      return hasRequiredFields;
+    });
+
+    console.log('[Timeline] Gantt data validation:', {
+      dataCount: ganttData.length,
+      scalesCount: scales.length,
+      columnsCount: columns.length,
+      isValid
+    });
+
+    return isValid;
+  }, [ganttData, scales, columns]);
 
   if (isLoading) {
     return (
@@ -286,18 +342,19 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
       {/* Gantt Chart */}
       <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         {hasValidGanttData ? (
-          <div className="h-[600px] w-full">
-            <Gantt
-              tasks={ganttData}
-              links={[]} // Required by SVAR Gantt - empty array for no dependencies
-              scales={scales}
-              columns={columns}
-              cellWidth={zoomLevel === "day" ? 50 : zoomLevel === "week" ? 40 : 30}
-              cellHeight={40}
-              autoSchedule={false}
-              readonly={false}
-            />
-          </div>
+          <GanttErrorBoundary>
+            <div className="h-[600px] w-full">
+              <GanttChart
+                tasks={ganttData}
+                links={[]} // Required by SVAR Gantt - empty array for no dependencies
+                scales={scales}
+                columns={columns}
+                cellWidth={zoomLevel === "day" ? 50 : zoomLevel === "week" ? 40 : 30}
+                cellHeight={40}
+                readonly={false}
+              />
+            </div>
+          </GanttErrorBoundary>
         ) : (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <HiCalendar className="mb-4 h-16 w-16 text-gray-400" />
