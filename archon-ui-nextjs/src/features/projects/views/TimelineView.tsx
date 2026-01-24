@@ -10,6 +10,8 @@ import { format, addDays, differenceInDays } from "date-fns";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { HiCalendar, HiZoomIn, HiZoomOut } from "react-icons/hi";
 import { GanttErrorBoundary } from "@/features/projects/components/GanttErrorBoundary";
+import { SimpleTimelineList } from "@/features/projects/components/SimpleTimelineList";
+import { Skeleton, SkeletonCard } from "@/components/LoadingStates";
 
 // Dynamically import Gantt wrapper to disable SSR (SVAR Gantt requires client-side only)
 const GanttChart = dynamic(
@@ -30,25 +32,28 @@ interface GanttTask {
   start: Date; // SVAR Gantt requires Date objects, not strings
   end: Date; // SVAR Gantt requires BOTH end and duration
   duration: number; // Required - number of days
-  data?: GanttTask[]; // Required by SVAR Gantt internals (even if empty) to prevent forEach null errors
+  data: GanttTask[]; // NESTED STRUCTURE: Children embedded in parent's data array (not parent refs)
   progress?: number;
   type?: "task" | "summary";
-  parent?: string;
   open?: boolean;
-  status?: string;
   assignee?: string;
+  // REMOVED: parent property - hierarchy defined by nesting, not references
 }
 
 /**
  * TimelineView - Jira-style timeline showing sprints and tasks
  *
  * Features:
- * - Sprint lanes as summary rows
- * - Tasks nested under sprints
+ * - Sprint lanes as summary rows with NESTED task structure
+ * - Tasks embedded in parent's data array (not parent references)
  * - Tasks without sprints in "Backlog" lane
  * - Zoom controls (day/week/month)
  * - Color coding by status
- * - Today marker line
+ *
+ * Data Structure: NESTED (SVAR Gantt requirement)
+ * - Sprints at root level with tasks in `data: [...]`
+ * - NO parent property - hierarchy defined by nesting
+ * - All items have `data: []` array (even leaf nodes)
  *
  * Usage:
  * ```tsx
@@ -65,11 +70,11 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
   const sprints = sprintsData?.sprints || [];
   const tasks = tasksData?.items || [];
 
-  // Transform data for Gantt chart
+  // Transform data for Gantt chart - NESTED STRUCTURE (SVAR requirement)
   const ganttData = useMemo(() => {
     const data: GanttTask[] = [];
 
-    // Add sprints as summary tasks (lanes)
+    // Add sprints as summary tasks with NESTED children
     sprints.forEach((sprint: Sprint) => {
       // Skip sprints with invalid dates
       if (!sprint.start_date || !sprint.end_date) {
@@ -82,13 +87,41 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
         const endDate = new Date(sprint.end_date);
         const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Get tasks for this sprint and nest them in data array
+        const sprintTasks = tasks
+          .filter((t: Task) => t.sprint_id === sprint.id)
+          .map((task: Task) => {
+            const taskStartDate = task.created_at ? new Date(task.created_at) : new Date();
+            const durationDays = task.estimated_hours ? Math.ceil(task.estimated_hours / 8) : 1;
+            const taskEndDate = addDays(taskStartDate, durationDays);
+
+            // Calculate progress based on workflow stage
+            let progress = 0;
+            const stageName = task.workflow_stage?.name?.toLowerCase() || task.status?.toLowerCase() || "";
+            if (stageName.includes("done") || stageName.includes("complete")) progress = 100;
+            else if (stageName.includes("review")) progress = 80;
+            else if (stageName.includes("progress") || stageName.includes("doing")) progress = 50;
+
+            return {
+              id: `task-${task.id}`,
+              text: task.title,
+              start: taskStartDate,
+              end: taskEndDate,
+              duration: durationDays,
+              data: [], // Leaf nodes still need empty array
+              progress,
+              type: "task" as const,
+              assignee: task.assignee || "Unassigned",
+            };
+          });
+
         data.push({
           id: `sprint-${sprint.id}`,
           text: sprint.name,
           start: startDate,
-          end: endDate, // SVAR Gantt requires BOTH end and duration
+          end: endDate,
           duration: duration > 0 ? duration : 1,
-          data: [], // Required by SVAR Gantt to prevent null forEach errors
+          data: sprintTasks, // ✅ NESTED: Children inside data array
           type: "summary",
           open: true, // Expand by default to show nested tasks
         });
@@ -97,37 +130,13 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
       }
     });
 
-    // Add "Backlog" lane for tasks without sprint
-    const backlogTasks = tasks.filter((t: Task) => !t.sprint_id);
-    if (backlogTasks.length > 0) {
-      const backlogStart = new Date();
-      const backlogEnd = addDays(backlogStart, 30);
-      data.push({
-        id: "backlog",
-        text: "Backlog (No Sprint)",
-        start: backlogStart,
-        end: backlogEnd, // SVAR Gantt requires BOTH end and duration
-        duration: 30, // 30 days default duration for backlog
-        data: [], // Required by SVAR Gantt to prevent null forEach errors
-        type: "summary",
-        open: true,
-      });
-    }
-
-    // Add tasks
-    tasks.forEach((task: Task) => {
-      try {
-        const startDate = task.created_at
-          ? new Date(task.created_at)
-          : new Date();
-
-        // Calculate duration based on estimated hours (default 1 day if no estimate)
-        const durationDays = task.estimated_hours
-          ? Math.ceil(task.estimated_hours / 8)
-          : 1;
-
-        // Calculate end date from start + duration
-        const endDate = addDays(startDate, durationDays);
+    // Add "Backlog" lane for tasks without sprint (NESTED structure)
+    const backlogTasks = tasks
+      .filter((t: Task) => !t.sprint_id)
+      .map((task: Task) => {
+        const taskStartDate = task.created_at ? new Date(task.created_at) : new Date();
+        const durationDays = task.estimated_hours ? Math.ceil(task.estimated_hours / 8) : 1;
+        const taskEndDate = addDays(taskStartDate, durationDays);
 
         // Calculate progress based on workflow stage
         let progress = 0;
@@ -136,23 +145,35 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
         else if (stageName.includes("review")) progress = 80;
         else if (stageName.includes("progress") || stageName.includes("doing")) progress = 50;
 
-        data.push({
+        return {
           id: `task-${task.id}`,
           text: task.title,
-          start: startDate,
-          end: endDate, // SVAR Gantt requires BOTH end and duration
+          start: taskStartDate,
+          end: taskEndDate,
           duration: durationDays,
-          data: [], // Required by SVAR Gantt to prevent null forEach errors
+          data: [], // Leaf nodes still need empty array
           progress,
-          type: "task",
-          parent: task.sprint_id ? `sprint-${task.sprint_id}` : "backlog",
+          type: "task" as const,
           assignee: task.assignee || "Unassigned",
-        });
-      } catch (error) {
-        console.error(`[Timeline] Error formatting task "${task.title}":`, error);
-      }
-    });
+        };
+      });
 
+    if (backlogTasks.length > 0) {
+      const backlogStart = new Date();
+      const backlogEnd = addDays(backlogStart, 30);
+      data.push({
+        id: "backlog",
+        text: "Backlog (No Sprint)",
+        start: backlogStart,
+        end: backlogEnd,
+        duration: 30,
+        data: backlogTasks, // ✅ NESTED: Children inside data array
+        type: "summary",
+        open: true,
+      });
+    }
+
+    console.log('[Timeline] Using NESTED structure - children embedded in parent\'s data array');
     return data;
   }, [sprints, tasks]);
 
@@ -238,11 +259,27 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
   if (isLoading) {
     return (
       <div className="p-8">
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-600 border-t-transparent"></div>
-          <span className="ml-3 text-gray-600 dark:text-gray-400">
-            Loading timeline...
-          </span>
+        {/* Skeleton for breadcrumb */}
+        <div className="mb-4">
+          <Skeleton height="1rem" width="200px" />
+        </div>
+
+        {/* Skeleton for header */}
+        <div className="mb-6">
+          <Skeleton height="2rem" width="300px" className="mb-2" />
+          <Skeleton height="1rem" width="400px" />
+        </div>
+
+        {/* Skeleton for stats */}
+        <div className="mb-6 grid grid-cols-3 gap-4">
+          <SkeletonCard showHeader={false} bodyLines={1} showFooter={false} />
+          <SkeletonCard showHeader={false} bodyLines={1} showFooter={false} />
+          <SkeletonCard showHeader={false} bodyLines={1} showFooter={false} />
+        </div>
+
+        {/* Skeleton for Gantt chart area */}
+        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <Skeleton height="600px" className="w-full" />
         </div>
       </div>
     );
@@ -339,10 +376,18 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
         </div>
       </div>
 
-      {/* Gantt Chart */}
+      {/* Gantt Chart with Fallback */}
       <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         {hasValidGanttData ? (
-          <GanttErrorBoundary>
+          <GanttErrorBoundary
+            fallback={
+              <SimpleTimelineList
+                sprints={sprints}
+                tasks={tasks}
+                projectId={projectId}
+              />
+            }
+          >
             <div className="h-[600px] w-full">
               <GanttChart
                 tasks={ganttData}
@@ -369,11 +414,6 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
                 : "Create sprints and tasks to visualize them in the timeline"
               }
             </p>
-            {sprints.length > 0 && tasks.length === 0 && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                💡 Tip: Create tasks and assign them to "{sprints[0].name}" to see them here
-              </p>
-            )}
           </div>
         )}
       </div>

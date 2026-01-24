@@ -12,7 +12,7 @@ import { BoardView } from "@/components/Projects/tasks/views/BoardView";
 import { TaskModal, TaskFormData } from "@/components/Tasks/TaskModal";
 import { Task } from "@/lib/types";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
-import { ProjectHeader, ProjectMembersView, ProjectHierarchyTree, ProjectBreadcrumb, SubprojectModal } from "../components";
+import { ProjectHeader, ProjectMembersView, ProjectHierarchyTree, ProjectBreadcrumb, SubprojectModal, ProjectDocumentsTab } from "../components";
 import { DataTable, DataTableColumn, DataTableButton } from "@/components/common/DataTable";
 import { TaskCard } from "@/components/Tasks/TaskCard";
 import { formatDistanceToNow } from "date-fns";
@@ -20,6 +20,9 @@ import { WorkflowVisualization } from "@/features/workflows";
 import { CreateSprintModal } from "../../sprints/components/CreateSprintModal";
 import { SprintListView } from "../../sprints/views/SprintListView";
 import { TimelineView } from "./TimelineView";
+import { TeamAssignmentSection } from "../../teams/components/TeamAssignmentSection";
+import { TeamFilter, useTeamMemberUserIds } from "../../teams/components/TeamFilter";
+import { SkeletonCard, SkeletonTaskCard, Spinner } from "@/components/LoadingStates";
 
 // Use ViewMode from ViewModeToggle component (supports: "kanban" | "table" | "grid" | "list")
 
@@ -84,6 +87,21 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
   // Phase 3.6: Hierarchy state
   const [isSubprojectModalOpen, setIsSubprojectModalOpen] = useState(false);
   const [hierarchyData, setHierarchyData] = useState<any>(null);
+  // Phase 4.7: Team filter state
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+
+  // Phase 4.7: Get team member user IDs for filtering
+  const teamMemberUserIds = useTeamMemberUserIds(selectedTeamId);
+
+  // Phase 4.7: Filter tasks by team members
+  const filteredTasks = useMemo(() => {
+    if (!selectedTeamId || teamMemberUserIds.length === 0) {
+      return tasks;
+    }
+    return tasks.filter(task =>
+      task.assignee && teamMemberUserIds.includes(task.assignee)
+    );
+  }, [tasks, selectedTeamId, teamMemberUserIds]);
 
   // Define columns for DataTable (used in table view)
   const taskColumns: DataTableColumn<Task>[] = useMemo(() => [
@@ -372,8 +390,14 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
   if (projectLoading || !selectedProject) {
     return (
       <div className="p-8">
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
+        {/* Skeleton loading state */}
+        <div className="mb-6">
+          <SkeletonCard showHeader={true} bodyLines={4} showFooter={true} />
+        </div>
+        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard showHeader={false} bodyLines={2} showFooter={false} />
+          <SkeletonCard showHeader={false} bodyLines={2} showFooter={false} />
+          <SkeletonCard showHeader={false} bodyLines={2} showFooter={false} />
         </div>
       </div>
     );
@@ -465,38 +489,57 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
       )}
 
       {/* View Mode Toggle & Action Buttons */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCreateTask}
-            disabled={selectedProject.archived}
-            className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create Task
-          </button>
+      <div className="mb-4 flex flex-col gap-4">
+        {/* Top row: Action buttons and view toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCreateTask}
+              disabled={selectedProject.archived}
+              className="flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white hover:bg-brand-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Task
+            </button>
 
-          <button
-            onClick={handleCreateSprint}
-            disabled={selectedProject.archived}
-            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Create a new sprint (⌘⇧S / Ctrl+Shift+S)"
-          >
-            <HiPlus className="h-5 w-5" />
-            New Sprint
-          </button>
+            <button
+              onClick={handleCreateSprint}
+              disabled={selectedProject.archived}
+              className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Create a new sprint (⌘⇧S / Ctrl+Shift+S)"
+            >
+              <HiPlus className="h-5 w-5" />
+              New Sprint
+            </button>
+          </div>
+
+          {/* Seven-mode view toggle: Kanban / Table / Grid / Sprints / Timeline / Members / Documents - uses reusable ViewModeToggle */}
+          <ViewModeToggle
+            modes={["kanban", "table", "grid", "sprints", "timeline", "members", "documents"]}
+            currentMode={viewMode}
+            onChange={setViewMode}
+            size="md"
+            showLabels={true}
+          />
         </div>
 
-        {/* Six-mode view toggle: Kanban / Table / Grid / Sprints / Timeline / Members - uses reusable ViewModeToggle */}
-        <ViewModeToggle
-          modes={["kanban", "table", "grid", "sprints", "timeline", "members"]}
-          currentMode={viewMode}
-          onChange={setViewMode}
-          size="md"
-          showLabels={true}
-        />
+        {/* Bottom row: Filters (only show in task views) */}
+        {viewMode !== "sprints" && viewMode !== "timeline" && viewMode !== "members" && viewMode !== "documents" && (
+          <div className="flex items-center gap-4 px-2">
+            <TeamFilter
+              projectId={projectId}
+              selectedTeamId={selectedTeamId}
+              onTeamChange={setSelectedTeamId}
+            />
+            {selectedTeamId && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Showing {filteredTasks.length} of {tasks.length} tasks
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tasks View */}
@@ -506,15 +549,18 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
           <p className="text-sm">{tasksError}</p>
         </div>
       ) : tasksLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
+        // Skeleton loading for tasks
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <SkeletonTaskCard key={index} />
+          ))}
         </div>
       ) : viewMode === "kanban" ? (
         // Kanban view - uses BoardView with dynamic workflow stages (Phase 2.4)
         <BoardView
           projectId={projectId}
           workflowId={selectedProject?.workflow_id || "29d6341c-0352-46e7-95d3-c26ae27a1aff"}
-          tasks={tasks}
+          tasks={filteredTasks}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
           onArchiveTask={handleArchiveTask}
@@ -522,7 +568,7 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
       ) : viewMode === "table" ? (
         // Table view - uses DataTable with columns
         <DataTable<Task>
-          data={tasks}
+          data={filteredTasks}
           columns={taskColumns}
           keyExtractor={(task) => task.id}
           rowButtons={getRowButtons}
@@ -544,15 +590,25 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
         // Timeline view - Jira-style Gantt chart with sprint lanes
         <TimelineView projectId={projectId} projectTitle={selectedProject?.title} />
       ) : viewMode === "members" ? (
-        // Members view - Project members management
-        <ProjectMembersView
-          projectId={projectId}
-          projectTitle={selectedProject?.title || ""}
-        />
+        // Members view - Project members and teams management
+        <div className="space-y-8">
+          <ProjectMembersView
+            projectId={projectId}
+            projectTitle={selectedProject?.title || ""}
+          />
+          <hr className="border-gray-200 dark:border-gray-700" />
+          <TeamAssignmentSection
+            projectId={projectId}
+            projectTitle={selectedProject?.title || ""}
+          />
+        </div>
+      ) : viewMode === "documents" ? (
+        // Documents view - Project document management
+        <ProjectDocumentsTab projectId={projectId} />
       ) : (
         // Grid view - uses DataTable with TaskCard customRender
         <DataTable<Task>
-          data={tasks}
+          data={filteredTasks}
           columns={taskColumns}
           keyExtractor={(task) => task.id}
           customRender={renderTaskCard}
