@@ -56,7 +56,7 @@ interface TaskActions {
 
 type TaskStore = TaskState & TaskActions;
 
-export const useTaskStore = create<TaskStore>((set) => ({
+export const useTaskStore = create<TaskStore>((set, get) => ({
   tasks: [],
   selectedTask: null,
   isLoading: false,
@@ -64,6 +64,15 @@ export const useTaskStore = create<TaskStore>((set) => ({
   pagination: { page: 1, per_page: 10, total: 0 },
 
   fetchTasks: async (params) => {
+    // Prevent duplicate simultaneous fetches (race condition protection)
+    const state = get();
+    if (state.isLoading) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Task Store] Skipping duplicate fetch - already loading');
+      }
+      return;
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('[Task Store] Fetching tasks with params:', params);
     }

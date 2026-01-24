@@ -772,6 +772,136 @@ export const progressApi = {
   },
 };
 
+// ==================== KNOWLEDGE LINKS ====================
+
+export const knowledgeLinksApi = {
+  /**
+   * Get AI-powered knowledge suggestions for a project
+   */
+  getProjectSuggestions: async (projectId: string, limit: number = 5): Promise<{
+    success: boolean;
+    suggestions: Array<{
+      knowledge_id: string;
+      knowledge_type: string;
+      title: string;
+      url?: string;
+      relevance_score: number;
+      content_preview?: string;
+      source_id: string;
+    }>;
+    count: number;
+    cached: boolean;
+  }> => {
+    const response = await apiClient.get(`/api/projects/${projectId}/knowledge/suggestions`, {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get AI-powered knowledge suggestions for a task
+   */
+  getTaskSuggestions: async (taskId: string, projectId: string, limit: number = 5): Promise<{
+    success: boolean;
+    suggestions: Array<{
+      knowledge_id: string;
+      knowledge_type: string;
+      title: string;
+      url?: string;
+      relevance_score: number;
+      content_preview?: string;
+      source_id: string;
+    }>;
+    count: number;
+    cached: boolean;
+  }> => {
+    const response = await apiClient.get(`/api/tasks/${taskId}/knowledge/suggestions`, {
+      params: { project_id: projectId, limit },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get linked knowledge items for a project
+   */
+  getProjectKnowledge: async (projectId: string): Promise<{
+    success: boolean;
+    links: Array<any>;
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/projects/${projectId}/knowledge`);
+    return response.data;
+  },
+
+  /**
+   * Get linked knowledge items for a task
+   */
+  getTaskKnowledge: async (taskId: string, projectId: string): Promise<{
+    success: boolean;
+    links: Array<any>;
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/tasks/${taskId}/knowledge`, {
+      params: { project_id: projectId },
+    });
+    return response.data;
+  },
+
+  /**
+   * Link knowledge item to a project
+   */
+  linkToProject: async (
+    projectId: string,
+    data: {
+      knowledge_type: string;
+      knowledge_id: string;
+      relevance_score?: number;
+    }
+  ): Promise<{
+    success: boolean;
+    link: any;
+    knowledge_item: any;
+  }> => {
+    const response = await apiClient.post(`/api/projects/${projectId}/knowledge`, data);
+    return response.data;
+  },
+
+  /**
+   * Link knowledge item to a task
+   */
+  linkToTask: async (
+    taskId: string,
+    projectId: string,
+    data: {
+      knowledge_type: string;
+      knowledge_id: string;
+      relevance_score?: number;
+    }
+  ): Promise<{
+    success: boolean;
+    link: any;
+    knowledge_item: any;
+  }> => {
+    const response = await apiClient.post(`/api/tasks/${taskId}/knowledge`, data, {
+      params: { project_id: projectId },
+    });
+    return response.data;
+  },
+
+  /**
+   * Remove a knowledge link
+   */
+  unlink: async (linkId: string, projectId: string): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    const response = await apiClient.delete(`/api/knowledge-links/${linkId}`, {
+      params: { project_id: projectId },
+    });
+    return response.data;
+  },
+};
+
 // ==================== SETTINGS ====================
 
 export const settingsApi = {
@@ -1284,6 +1414,135 @@ export const sprintsApi = {
     completed_points: number;
   }> => {
     const response = await apiClient.get(`/api/sprints/${sprintId}/velocity`);
+    return response.data;
+  },
+};
+
+// ==================== TEAM ENDPOINTS ====================
+
+export const teamsApi = {
+  /**
+   * Get all teams, optionally filtered by project
+   * API returns: { teams: Team[], count: number }
+   */
+  getAll: async (projectId?: string): Promise<{
+    teams: import("./types").Team[];
+    count: number;
+  }> => {
+    const params = projectId ? { project_id: projectId } : undefined;
+    const response = await apiClient.get("/api/teams", { params });
+    return response.data;
+  },
+
+  /**
+   * Get team by ID with members
+   * API returns: { team: Team, members: TeamMember[], count: number }
+   */
+  getById: async (teamId: string, includeMembers: boolean = true): Promise<{
+    team: import("./types").Team;
+    members: import("./types").TeamMember[];
+    count: number;
+  }> => {
+    const response = await apiClient.get(`/api/teams/${teamId}`, {
+      params: { include_members: includeMembers },
+    });
+    return response.data;
+  },
+
+  /**
+   * Create a new team
+   * API expects: { name: string, description?: string, project_id?: string }
+   * API returns: { team: Team }
+   */
+  create: async (data: {
+    name: string;
+    description?: string;
+    project_id?: string;
+  }): Promise<import("./types").Team> => {
+    const response = await apiClient.post("/api/teams", data);
+    return response.data.team;
+  },
+
+  /**
+   * Update team details
+   * API expects: { name?: string, description?: string }
+   * API returns: { team: Team }
+   */
+  update: async (
+    teamId: string,
+    data: {
+      name?: string;
+      description?: string;
+    }
+  ): Promise<import("./types").Team> => {
+    const response = await apiClient.put(`/api/teams/${teamId}`, data);
+    return response.data.team;
+  },
+
+  /**
+   * Delete a team
+   * API returns: { message: string }
+   */
+  delete: async (teamId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/api/teams/${teamId}`);
+    return response.data;
+  },
+
+  /**
+   * Add a member to a team
+   * API expects: { user_id: string, role: TeamRole }
+   * API returns: { member: TeamMember, team: Team }
+   */
+  addMember: async (
+    teamId: string,
+    data: {
+      user_id: string;
+      role: import("./types").TeamRole;
+    }
+  ): Promise<{
+    member: import("./types").TeamMember;
+    team: import("./types").Team;
+  }> => {
+    const response = await apiClient.post(`/api/teams/${teamId}/members`, data);
+    return response.data;
+  },
+
+  /**
+   * Remove a member from a team
+   * API returns: { message: string }
+   */
+  removeMember: async (teamId: string, userId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/api/teams/${teamId}/members/${userId}`);
+    return response.data;
+  },
+
+  /**
+   * Update a member's role
+   * API expects: { role: TeamRole }
+   * API returns: { member: TeamMember }
+   */
+  updateMemberRole: async (
+    teamId: string,
+    userId: string,
+    role: import("./types").TeamRole
+  ): Promise<{ member: import("./types").TeamMember }> => {
+    const response = await apiClient.put(
+      `/api/teams/${teamId}/members/${userId}/role`,
+      { role }
+    );
+    return response.data;
+  },
+
+  /**
+   * Get teams for a specific user
+   * API returns: { teams: Team[], count: number }
+   */
+  getUserTeams: async (userId: string, projectId?: string): Promise<{
+    teams: import("./types").Team[];
+    count: number;
+  }> => {
+    const params = projectId ? { project_id: projectId } : undefined;
+    const response = await apiClient.get(`/api/users/${userId}/teams`, { params });
     return response.data;
   },
 };

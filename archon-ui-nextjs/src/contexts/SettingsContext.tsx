@@ -68,15 +68,15 @@ interface SettingsProviderProps {
 export const SettingsProvider: React.FC<SettingsProviderProps> = ({
   children,
 }) => {
-  // Feature toggle states
+  // Feature toggle states - ALL DEFAULT TO TRUE for immediate access
   const [darkModeEnabled, setDarkModeEnabledState] = useState(false);
   const [projectsEnabled, setProjectsEnabledState] = useState(true);
-  const [styleGuideEnabled, setStyleGuideEnabledState] = useState(false);
+  const [styleGuideEnabled, setStyleGuideEnabledState] = useState(true);
   const [agentWorkOrdersEnabled, setAgentWorkOrdersEnabledState] =
     useState(true);
-  const [logfireEnabled, setLogfireEnabledState] = useState(false);
+  const [logfireEnabled, setLogfireEnabledState] = useState(true);
   const [disconnectScreenEnabled, setDisconnectScreenEnabledState] =
-    useState(false);
+    useState(true);
   const [tasksEnabled, setTasksEnabledState] = useState(true);
   const [knowledgeBaseEnabled, setKnowledgeBaseEnabledState] = useState(true);
   const [mcpServerDashboardEnabled, setMCPServerDashboardEnabledState] =
@@ -147,11 +147,11 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         setProjectsEnabledState(true);
       }
 
-      // Style Guide (default: false)
+      // Style Guide (default: true)
       if (styleGuideResponse.value !== undefined) {
         setStyleGuideEnabledState(styleGuideResponse.value === "true");
       } else {
-        setStyleGuideEnabledState(false);
+        setStyleGuideEnabledState(true);
       }
 
       // Agent Work Orders (default: true)
@@ -161,20 +161,20 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         setAgentWorkOrdersEnabledState(true);
       }
 
-      // Logfire (default: false)
+      // Logfire (default: true)
       if (logfireResponse.value !== undefined) {
         setLogfireEnabledState(logfireResponse.value === "true");
       } else {
-        setLogfireEnabledState(false);
+        setLogfireEnabledState(true);
       }
 
-      // Disconnect Screen (default: false)
+      // Disconnect Screen (default: true)
       if (disconnectScreenResponse.value !== undefined) {
         setDisconnectScreenEnabledState(
           disconnectScreenResponse.value === "true"
         );
       } else {
-        setDisconnectScreenEnabledState(false);
+        setDisconnectScreenEnabledState(true);
       }
 
       // Tasks (default: true)
@@ -201,13 +201,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
       }
     } catch (error) {
       console.error("Failed to load settings:", error);
-      // Set defaults on error
+      // Set defaults on error - ALL FEATURES ENABLED for better UX
       setDarkModeEnabledState(false);
       setProjectsEnabledState(true);
-      setStyleGuideEnabledState(false);
+      setStyleGuideEnabledState(true);
       setAgentWorkOrdersEnabledState(true);
-      setLogfireEnabledState(false);
-      setDisconnectScreenEnabledState(false);
+      setLogfireEnabledState(true);
+      setDisconnectScreenEnabledState(true);
       setTasksEnabledState(true);
       setKnowledgeBaseEnabledState(true);
       setMCPServerDashboardEnabledState(true);

@@ -58,6 +58,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   // Fetch all projects
   fetchProjects: async (params) => {
+    // Prevent duplicate simultaneous fetches (race condition protection)
+    const state = get();
+    if (state.isLoading) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Project Store] Skipping duplicate fetch - already loading');
+      }
+      return;
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('[Project Store] Fetching projects with params:', params);
     }

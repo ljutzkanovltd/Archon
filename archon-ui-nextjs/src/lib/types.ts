@@ -250,6 +250,32 @@ export interface SprintWithStats extends Sprint {
   planned_count: number;
 }
 
+// ==================== TEAM TYPES ====================
+
+export type TeamRole = "member" | "lead" | "observer";
+
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  project_id?: string;  // null for organization-wide teams
+  member_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  user_id: string;
+  role: TeamRole;
+  joined_at: string;
+}
+
+export interface TeamWithMembers extends Team {
+  members: TeamMember[];
+}
+
 // ==================== KNOWLEDGE BASE TYPES ====================
 
 export interface KnowledgeSource {
