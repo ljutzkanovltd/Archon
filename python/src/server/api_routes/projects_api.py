@@ -28,13 +28,13 @@ logger = get_logger(__name__)
 
 # Service imports
 from ..services.projects import (
+    DocumentService,
     ProjectCreationService,
     ProjectService,
     SourceLinkingService,
     TaskService,
+    VersioningService,
 )
-from ..services.projects.document_service import DocumentService
-from ..services.projects.versioning_service import VersioningService
 
 # Using HTTP polling for real-time updates
 

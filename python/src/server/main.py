@@ -11,6 +11,7 @@ Modules:
 - projects_api: Project and task management with streaming
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -35,12 +36,15 @@ from .api_routes.migration_api import router as migration_router
 from .api_routes.ollama_api import router as ollama_router
 from .api_routes.openrouter_api import router as openrouter_router
 from .api_routes.pages_api import router as pages_router
+from .api_routes.performance import router as performance_router
 from .api_routes.progress_api import router as progress_router
 from .api_routes.projects_api import router as projects_router
+from .api_routes.projects_documents import router as projects_documents_router
 from .api_routes.providers_api import router as providers_router
 from .api_routes.reports import router as reports_router
 from .api_routes.sprints import router as sprints_router
 from .api_routes.sync_api import router as sync_router
+from .api_routes.teams import router as teams_router
 from .api_routes.version_api import router as version_router
 from .api_routes.workflows import router as workflows_router
 
@@ -139,6 +143,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"⚠️  Redis cache initialization failed: {e}")
             # Non-fatal - cache will gracefully degrade
+
+        # Start query cache prewarming in background (non-blocking)
+        try:
+            from .services.search.query_prewarming import prewarm_query_cache
+
+            # Start prewarming as a background task - don't await it
+            asyncio.create_task(prewarm_query_cache())
+            api_logger.info("🔥 Query cache prewarming started in background")
+        except Exception as e:
+            api_logger.warning(f"⚠️  Could not start query prewarming: {e}")
+            # Non-fatal - cache will still work, just without prewarming
 
         # Run configuration validation checks (non-blocking)
         try:
@@ -269,6 +284,51 @@ async def skip_health_check_logs(request, call_next):
     return await call_next(request)
 
 
+# Add performance timing middleware
+# DISABLED: Middleware causes hang on /api/performance/* endpoints
+# Root cause: The middleware itself intercepts ALL requests, including internal ones
+# made by the performance_metrics service during its operations.
+#
+# Alternative solution: Manual performance recording in critical endpoint handlers
+# See: embedding_service.py (line 466), redis_cache.py (line 86, 96), result_cache.py (line 150, 164)
+#
+# @app.middleware("http")
+# async def performance_timing_middleware(request, call_next):
+#     """Track request timing for performance monitoring."""
+#     import time
+#
+#     # Skip performance endpoints to avoid circular dependency
+#     skip_paths = [
+#         "/health",
+#         "/api/health",
+#         "/api/performance/stats",
+#         "/api/performance/health",
+#         "/api/performance/reset",
+#         "/api/performance/prewarming/status",
+#     ]
+#
+#     # Process the request
+#     start_time = time.time()
+#     response = await call_next(request)
+#     latency_ms = (time.time() - start_time) * 1000
+#
+#     # Add timing header for all requests
+#     response.headers["X-Response-Time"] = f"{latency_ms:.2f}ms"
+#
+#     # Record metrics only for non-skipped paths
+#     if request.url.path not in skip_paths:
+#         try:
+#             from .services.performance_metrics import get_metrics_service
+#
+#             metrics_service = get_metrics_service()
+#             metrics_service.record_request(request.url.path, latency_ms)
+#         except Exception:
+#             # Silently fail - don't break requests due to metrics
+#             pass
+#
+#     return response
+
+
 # Include API routers
 app.include_router(settings_router)
 app.include_router(auth_router)  # Authentication endpoints
@@ -280,9 +340,12 @@ app.include_router(knowledge_links_router)  # Knowledge linking for PM features
 app.include_router(pages_router)
 app.include_router(ollama_router)
 app.include_router(openrouter_router)
+app.include_router(performance_router)  # Performance monitoring and stats
 app.include_router(projects_router)
+app.include_router(projects_documents_router)  # Project document management
 app.include_router(workflows_router)  # Workflow and stage management
 app.include_router(sprints_router)  # Sprint management for agile workflows
+app.include_router(teams_router)  # Team management for collaboration
 app.include_router(reports_router)  # Reporting and analytics for PM features
 app.include_router(progress_router)
 app.include_router(agent_chat_router)

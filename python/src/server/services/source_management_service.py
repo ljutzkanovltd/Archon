@@ -394,22 +394,103 @@ class SourceManagementService:
             logger.error(f"Error retrieving sources: {e}")
             return False, {"error": f"Error retrieving sources: {str(e)}"}
 
-    def delete_source(self, source_id: str) -> tuple[bool, dict[str, Any]]:
+    async def delete_source(
+        self,
+        source_id: str,
+        force: bool = False,
+        confirm_unlink: bool = False
+    ) -> tuple[bool, dict[str, Any]]:
         """
         Delete a source from the database.
+
+        Phase 2.2: Enhanced with backlink checking and force delete support.
 
         With CASCADE DELETE constraints in place (migration 009), deleting the source
         will automatically delete all associated crawled_pages and code_examples.
 
         Args:
             source_id: The source ID to delete
+            force: If True, unlink from all projects before deleting
+            confirm_unlink: Required confirmation when force=True
 
         Returns:
             Tuple of (success, result_dict)
+            - If has backlinks and force=False: returns warning with linked projects
+            - If force=True without confirm_unlink: returns error
+            - If force=True with confirm_unlink: unlinks then deletes
         """
         try:
-            logger.info(f"Starting delete_source for source_id: {source_id}")
+            logger.info(f"Starting delete_source for source_id: {source_id} (force={force}, confirm_unlink={confirm_unlink})")
 
+            # Phase 2.2: Check for backlinks before deleting
+            from .knowledge_linking_service import KnowledgeLinkingService
+            linking_service = KnowledgeLinkingService(self.supabase_client)
+
+            success, backlinks_result = await linking_service.get_source_linked_projects(source_id)
+
+            if not success:
+                # Source might not exist or other error
+                if "not found" in backlinks_result.get("error", "").lower():
+                    return False, {"error": f"Source {source_id} not found"}
+                # Continue with delete attempt if other error
+                logger.warning(f"Could not check backlinks for {source_id}: {backlinks_result.get('error')}")
+
+            linked_projects = backlinks_result.get("linked_projects", [])
+            total_links = backlinks_result.get("total_links", 0)
+
+            # If source has backlinks
+            if total_links > 0:
+                if not force:
+                    # Return warning response
+                    logger.info(f"Source {source_id} has {total_links} linked projects - returning warning")
+                    return False, {
+                        "can_delete": False,
+                        "warning": "This knowledge item is linked to projects",
+                        "linked_projects": linked_projects,
+                        "total_links": total_links,
+                        "actions": [
+                            {
+                                "action": "unlink_all",
+                                "label": "Unlink from all projects and delete",
+                                "description": "This will remove links from all projects and then delete the knowledge item"
+                            },
+                            {
+                                "action": "cancel",
+                                "label": "Cancel deletion",
+                                "description": "Keep the knowledge item and all its project links"
+                            }
+                        ],
+                        "hint": "Use force=true and confirm_unlink=true to unlink and delete"
+                    }
+
+                if force and not confirm_unlink:
+                    # Require explicit confirmation for force delete
+                    logger.warning(f"Force delete attempted without confirmation for source {source_id}")
+                    return False, {
+                        "error": "Force delete requires confirmation",
+                        "message": "Set confirm_unlink=true to confirm unlinking from all projects",
+                        "linked_projects": linked_projects,
+                        "total_links": total_links
+                    }
+
+                # Force delete confirmed - unlink from all projects first
+                logger.info(f"Force deleting source {source_id} - unlinking from {total_links} projects first")
+                unlink_result = await linking_service.unlink_source_from_all_projects(source_id)
+
+                if unlink_result["errors"]:
+                    logger.error(f"Errors during bulk unlink for source {source_id}: {unlink_result['errors']}")
+                    return False, {
+                        "error": "Failed to unlink from all projects",
+                        "unlink_errors": unlink_result["errors"],
+                        "unlinked_count": unlink_result["unlinked_count"]
+                    }
+
+                logger.info(
+                    f"Successfully unlinked source {source_id} from {unlink_result['unlinked_count']} "
+                    f"links across {len(unlink_result['project_ids'])} projects"
+                )
+
+            # Proceed with deletion
             # With CASCADE DELETE, we only need to delete from the sources table
             # The database will automatically handle deleting related records
             logger.info(f"Deleting source {source_id} (CASCADE will handle related records)")
@@ -425,10 +506,18 @@ class SourceManagementService:
 
             if source_deleted > 0:
                 logger.info(f"Successfully deleted source {source_id} and all related data via CASCADE")
-                return True, {
+                result = {
                     "source_id": source_id,
-                    "message": "Source and all related data deleted successfully via CASCADE DELETE"
+                    "message": "Source and all related data deleted successfully via CASCADE DELETE",
+                    "success": True
                 }
+
+                # Include unlink info if force delete was used
+                if force and total_links > 0:
+                    result["unlinked_count"] = unlink_result["unlinked_count"]
+                    result["unlinked_from_projects"] = len(unlink_result["project_ids"])
+
+                return True, result
             else:
                 logger.warning(f"No source found with ID {source_id}")
                 return False, {"error": f"Source {source_id} not found"}

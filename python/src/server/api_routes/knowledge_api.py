@@ -16,7 +16,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 
 # Basic validation - simplified inline version
 
@@ -28,6 +29,7 @@ from ..services.credential_service import credential_service
 from ..services.embeddings.provider_error_adapters import ProviderErrorFactory
 from ..services.embeddings.redis_cache import get_embedding_cache
 from ..services.knowledge import DatabaseMetricsService, KnowledgeItemService, KnowledgeSummaryService
+from ..services.search.result_cache import get_result_cache
 from ..services.search.rag_service import RAGService
 from ..services.settings_service import settings_service
 from ..services.storage import DocumentStorageService
@@ -199,6 +201,41 @@ class RagQueryRequest(BaseModel):
     return_mode: str = "chunks"  # "chunks" or "pages"
 
 
+# Phase 2.2: Delete Warning Response Models
+class LinkedProjectInfo(BaseModel):
+    """Information about a project linked to a KB source"""
+    project_id: str
+    project_title: str
+    linked_at: str
+    linked_by: Optional[str] = None
+
+
+class DeleteActionOption(BaseModel):
+    """Action option for handling linked KB item deletion"""
+    action: str
+    label: str
+    description: str
+
+
+class DeleteWarningResponse(BaseModel):
+    """Warning response when attempting to delete a linked KB item"""
+    can_delete: bool = False
+    warning: str
+    linked_projects: list[LinkedProjectInfo]
+    total_links: int
+    actions: list[DeleteActionOption]
+    hint: Optional[str] = None
+
+
+class DeleteSuccessResponse(BaseModel):
+    """Success response after deleting a KB item"""
+    success: bool = True
+    message: str
+    source_id: str
+    unlinked_count: Optional[int] = None  # If force delete was used
+    unlinked_from_projects: Optional[int] = None  # If force delete was used
+
+
 class RefreshRequest(BaseModel):
     """Optional parameters for recrawling a knowledge source.
 
@@ -343,11 +380,33 @@ async def update_knowledge_item(source_id: str, updates: dict):
 
 
 @router.delete("/knowledge-items/{source_id}")
-async def delete_knowledge_item(source_id: str):
-    """Delete a knowledge item from the database."""
+async def delete_knowledge_item(
+    source_id: str,
+    force: bool = False,
+    confirm_unlink: bool = False
+):
+    """
+    Delete a knowledge item from the database.
+
+    Phase 2.2: Enhanced with backlink checking and force delete support.
+
+    Args:
+        source_id: ID of the knowledge source to delete
+        force: If true, unlink from all projects before deleting (default: false)
+        confirm_unlink: Required confirmation when force=true (default: false)
+
+    Returns:
+        Success response or warning about linked projects
+
+    Raises:
+        409: Source has backlinks and force=false (includes warning and linked projects)
+        400: Force delete without confirmation
+        404: Source not found
+        500: Deletion failed
+    """
     try:
-        logger.debug(f"Starting delete_knowledge_item for source_id: {source_id}")
-        safe_logfire_info(f"Deleting knowledge item | source_id={source_id}")
+        logger.debug(f"Starting delete_knowledge_item for source_id: {source_id} (force={force}, confirm_unlink={confirm_unlink})")
+        safe_logfire_info(f"Deleting knowledge item | source_id={source_id} | force={force}")
 
         # Use SourceManagementService directly instead of going through MCP
         logger.debug("Creating SourceManagementService...")
@@ -357,27 +416,57 @@ async def delete_knowledge_item(source_id: str):
         logger.debug("Successfully created SourceManagementService")
 
         logger.debug("Calling delete_source function...")
-        success, result_data = source_service.delete_source(source_id)
+        success, result_data = source_service.delete_source(source_id, force=force, confirm_unlink=confirm_unlink)
         logger.debug(f"delete_source returned: success={success}, data={result_data}")
 
-        # Convert to expected format
-        result = {
-            "success": success,
-            "error": result_data.get("error") if not success else None,
-            **result_data,
-        }
-
-        if result.get("success"):
+        if success:
             safe_logfire_info(f"Knowledge item deleted successfully | source_id={source_id}")
+            return {"success": True, **result_data}
 
-            return {"success": True, "message": f"Successfully deleted knowledge item {source_id}"}
-        else:
-            safe_logfire_error(
-                f"Knowledge item deletion failed | source_id={source_id} | error={result.get('error')}"
+        # Handle different error cases
+        error_msg = result_data.get("error", "")
+
+        # 409 Conflict - has backlinks, needs force delete
+        if result_data.get("can_delete") == False:
+            safe_logfire_info(
+                f"Knowledge item has backlinks | source_id={source_id} | total_links={result_data.get('total_links')}"
             )
             raise HTTPException(
-                status_code=500, detail={"error": result.get("error", "Deletion failed")}
+                status_code=409,
+                detail={
+                    "error": "Cannot delete linked knowledge item",
+                    **result_data
+                }
             )
+
+        # 400 Bad Request - force delete without confirmation
+        if "requires confirmation" in error_msg.lower():
+            safe_logfire_warning(
+                f"Force delete without confirmation | source_id={source_id}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=result_data
+            )
+
+        # 404 Not Found
+        if "not found" in error_msg.lower():
+            safe_logfire_error(
+                f"Knowledge item not found | source_id={source_id}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail={"error": error_msg}
+            )
+
+        # 500 Other errors
+        safe_logfire_error(
+            f"Knowledge item deletion failed | source_id={source_id} | error={error_msg}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": error_msg or "Deletion failed"}
+        )
 
     except Exception as e:
         logger.error(f"Exception in delete_knowledge_item: {e}")
@@ -965,6 +1054,20 @@ async def refresh_knowledge_item(source_id: str, request: RefreshRequest | None 
 
                     result = await crawl_service.orchestrate_crawl(request_dict)
 
+                    # Invalidate cached results for this source after successful refresh
+                    try:
+                        result_cache = await get_result_cache()
+                        await result_cache.invalidate_source(source_id)
+                        safe_logfire_info(
+                            f"✅ Invalidated result cache for source | source_id={source_id}"
+                        )
+                    except Exception as cache_error:
+                        # Log but don't fail the refresh if cache invalidation fails
+                        safe_logfire_error(
+                            f"Result cache invalidation failed (non-critical) | source_id={source_id} | "
+                            f"error={str(cache_error)}"
+                        )
+
                     # Store the ACTUAL crawl task for proper cancellation
                     crawl_task = result.get("task")
                     if crawl_task:
@@ -1380,6 +1483,11 @@ async def search_knowledge_items(request: RagQueryRequest):
 @router.post("/rag/query")
 async def perform_rag_query(request: RagQueryRequest):
     """Perform a RAG query on the knowledge base using service layer."""
+    import time
+
+    # Start performance timing
+    start_time = time.time()
+
     # Validate query
     if not request.query:
         raise HTTPException(status_code=422, detail="Query is required")
@@ -1388,18 +1496,52 @@ async def perform_rag_query(request: RagQueryRequest):
         raise HTTPException(status_code=422, detail="Query cannot be empty")
 
     try:
-        # Use RAGService for unified RAG query with return_mode support
+        # Get result cache instance
+        result_cache = await get_result_cache()
+
+        # Prepare cache parameters
+        match_count = request.match_count or 10
+        filter_metadata = {
+            "return_mode": request.return_mode or "pages"
+        }
+
+        # Check cache first
+        cached_results = await result_cache.get(
+            query=request.query,
+            search_type="rag_query",
+            match_count=match_count,
+            source_id=request.source,
+            filter_metadata=filter_metadata
+        )
+
+        if cached_results:
+            safe_logfire_info(f"✅ Result cache HIT | RAG query | query={request.query[:50]}...")
+            return cached_results
+
+        # Cache miss - perform actual search
+        safe_logfire_info(f"❌ Result cache MISS | RAG query | query={request.query[:50]}...")
         search_service = RAGService(get_supabase_client())
         success, result = await search_service.perform_rag_query(
             query=request.query,
             source=request.source,
-            match_count=request.match_count,
+            match_count=match_count,
             return_mode=request.return_mode
         )
 
         if success:
             # Add success flag to match expected API response format
             result["success"] = True
+
+            # Store in cache for future requests
+            await result_cache.set(
+                query=request.query,
+                search_type="rag_query",
+                match_count=match_count,
+                results=result,
+                source_id=request.source,
+                filter_metadata=filter_metadata
+            )
+
             return result
         else:
             raise HTTPException(
@@ -1412,28 +1554,76 @@ async def perform_rag_query(request: RagQueryRequest):
             f"RAG query failed | error={str(e)} | query={request.query[:50]} | source={request.source}"
         )
         raise HTTPException(status_code=500, detail={"error": f"RAG query failed: {str(e)}"})
+    finally:
+        # Record request performance metrics
+        latency_ms = (time.time() - start_time) * 1000
+        try:
+            from ..services.performance_metrics import get_metrics_service
+
+            metrics_service = get_metrics_service()
+            metrics_service.record_request("/api/rag/query", latency_ms)
+        except Exception:
+            # Silently fail - don't break requests due to metrics
+            pass
 
 
 @router.post("/rag/code-examples")
 async def search_code_examples(request: RagQueryRequest):
     """Search for code examples relevant to the query using dedicated code examples service."""
+    import time
+
+    # Start performance timing
+    start_time = time.time()
+
     try:
-        # Use RAGService for code examples search
+        # Get result cache instance
+        result_cache = await get_result_cache()
+
+        # Prepare cache parameters
+        match_count = request.match_count or 5
+
+        # Check cache first
+        cached_results = await result_cache.get(
+            query=request.query,
+            search_type="code_examples",
+            match_count=match_count,
+            source_id=request.source,
+            filter_metadata=None
+        )
+
+        if cached_results:
+            safe_logfire_info(f"✅ Result cache HIT | Code examples | query={request.query[:50]}...")
+            return cached_results
+
+        # Cache miss - perform actual search
+        safe_logfire_info(f"❌ Result cache MISS | Code examples | query={request.query[:50]}...")
         search_service = RAGService(get_supabase_client())
         success, result = await search_service.search_code_examples_service(
             query=request.query,
             source_id=request.source,  # This is Optional[str] which matches the method signature
-            match_count=request.match_count,
+            match_count=match_count,
         )
 
         if success:
             # Add success flag and reformat to match expected API response format
-            return {
+            response_data = {
                 "success": True,
                 "results": result.get("results", []),
                 "reranked": result.get("reranking_applied", False),
                 "error": None,
             }
+
+            # Store in cache for future requests
+            await result_cache.set(
+                query=request.query,
+                search_type="code_examples",
+                match_count=match_count,
+                results=response_data,
+                source_id=request.source,
+                filter_metadata=None
+            )
+
+            return response_data
         else:
             raise HTTPException(
                 status_code=500,
@@ -1448,6 +1638,17 @@ async def search_code_examples(request: RagQueryRequest):
         raise HTTPException(
             status_code=500, detail={"error": f"Code examples search failed: {str(e)}"}
         )
+    finally:
+        # Record request performance metrics
+        latency_ms = (time.time() - start_time) * 1000
+        try:
+            from ..services.performance_metrics import get_metrics_service
+
+            metrics_service = get_metrics_service()
+            metrics_service.record_request("/api/rag/code-examples", latency_ms)
+        except Exception:
+            # Silently fail - don't break requests due to metrics
+            pass
 
 
 @router.post("/code-examples")
@@ -1476,33 +1677,92 @@ async def get_available_sources():
 
 
 @router.delete("/sources/{source_id}")
-async def delete_source(source_id: str):
-    """Delete a source and all its associated data."""
+async def delete_source(
+    source_id: str,
+    force: bool = False,
+    confirm_unlink: bool = False
+):
+    """
+    Delete a source and all its associated data.
+
+    Phase 2.2: Enhanced with backlink checking and force delete support.
+
+    Args:
+        source_id: ID of the source to delete
+        force: If true, unlink from all projects before deleting (default: false)
+        confirm_unlink: Required confirmation when force=true (default: false)
+
+    Returns:
+        Success response or warning about linked projects
+
+    Raises:
+        409: Source has backlinks and force=false (includes warning and linked projects)
+        400: Force delete without confirmation
+        404: Source not found
+        500: Deletion failed
+    """
     try:
-        safe_logfire_info(f"Deleting source | source_id={source_id}")
+        safe_logfire_info(f"Deleting source | source_id={source_id} | force={force}")
 
         # Use SourceManagementService directly
         from ..services.source_management_service import SourceManagementService
 
         source_service = SourceManagementService(get_supabase_client())
 
-        success, result_data = source_service.delete_source(source_id)
+        success, result_data = source_service.delete_source(source_id, force=force, confirm_unlink=confirm_unlink)
 
         if success:
             safe_logfire_info(f"Source deleted successfully | source_id={source_id}")
-
             return {
                 "success": True,
                 "message": f"Successfully deleted source {source_id}",
                 **result_data,
             }
-        else:
-            safe_logfire_error(
-                f"Source deletion failed | source_id={source_id} | error={result_data.get('error')}"
+
+        # Handle different error cases
+        error_msg = result_data.get("error", "")
+
+        # 409 Conflict - has backlinks, needs force delete
+        if result_data.get("can_delete") == False:
+            safe_logfire_info(
+                f"Source has backlinks | source_id={source_id} | total_links={result_data.get('total_links')}"
             )
             raise HTTPException(
-                status_code=500, detail={"error": result_data.get("error", "Deletion failed")}
+                status_code=409,
+                detail={
+                    "error": "Cannot delete linked source",
+                    **result_data
+                }
             )
+
+        # 400 Bad Request - force delete without confirmation
+        if "requires confirmation" in error_msg.lower():
+            safe_logfire_warning(
+                f"Force delete without confirmation | source_id={source_id}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=result_data
+            )
+
+        # 404 Not Found
+        if "not found" in error_msg.lower():
+            safe_logfire_error(
+                f"Source not found | source_id={source_id}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail={"error": error_msg}
+            )
+
+        # 500 Other errors
+        safe_logfire_error(
+            f"Source deletion failed | source_id={source_id} | error={error_msg}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": error_msg or "Deletion failed"}
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -1969,38 +2229,70 @@ async def search_knowledge_content(request: ContentSearchRequest):
             f"match_count={request.match_count} | source_id={request.source_id}"
         )
 
-        # Get Supabase client
-        supabase = get_supabase_client()
+        # Get result cache instance
+        result_cache = await get_result_cache()
 
-        # Initialize RAG service which includes hybrid search
-        rag_service = RAGService(supabase_client=supabase)
-
-        # Create query embedding with timing
-        embedding_start = time.time()
-        from ..services.embeddings.embedding_service import create_embedding
-        query_embedding = await create_embedding(request.query)
-        embedding_time = time.time() - embedding_start
-
-        if not query_embedding:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to create query embedding. Check embedding provider configuration."
-            )
-
-        # Prepare filter metadata
+        # Prepare cache parameters (exclude pagination from cache key)
         filter_metadata = {}
         if request.source_id:
             filter_metadata["source_id"] = request.source_id
 
-        # Perform hybrid search with timing
-        db_search_start = time.time()
-        results = await rag_service.hybrid_strategy.search_documents_hybrid(
+        # Check cache first (cache unpaginated results)
+        cached_results = await result_cache.get(
             query=request.query,
-            query_embedding=query_embedding,
+            search_type="content_search",
             match_count=request.match_count,
+            source_id=request.source_id,
             filter_metadata=filter_metadata if filter_metadata else None
         )
-        db_search_time = time.time() - db_search_start
+
+        if cached_results:
+            safe_logfire_info(f"✅ Result cache HIT | Content search | query={request.query[:50]}...")
+            results = cached_results
+            # Skip embedding and database search on cache hit
+            embedding_time = 0
+            db_search_time = 0
+        else:
+            # Cache miss - perform actual search
+            safe_logfire_info(f"❌ Result cache MISS | Content search | query={request.query[:50]}...")
+
+            # Get Supabase client
+            supabase = get_supabase_client()
+
+            # Initialize RAG service which includes hybrid search
+            rag_service = RAGService(supabase_client=supabase)
+
+            # Create query embedding with timing
+            embedding_start = time.time()
+            from ..services.embeddings.embedding_service import create_embedding
+            query_embedding = await create_embedding(request.query)
+            embedding_time = time.time() - embedding_start
+
+            if not query_embedding:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to create query embedding. Check embedding provider configuration."
+                )
+
+            # Perform hybrid search with timing
+            db_search_start = time.time()
+            results = await rag_service.hybrid_strategy.search_documents_hybrid(
+                query=request.query,
+                query_embedding=query_embedding,
+                match_count=request.match_count,
+                filter_metadata=filter_metadata if filter_metadata else None
+            )
+            db_search_time = time.time() - db_search_start
+
+            # Store unpaginated results in cache
+            await result_cache.set(
+                query=request.query,
+                search_type="content_search",
+                match_count=request.match_count,
+                results=results,
+                source_id=request.source_id,
+                filter_metadata=filter_metadata if filter_metadata else None
+            )
 
         # Calculate total time and percentages
         search_time = time.time() - search_start

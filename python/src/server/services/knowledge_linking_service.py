@@ -264,11 +264,338 @@ class KnowledgeLinkingService:
             logger.error(f"Error getting knowledge sources: {str(e)}")
             return False, {"error": str(e)}
 
+    async def get_source_linked_projects(
+        self, source_id: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Get all projects linked to a KB source (backlinks).
+
+        Phase 1.2: Backlinks Endpoint
+
+        Args:
+            source_id: ID of the knowledge source
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains:
+                - source_id: The source ID
+                - linked_projects: List of projects with link metadata
+                - total_links: Count of linked projects
+        """
+        try:
+            # Verify source exists
+            source_response = (
+                self.supabase_client.table("archon_sources")
+                .select("*")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            if not source_response.data:
+                return False, {"error": f"Knowledge source {source_id} not found"}
+
+            # Get all pages for this source
+            pages_response = (
+                self.supabase_client.table("archon_crawled_pages")
+                .select("page_id")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            page_ids = [p["page_id"] for p in (pages_response.data or [])]
+
+            if not page_ids:
+                # Source exists but has no pages
+                return True, {
+                    "source_id": source_id,
+                    "linked_projects": [],
+                    "total_links": 0,
+                }
+
+            # Get all links for these pages to projects
+            links_response = (
+                self.supabase_client.table("archon_knowledge_links")
+                .select("*")
+                .eq("source_type", "project")
+                .eq("knowledge_type", "rag_page")
+                .in_("knowledge_id", page_ids)
+                .execute()
+            )
+
+            links = links_response.data or []
+
+            # Get unique project IDs
+            project_ids = list(set(link["source_id"] for link in links))
+
+            if not project_ids:
+                return True, {
+                    "source_id": source_id,
+                    "linked_projects": [],
+                    "total_links": 0,
+                }
+
+            # Fetch project details
+            projects_response = (
+                self.supabase_client.table("archon_projects")
+                .select("id, title, created_at")
+                .in_("id", project_ids)
+                .execute()
+            )
+
+            projects = projects_response.data or []
+
+            # Create project lookup
+            project_lookup = {p["id"]: p for p in projects}
+
+            # Build linked_projects list with earliest link timestamp per project
+            linked_projects = []
+            project_links = {}
+
+            for link in links:
+                proj_id = link["source_id"]
+                if proj_id not in project_links:
+                    project_links[proj_id] = {
+                        "created_at": link["created_at"],
+                        "created_by": link["created_by"],
+                    }
+                else:
+                    # Keep earliest link
+                    if link["created_at"] < project_links[proj_id]["created_at"]:
+                        project_links[proj_id] = {
+                            "created_at": link["created_at"],
+                            "created_by": link["created_by"],
+                        }
+
+            for proj_id, link_meta in project_links.items():
+                if proj_id in project_lookup:
+                    proj = project_lookup[proj_id]
+                    linked_projects.append({
+                        "project_id": proj["id"],
+                        "project_title": proj["title"],
+                        "linked_at": link_meta["created_at"],
+                        "linked_by": link_meta["created_by"],
+                    })
+
+            # Sort by linked_at DESC
+            linked_projects.sort(key=lambda x: x["linked_at"], reverse=True)
+
+            return True, {
+                "source_id": source_id,
+                "linked_projects": linked_projects,
+                "total_links": len(linked_projects),
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting source linked projects: {str(e)}")
+            return False, {"error": str(e)}
+
+    async def link_source_to_project(
+        self,
+        project_id: str,
+        source_id: str,
+        linked_by: str,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Link all pages from a KB source to a project.
+
+        Phase 1.3: Link Endpoint
+
+        Args:
+            project_id: UUID of the project
+            source_id: ID of the knowledge source
+            linked_by: User who created the link
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains:
+                - links_created: Number of links created
+                - source: Source details
+        """
+        try:
+            # Verify project exists
+            project_response = (
+                self.supabase_client.table("archon_projects")
+                .select("*")
+                .eq("id", project_id)
+                .execute()
+            )
+
+            if not project_response.data:
+                return False, {"error": f"Project {project_id} not found"}
+
+            # Verify source exists
+            source_response = (
+                self.supabase_client.table("archon_sources")
+                .select("*")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            if not source_response.data:
+                return False, {"error": f"Knowledge source {source_id} not found"}
+
+            source = source_response.data[0]
+
+            # Get all pages for this source
+            pages_response = (
+                self.supabase_client.table("archon_crawled_pages")
+                .select("page_id")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            pages = pages_response.data or []
+
+            if not pages:
+                return False, {"error": f"Source {source_id} has no indexed pages"}
+
+            # Check if any links already exist
+            existing_links_response = (
+                self.supabase_client.table("archon_knowledge_links")
+                .select("knowledge_id")
+                .eq("source_type", "project")
+                .eq("source_id", project_id)
+                .eq("knowledge_type", "rag_page")
+                .in_("knowledge_id", [p["page_id"] for p in pages])
+                .execute()
+            )
+
+            existing_page_ids = set(
+                link["knowledge_id"] for link in (existing_links_response.data or [])
+            )
+
+            # Create links for pages that aren't already linked
+            links_to_create = []
+            for page in pages:
+                if page["page_id"] not in existing_page_ids:
+                    links_to_create.append({
+                        "source_type": "project",
+                        "source_id": project_id,
+                        "knowledge_type": "rag_page",
+                        "knowledge_id": page["page_id"],
+                        "created_by": linked_by,
+                    })
+
+            if not links_to_create:
+                return False, {
+                    "error": f"All pages from source {source_id} already linked to project"
+                }
+
+            # Batch insert links
+            insert_response = (
+                self.supabase_client.table("archon_knowledge_links")
+                .insert(links_to_create)
+                .execute()
+            )
+
+            links_created = len(insert_response.data or [])
+
+            logger.info(
+                f"Created {links_created} links from source {source_id} to project {project_id}"
+            )
+
+            return True, {
+                "links_created": links_created,
+                "source": source,
+            }
+
+        except Exception as e:
+            logger.error(f"Error linking source to project: {str(e)}")
+            return False, {"error": str(e)}
+
+    async def unlink_source_from_project(
+        self,
+        project_id: str,
+        source_id: str,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Remove all links between KB source and project.
+
+        Phase 1.3: Unlink Endpoint
+
+        Args:
+            project_id: UUID of the project
+            source_id: ID of the knowledge source
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains:
+                - links_removed: Number of links removed
+                - message: Success message
+        """
+        try:
+            # Verify project exists
+            project_response = (
+                self.supabase_client.table("archon_projects")
+                .select("id")
+                .eq("id", project_id)
+                .execute()
+            )
+
+            if not project_response.data:
+                return False, {"error": f"Project {project_id} not found"}
+
+            # Verify source exists
+            source_response = (
+                self.supabase_client.table("archon_sources")
+                .select("source_id")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            if not source_response.data:
+                return False, {"error": f"Knowledge source {source_id} not found"}
+
+            # Get all pages for this source
+            pages_response = (
+                self.supabase_client.table("archon_crawled_pages")
+                .select("page_id")
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            page_ids = [p["page_id"] for p in (pages_response.data or [])]
+
+            if not page_ids:
+                return False, {"error": f"Source {source_id} has no indexed pages"}
+
+            # Delete all links
+            delete_response = (
+                self.supabase_client.table("archon_knowledge_links")
+                .delete()
+                .eq("source_type", "project")
+                .eq("source_id", project_id)
+                .eq("knowledge_type", "rag_page")
+                .in_("knowledge_id", page_ids)
+                .execute()
+            )
+
+            links_removed = len(delete_response.data or [])
+
+            if links_removed == 0:
+                return False, {
+                    "error": f"No links found between source {source_id} and project {project_id}"
+                }
+
+            logger.info(
+                f"Removed {links_removed} links from source {source_id} to project {project_id}"
+            )
+
+            return True, {
+                "links_removed": links_removed,
+                "message": "Links removed successfully",
+            }
+
+        except Exception as e:
+            logger.error(f"Error unlinking source from project: {str(e)}")
+            return False, {"error": str(e)}
+
     async def suggest_knowledge(
         self,
         source_type: str,
         source_id: str,
         limit: int = 5,
+        include_linked: bool = False,
     ) -> tuple[bool, dict[str, Any]]:
         """
         AI-powered knowledge suggestions based on entity title and description.
@@ -276,15 +603,18 @@ class KnowledgeLinkingService:
         Uses pgvector cosine similarity to find relevant documents and code examples.
         Results are cached for 1 hour to improve performance.
 
+        Phase 1.4: Enhanced with include_linked parameter
+
         Args:
             source_type: Type of source entity (project, task, sprint)
             source_id: UUID of the source entity
             limit: Maximum number of suggestions to return (default: 5)
+            include_linked: If true, include already-linked items with is_linked flag
 
         Returns:
             Tuple of (success, result_dict)
             result_dict contains:
-                - suggestions: List of knowledge items with relevance scores
+                - suggestions: List of knowledge items with relevance scores, is_linked flag
                 - count: Number of suggestions
                 - cached: Whether results came from cache
         """
@@ -295,8 +625,8 @@ class KnowledgeLinkingService:
                     "error": f"Invalid source_type. Must be one of: {', '.join(self.VALID_SOURCE_TYPES)}"
                 }
 
-            # Check cache
-            cache_key = f"{source_type}:{source_id}:{limit}"
+            # Check cache (include include_linked in cache key)
+            cache_key = f"{source_type}:{source_id}:{limit}:{include_linked}"
             now = datetime.utcnow()
             if cache_key in _suggestion_cache:
                 cached_data, cached_time = _suggestion_cache[cache_key]
@@ -396,9 +726,47 @@ class KnowledgeLinkingService:
             # Limit to requested number
             top_suggestions = all_suggestions[:limit]
 
+            # Phase 1.4: Add is_linked flag to suggestions
+            # Get existing links for this source
+            existing_links_response = (
+                self.supabase_client.table("archon_knowledge_links")
+                .select("knowledge_id, knowledge_type, created_at")
+                .eq("source_type", source_type)
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            existing_links = existing_links_response.data or []
+            linked_items = {
+                (link["knowledge_type"], link["knowledge_id"]): link["created_at"]
+                for link in existing_links
+            }
+
+            # Add is_linked flag to each suggestion
+            enriched_suggestions = []
+            for suggestion in top_suggestions:
+                knowledge_type = suggestion["knowledge_type"]
+                knowledge_id = suggestion["knowledge_id"]
+                link_key = (knowledge_type, knowledge_id)
+
+                is_linked = link_key in linked_items
+
+                enriched_suggestion = {
+                    **suggestion,
+                    "is_linked": is_linked,
+                }
+
+                # Add linked_at if it's linked
+                if is_linked:
+                    enriched_suggestion["linked_at"] = linked_items[link_key]
+
+                # If include_linked is False, only add unlinked items
+                if include_linked or not is_linked:
+                    enriched_suggestions.append(enriched_suggestion)
+
             result = {
-                "suggestions": top_suggestions,
-                "count": len(top_suggestions),
+                "suggestions": enriched_suggestions,
+                "count": len(enriched_suggestions),
                 "cached": False
             }
 
@@ -406,7 +774,8 @@ class KnowledgeLinkingService:
             _suggestion_cache[cache_key] = (result, now)
 
             logger.info(
-                f"Generated {len(top_suggestions)} AI knowledge suggestions for {source_type} {source_id}"
+                f"Generated {len(enriched_suggestions)} AI knowledge suggestions for {source_type} {source_id} "
+                f"(include_linked={include_linked})"
             )
 
             return True, result
@@ -414,6 +783,90 @@ class KnowledgeLinkingService:
         except Exception as e:
             logger.error(f"Error generating knowledge suggestions: {str(e)}")
             return False, {"error": str(e)}
+
+    async def unlink_source_from_all_projects(
+        self, source_id: str
+    ) -> dict[str, Any]:
+        """
+        Unlink a knowledge source from ALL projects.
+
+        Used before force-deleting a KB item that has backlinks.
+
+        Phase 2.2: Bulk Unlink Helper
+
+        Args:
+            source_id: ID of the knowledge source
+
+        Returns:
+            dict: {
+                "unlinked_count": int,
+                "project_ids": [str],
+                "errors": []
+            }
+        """
+        try:
+            # Get all linked projects
+            success, result = await self.get_source_linked_projects(source_id)
+
+            if not success:
+                return {
+                    "unlinked_count": 0,
+                    "project_ids": [],
+                    "errors": [{"error": result.get("error", "Failed to get linked projects")}]
+                }
+
+            linked_projects = result.get("linked_projects", [])
+
+            if not linked_projects:
+                return {
+                    "unlinked_count": 0,
+                    "project_ids": [],
+                    "errors": []
+                }
+
+            unlinked_count = 0
+            project_ids = []
+            errors = []
+
+            for project in linked_projects:
+                try:
+                    unlink_success, unlink_result = await self.unlink_source_from_project(
+                        project_id=project["project_id"],
+                        source_id=source_id
+                    )
+
+                    if unlink_success:
+                        unlinked_count += unlink_result.get("links_removed", 0)
+                        project_ids.append(project["project_id"])
+                    else:
+                        errors.append({
+                            "project_id": project["project_id"],
+                            "error": unlink_result.get("error", "Unknown error")
+                        })
+                except Exception as e:
+                    errors.append({
+                        "project_id": project["project_id"],
+                        "error": str(e)
+                    })
+
+            logger.info(
+                f"Bulk unlink completed for source {source_id}: "
+                f"{unlinked_count} links removed from {len(project_ids)} projects"
+            )
+
+            return {
+                "unlinked_count": unlinked_count,
+                "project_ids": project_ids,
+                "errors": errors
+            }
+
+        except Exception as e:
+            logger.error(f"Error unlinking source from all projects: {str(e)}")
+            return {
+                "unlinked_count": 0,
+                "project_ids": [],
+                "errors": [{"error": str(e)}]
+            }
 
     async def _get_knowledge_item(
         self, knowledge_type: str, knowledge_id: str

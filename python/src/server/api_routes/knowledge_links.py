@@ -385,6 +385,7 @@ async def get_sprint_knowledge(
 async def get_project_knowledge_suggestions(
     project_id: str,
     limit: int = 5,
+    include_linked: bool = False,
     _user: dict = Depends(require_knowledge_read),
 ):
     """
@@ -393,11 +394,14 @@ async def get_project_knowledge_suggestions(
     Uses RAG search to suggest relevant documents and code examples
     based on project title and description. Results are cached for 1 hour.
 
+    Phase 1.4: Enhanced AI Suggestions with include_linked parameter
+
     Requires: knowledge:read permission
 
     Args:
         project_id: UUID of the project
         limit: Maximum number of suggestions (default: 5, max: 20)
+        include_linked: If true, include already-linked items with is_linked flag (default: false)
 
     Returns:
         {
@@ -409,7 +413,9 @@ async def get_project_knowledge_suggestions(
                 "url": "...",
                 "relevance_score": 0.85,
                 "content_preview": "...",
-                "source_id": "..."
+                "source_id": "...",
+                "is_linked": true,  // NEW FIELD
+                "linked_at": "timestamp"  // NEW FIELD (if linked)
             }, ...],
             "count": 5,
             "cached": false
@@ -427,7 +433,12 @@ async def get_project_knowledge_suggestions(
         )
 
     service = KnowledgeLinkingService()
-    success, result = await service.suggest_knowledge("project", project_id, limit)
+    success, result = await service.suggest_knowledge(
+        source_type="project",
+        source_id=project_id,
+        limit=limit,
+        include_linked=include_linked,
+    )
 
     if not success:
         error_msg = result.get("error", "Unknown error")
@@ -451,6 +462,7 @@ async def get_task_knowledge_suggestions(
     task_id: str,
     project_id: str,  # Query parameter for permission check
     limit: int = 5,
+    include_linked: bool = False,
     _user: dict = Depends(require_knowledge_read),
 ):
     """
@@ -459,17 +471,23 @@ async def get_task_knowledge_suggestions(
     Uses RAG search to suggest relevant documents and code examples
     based on task title and description. Results are cached for 1 hour.
 
+    Phase 1.4: Enhanced AI Suggestions with include_linked parameter
+
     Requires: knowledge:read permission
 
     Args:
         task_id: UUID of the task
         project_id: UUID of the project (query parameter)
         limit: Maximum number of suggestions (default: 5, max: 20)
+        include_linked: If true, include already-linked items with is_linked flag (default: false)
 
     Returns:
         {
             "success": true,
-            "suggestions": [...],
+            "suggestions": [{
+                "is_linked": true,
+                "linked_at": "timestamp"
+            }, ...],
             "count": 5,
             "cached": false
         }
@@ -481,7 +499,12 @@ async def get_task_knowledge_suggestions(
         )
 
     service = KnowledgeLinkingService()
-    success, result = await service.suggest_knowledge("task", task_id, limit)
+    success, result = await service.suggest_knowledge(
+        source_type="task",
+        source_id=task_id,
+        limit=limit,
+        include_linked=include_linked,
+    )
 
     if not success:
         error_msg = result.get("error", "Unknown error")
@@ -539,6 +562,180 @@ async def get_knowledge_sources(
         if "invalid" in error_msg.lower():
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg,
+            )
+
+    return {"success": True, **result}
+
+
+# ============================================
+# Phase 1.2-1.4: KB Source Bidirectional Linking Endpoints
+# ============================================
+
+
+class LinkBySourceRequest(BaseModel):
+    """Request model for linking KB source to project"""
+
+    linked_by: Optional[str] = Field(default="User", description="User who created the link")
+
+
+@router.get("/knowledge/sources/{source_id}/projects")
+async def get_source_linked_projects(
+    source_id: str,
+    _user: dict = Depends(get_current_user),
+):
+    """
+    Get all projects linked to a specific KB source (backlinks).
+
+    Phase 1.2: Backlinks Endpoint
+
+    Args:
+        source_id: ID of the knowledge source (from archon_sources)
+
+    Returns:
+        {
+            "success": true,
+            "source_id": "...",
+            "linked_projects": [
+                {
+                    "project_id": "uuid",
+                    "project_title": "string",
+                    "linked_at": "timestamp",
+                    "linked_by": "string"
+                }
+            ],
+            "total_links": 10
+        }
+
+    Raises:
+        404: Source not found
+    """
+    service = KnowledgeLinkingService()
+    success, result = await service.get_source_linked_projects(source_id)
+
+    if not success:
+        error_msg = result.get("error", "Unknown error")
+
+        if "not found" in error_msg.lower():
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg,
+            )
+
+    return {"success": True, **result}
+
+
+@router.post("/projects/{project_id}/knowledge/sources/{source_id}/link")
+async def link_source_to_project(
+    project_id: str,
+    source_id: str,
+    request: LinkBySourceRequest = LinkBySourceRequest(),
+    current_user: dict = Depends(require_knowledge_manage),
+):
+    """
+    Manually link a KB source to a project (reverse direction).
+
+    Phase 1.3: Link Endpoint
+
+    This creates links for ALL pages in the source to the project.
+
+    Args:
+        project_id: UUID of the project
+        source_id: ID of the knowledge source
+        request: LinkBySourceRequest with linked_by (optional)
+
+    Returns:
+        {
+            "success": true,
+            "links_created": 5,
+            "source": {...source details...}
+        }
+
+    Raises:
+        404: Project or source not found
+        409: Links already exist
+    """
+    user_id = current_user.get("email") or str(current_user.get("id"))
+    linked_by = request.linked_by or user_id
+
+    service = KnowledgeLinkingService()
+    success, result = await service.link_source_to_project(
+        project_id=project_id,
+        source_id=source_id,
+        linked_by=linked_by,
+    )
+
+    if not success:
+        error_msg = result.get("error", "Unknown error")
+
+        if "not found" in error_msg.lower():
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "already exist" in error_msg.lower():
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg,
+            )
+
+    return {"success": True, **result}
+
+
+@router.delete("/projects/{project_id}/knowledge/sources/{source_id}/link")
+async def unlink_source_from_project(
+    project_id: str,
+    source_id: str,
+    _user: dict = Depends(require_knowledge_manage),
+):
+    """
+    Remove link between KB source and project.
+
+    Phase 1.3: Unlink Endpoint
+
+    This removes ALL links for pages in this source from the project.
+
+    Args:
+        project_id: UUID of the project
+        source_id: ID of the knowledge source
+
+    Returns:
+        {
+            "success": true,
+            "links_removed": 5,
+            "message": "Links removed successfully"
+        }
+
+    Raises:
+        404: Project or source not found, or no links exist
+    """
+    service = KnowledgeLinkingService()
+    success, result = await service.unlink_source_from_project(
+        project_id=project_id,
+        source_id=source_id,
+    )
+
+    if not success:
+        error_msg = result.get("error", "Unknown error")
+
+        if "not found" in error_msg.lower() or "no links" in error_msg.lower():
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail=error_msg,
             )
         else:
