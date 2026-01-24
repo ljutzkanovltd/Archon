@@ -58,8 +58,9 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   const [isLoading, setIsLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isExpanded, setIsExpanded] = useState(true);
-  const [workerStatus, setWorkerStatus] = useState<"idle" | "running" | "paused">("running");
+  const [workerStatus, setWorkerStatus] = useState<"idle" | "running" | "paused" | "loading">("loading");
   const [activelyCrawling, setActivelyCrawling] = useState<ActivelyCrawlingStats[]>([]);
+  const [showAllRunning, setShowAllRunning] = useState(false);
 
   // Create source lookup map
   const sourceMap = new Map(sources.map(s => [s.source_id, s]));
@@ -317,6 +318,10 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   useEffect(() => {
     loadQueue();
     loadWorkerStatus();
+
+    // Poll worker status every 5 seconds
+    const statusInterval = setInterval(loadWorkerStatus, 5000);
+    return () => clearInterval(statusInterval);
   }, []);
 
   useEffect(() => {
@@ -327,9 +332,8 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   }, [autoRefresh]);
 
   // Organize items into 3 sections
-  const runningItems = items
-    .filter(item => item.status === "running")
-    .slice(0, 5); // Max 5 actively crawling
+  const allRunningItems = items.filter(item => item.status === "running");
+  const runningItems = showAllRunning ? allRunningItems : allRunningItems.slice(0, 5); // Toggle between top 5 or all
 
   const pendingItems = items
     .filter(item => item.status === "pending")
@@ -395,23 +399,36 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
   };
 
   // Calculate progress percentage for running items
-  const calculateProgress = (item: QueueItem): number => {
+  const calculateProgress = (item: QueueItem, crawlStats?: ActivelyCrawlingStats): number => {
     if (!item.started_at) return 0;
     if (item.completed_at) return 100;
 
-    // Estimate based on time elapsed (rough heuristic: assume 1 minute average)
-    const elapsed = Date.now() - new Date(item.started_at).getTime();
-    const estimatedTotal = 60000; // 1 minute in milliseconds
-    const progress = Math.min(Math.round((elapsed / estimatedTotal) * 100), 95);
+    // If we don't have crawl stats, fall back to time-based estimation
+    if (!crawlStats) {
+      const elapsed = Date.now() - new Date(item.started_at).getTime();
+      const estimatedTotal = 60000; // 1 minute in milliseconds
+      return Math.min(Math.round((elapsed / estimatedTotal) * 100), 95);
+    }
+
+    const { pages_crawled, batch_info } = crawlStats;
+    const { urls_discovered } = batch_info;
+
+    // Discovery phase - show minimal progress
+    if (urls_discovered === 0) {
+      return 5;
+    }
+
+    // Use actual page count for progress
+    const progress = Math.min(Math.round((pages_crawled / urls_discovered) * 100), 100);
     return progress;
   };
 
   // Calculate ETA for running items
-  const calculateETA = (item: QueueItem): string => {
+  const calculateETA = (item: QueueItem, crawlStats?: ActivelyCrawlingStats): string => {
     if (!item.started_at) return "Unknown";
     if (item.completed_at) return "Done";
 
-    const progress = calculateProgress(item);
+    const progress = calculateProgress(item, crawlStats);
     if (progress === 0) return "Starting...";
     if (progress >= 95) return "< 1m";
 
@@ -475,7 +492,10 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               {stats.pending} Pending
             </span>
             {stats.running > 0 && (
-              <span className="rounded-full bg-brand-200 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-900 dark:text-brand-300">
+              <span
+                className="rounded-full bg-brand-200 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-900 dark:text-brand-300 cursor-help"
+                title={`${stats.running} items running (showing top ${Math.min(allRunningItems.length, 5)} by priority)`}
+              >
                 {stats.running} Running
               </span>
             )}
@@ -498,6 +518,8 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 : workerStatus === "paused"
                 ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                : workerStatus === "loading"
+                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                 : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
             }`}>
               <span className={`h-2 w-2 rounded-full ${
@@ -505,9 +527,11 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                   ? "bg-green-500 animate-pulse"
                   : workerStatus === "paused"
                   ? "bg-orange-500"
+                  : workerStatus === "loading"
+                  ? "bg-blue-500 animate-pulse"
                   : "bg-gray-500"
               }`} />
-              <span className="hidden sm:inline">Worker: </span>{workerStatus === "running" ? "Active" : workerStatus === "paused" ? "Paused" : "Idle"}
+              <span className="hidden sm:inline">Worker: </span>{workerStatus === "running" ? "Active" : workerStatus === "paused" ? "Paused" : workerStatus === "loading" ? "Checking..." : "Idle"}
             </span>
           </div>
 
@@ -522,6 +546,14 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
               >
                 Pause
               </button>
+            ) : workerStatus === "loading" ? (
+              <button
+                disabled
+                className="rounded-lg bg-gray-400 px-3 py-2 text-sm font-medium text-white cursor-not-allowed opacity-50 touch-manipulation dark:bg-gray-500"
+                title="Checking worker status..."
+              >
+                Loading...
+              </button>
             ) : (
               <button
                 onClick={handleResumeWorker}
@@ -534,7 +566,8 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
 
             <button
               onClick={handleStopWorker}
-              className="rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 touch-manipulation dark:bg-red-600 dark:hover:bg-red-700"
+              disabled={workerStatus === "loading"}
+              className="rounded-lg bg-red-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation dark:bg-red-600 dark:hover:bg-red-700"
               title="Stop Worker - Pause worker and cancel all running items"
             >
               Stop
@@ -589,13 +622,21 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
             </div>
           ) : (
             <div className="space-y-4 p-4">
-              {/* Section 1: Actively Crawling (TOP - Max 5) */}
+              {/* Section 1: Actively Crawling (TOP - Max 5 or All) */}
               {runningItems.length > 0 && (
                 <div className="rounded-lg bg-brand-50 p-4 dark:bg-brand-900/10">
-                  <div className="mb-3">
+                  <div className="mb-3 flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-brand-900 dark:text-brand-100">
                       Actively Crawling ({runningItems.length}/{stats.running})
                     </h4>
+                    {allRunningItems.length > 5 && (
+                      <button
+                        onClick={() => setShowAllRunning(!showAllRunning)}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+                      >
+                        {showAllRunning ? "Show Top 5" : `Show All ${allRunningItems.length}`}
+                      </button>
+                    )}
                   </div>
                   <div className="space-y-2">
                     {runningItems.map((item) => (
@@ -615,6 +656,18 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         onStop={handleStopItem}
                       />
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State: Running items loading */}
+              {runningItems.length === 0 && stats && stats.running > 0 && (
+                <div className="rounded-lg bg-brand-50 p-8 text-center dark:bg-brand-900/10">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600 dark:border-brand-800 dark:border-t-brand-400"></div>
+                    <p className="text-sm text-brand-600 dark:text-brand-400">
+                      Loading active crawls... ({stats.running} running)
+                    </p>
                   </div>
                 </div>
               )}
@@ -649,6 +702,18 @@ export function CrawlQueueMonitor({ sources, className = "" }: CrawlQueueMonitor
                         + {pendingItems.length - 10} more...
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State: Pending items loading */}
+              {pendingItems.length === 0 && stats && stats.pending > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center dark:border-gray-700 dark:bg-gray-800/50">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-6 w-6 animate-spin rounded-full border-3 border-gray-300 border-t-gray-600 dark:border-gray-600 dark:border-t-gray-400"></div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Loading pending items... ({stats.pending} queued)
+                    </p>
                   </div>
                 </div>
               )}
@@ -733,8 +798,8 @@ interface QueueItemCardProps {
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
   formatDate: (dateString: string | null) => string;
-  calculateProgress: (item: QueueItem) => number;
-  calculateETA: (item: QueueItem) => string;
+  calculateProgress: (item: QueueItem, crawlStats?: ActivelyCrawlingStats) => number;
+  calculateETA: (item: QueueItem, crawlStats?: ActivelyCrawlingStats) => string;
   getErrorMessage: (item: QueueItem) => { friendly: string; technical: string };
   onRetry: (itemId: string) => Promise<void>;
   onCancel: (itemId: string) => Promise<void>;
@@ -756,8 +821,8 @@ function QueueItemCard({
   onStop,
 }: QueueItemCardProps) {
   const isHighPriority = item.priority >= 200;
-  const progress = item.status === "running" ? calculateProgress(item) : 0;
-  const eta = item.status === "running" ? calculateETA(item) : "";
+  const progress = item.status === "running" ? calculateProgress(item, crawlStats) : 0;
+  const eta = item.status === "running" ? calculateETA(item, crawlStats) : "";
   const errorInfo = item.status === "failed" ? getErrorMessage(item) : null;
 
   return (
@@ -830,7 +895,11 @@ function QueueItemCard({
                   <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-brand-700 dark:bg-brand-900/20">
                     {/* Batch Information Header */}
                     <div className="text-xs font-medium text-brand-900 dark:text-brand-100">
-                      Processing batch {crawlStats.batch_info.batch_current}-{crawlStats.batch_info.batch_total} of {crawlStats.batch_info.urls_discovered} URLs...
+                      {crawlStats.batch_info.urls_discovered === 0 ? (
+                        <span>Discovering pages...</span>
+                      ) : (
+                        <span>Processing batch {crawlStats.batch_info.batch_current}-{crawlStats.batch_info.batch_total} of {crawlStats.batch_info.urls_discovered} URLs...</span>
+                      )}
                     </div>
 
                     {/* Summary Line */}

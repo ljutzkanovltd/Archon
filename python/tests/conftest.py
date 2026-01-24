@@ -189,3 +189,38 @@ def test_knowledge_item():
         "content": "This is test content for knowledge base",
         "source_id": "test-source",
     }
+
+
+@pytest.fixture
+def test_project_id():
+    """Test project UUID for document upload tests."""
+    return "f8311680-58a7-45e6-badf-de55d3d9cd24"
+
+
+@pytest.fixture
+def test_file():
+    """Create a test file for upload."""
+    from io import BytesIO
+    content = b"""# Test Document
+
+This is a test document with code examples.
+
+```python
+def hello_world():
+    print("Hello, World!")
+```
+
+## Section 2
+More content here.
+"""
+    return BytesIO(content)
+
+
+@pytest.fixture
+def authenticated_client(client, mock_supabase_client):
+    """Client with authentication headers."""
+    # Add mock authentication
+    mock_supabase_client.auth.get_user.return_value = MagicMock(
+        user=MagicMock(id="test-user-id", email="test@example.com")
+    )
+    return client

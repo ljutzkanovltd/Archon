@@ -7,7 +7,7 @@ the crawl queue, handling retries, failures, and human-in-the-loop review.
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ...config.logfire_config import get_logger, safe_logfire_error, safe_logfire_info
@@ -51,8 +51,11 @@ class CrawlQueueWorker:
 
     async def _load_settings(self):
         """Load worker configuration from database settings."""
+        logger.info("🔍 Loading queue worker settings from database...")
+
         try:
             # Fetch queue settings
+            logger.info("   Querying archon_settings table (category='crawl_queue')...")
             result = (
                 self.supabase.table("archon_settings")
                 .select("key, value")
@@ -60,7 +63,14 @@ class CrawlQueueWorker:
                 .execute()
             )
 
+            logger.info(f"   Query returned {len(result.data) if result.data else 0} settings")
+
             settings = {item["key"]: item["value"] for item in result.data} if result.data else {}
+
+            if settings:
+                logger.info(f"   Settings keys found: {list(settings.keys())}")
+            else:
+                logger.info("   No settings found, using defaults")
 
             # Apply settings with defaults
             self._batch_size = int(settings.get("QUEUE_BATCH_SIZE", "5"))
@@ -71,37 +81,150 @@ class CrawlQueueWorker:
             retry_delays_str = settings.get("QUEUE_RETRY_DELAYS", "[60, 300, 900]")
             self._retry_delays = json.loads(retry_delays_str)
 
-            safe_logfire_info(
-                f"Loaded queue worker settings | batch_size={self._batch_size} | "
+            logger.info(
+                f"✅ Loaded queue worker settings | batch_size={self._batch_size} | "
                 f"poll_interval={self._poll_interval}s | "
                 f"high_priority_interval={self._high_priority_poll_interval}s | "
                 f"retry_delays={self._retry_delays}"
             )
 
         except Exception as e:
-            safe_logfire_error(f"Failed to load queue settings, using defaults | error={str(e)}")
+            logger.error(f"❌ Failed to load queue settings, using defaults | error={str(e)}", exc_info=True)
+            # Set defaults explicitly in case of failure
+            self._batch_size = 5
+            self._poll_interval = 30
+            self._high_priority_poll_interval = 5
+            self._retry_delays = [60, 300, 900]
+            logger.info(f"   Using default values: batch_size=5, poll_interval=30s")
+
+    async def _cleanup_stale_items(self):
+        """
+        Reset items stuck in 'running' status for more than 1 hour.
+
+        This cleanup runs on worker startup to handle items that were orphaned
+        by a worker crash or restart. Items are reset to 'failed' status with
+        an error message explaining they were interrupted by a restart.
+        """
+        try:
+            # Find items stuck in "running" status for >1 hour
+            cutoff_time = datetime.utcnow() - timedelta(hours=1)
+            stale_items = await self.queue_manager.get_stale_running_items(cutoff_time)
+
+            if not stale_items:
+                logger.info("   No stale running items found")
+                return
+
+            logger.info(f"   Found {len(stale_items)} stale running items")
+
+            # Reset each stale item to "failed" status
+            for item in stale_items:
+                item_id = item["item_id"]
+                source_id = item.get("source_id", "unknown")
+                started_at = item.get("started_at")
+
+                # Calculate how long it was running
+                if started_at:
+                    started_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    duration = datetime.now(started_time.tzinfo) - started_time
+                    duration_hours = duration.total_seconds() / 3600
+                    duration_str = f"{duration_hours:.1f} hours"
+                else:
+                    duration_str = "unknown duration"
+
+                # Calculate next retry time (use first retry delay: 60 seconds)
+                first_retry_delay = self._retry_delays[0] if self._retry_delays else 60
+                next_retry_time = datetime.utcnow() + timedelta(seconds=first_retry_delay)
+
+                # Reset to failed status with retry timing
+                await self.queue_manager.update_status(
+                    item_id=item_id,
+                    status="failed",
+                    error_message=f"Worker restart detected. Item was running for {duration_str}. Reset for retry.",
+                    error_type="other",
+                    error_details={
+                        "cleanup_reason": "worker_startup_cleanup",
+                        "previous_status": "running",
+                        "cleanup_timestamp": datetime.utcnow().isoformat(),
+                        "running_duration": duration_str,
+                        "original_error_type": "worker_restart"
+                    },
+                    next_retry_at=next_retry_time
+                )
+
+                logger.info(f"      Reset item {item_id} (source: {source_id}, duration: {duration_str})")
+
+            logger.info(f"✅ Cleaned up {len(stale_items)} stale running items")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to cleanup stale items: {e}", exc_info=True)
+            # Don't raise - continue with worker startup even if cleanup fails
 
     async def start(self):
         """Start the background worker."""
+        logger.info("🔵 CrawlQueueWorker.start() called")
+
         if self.is_running:
-            safe_logfire_info("Queue worker already running, skipping start")
+            logger.info("⚠️ Queue worker already running, skipping start")
             return
 
-        safe_logfire_info("🚀 Starting crawl queue worker...")
+        logger.info("🚀 Starting crawl queue worker...")
 
         # Load settings from database
-        await self._load_settings()
+        logger.info("📝 Loading settings from database...")
+        try:
+            await self._load_settings()
+            logger.info("✅ Settings loaded successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to load settings: {e}", exc_info=True)
+            # Continue with defaults
 
+        logger.info("🔧 Initializing worker state...")
         self.is_running = True
         self._shutdown_event.clear()
+        logger.info(f"   is_running: {self.is_running}")
+        logger.info(f"   shutdown_event cleared: {not self._shutdown_event.is_set()}")
+
+        # Cleanup stale running items before starting worker loop
+        logger.info("🧹 Cleaning up stale running items...")
+        await self._cleanup_stale_items()
 
         # Start the worker loop as a background task
-        self._worker_task = asyncio.create_task(self._worker_loop())
+        logger.info("🔵 Creating worker task...")
+        try:
+            # Get current event loop for diagnostics
+            loop = asyncio.get_event_loop()
+            logger.info(f"   Event loop: {loop}")
+            logger.info(f"   Event loop running: {loop.is_running()}")
 
-        safe_logfire_info(
+            # Create the task
+            self._worker_task = asyncio.create_task(self._worker_loop())
+
+            # Verify task creation
+            logger.info(f"✅ Worker task created successfully")
+            logger.info(f"   Task object: {self._worker_task}")
+            logger.info(f"   Task done: {self._worker_task.done()}")
+            logger.info(f"   Task cancelled: {self._worker_task.cancelled()}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to create worker task: {e}", exc_info=True)
+            self.is_running = False
+            raise
+
+        logger.info(
             f"✅ Crawl queue worker started | batch_size={self._batch_size} | "
             f"poll_interval={self._poll_interval}s"
         )
+
+        # Add a small delay and check if task is still alive
+        await asyncio.sleep(0.1)
+        if self._worker_task.done():
+            try:
+                exception = self._worker_task.exception()
+                logger.error(f"❌ Worker task completed immediately with exception: {exception}")
+            except Exception:
+                logger.error("❌ Worker task completed immediately (no exception)")
+        else:
+            logger.info("✅ Worker task is running")
 
     async def stop(self, timeout: int = 60):
         """
@@ -173,65 +296,92 @@ class CrawlQueueWorker:
 
     async def _worker_loop(self):
         """Main worker loop that polls and processes the queue."""
-        safe_logfire_info("Worker loop started")
+        logger.info("🟢 Worker loop ENTRY - Starting main loop")
+        logger.info(f"   Initial state: is_running={self.is_running}, is_paused={self.is_paused}")
+        logger.info(f"   Shutdown event set: {self._shutdown_event.is_set()}")
+        logger.info(f"   Poll interval: {self._poll_interval}s, Batch size: {self._batch_size}")
 
-        while not self._shutdown_event.is_set():
-            try:
-                if self.is_paused:
-                    safe_logfire_info("Worker paused, sleeping...")
+        iteration = 0
+
+        try:
+            while not self._shutdown_event.is_set():
+                iteration += 1
+                logger.info(f"🔄 Worker loop iteration #{iteration}")
+
+                try:
+                    # Check pause state
+                    if self.is_paused:
+                        logger.info(f"⏸️  Worker paused (iteration #{iteration}), sleeping for {self._poll_interval}s...")
+                        await asyncio.sleep(self._poll_interval)
+                        continue
+
+                    logger.info(f"📥 Fetching pending items (batch_size={self._batch_size})...")
+                    # Fetch next batch of pending items
+                    pending_items = await self.queue_manager.get_next_batch(limit=self._batch_size)
+                    logger.info(f"   Found {len(pending_items)} pending items")
+
+                    # Also check for items ready for retry
+                    logger.info(f"🔁 Fetching retry candidates (batch_size={self._batch_size})...")
+                    retry_items = await self.queue_manager.get_retry_candidates(limit=self._batch_size)
+                    logger.info(f"   Found {len(retry_items)} retry candidates")
+
+                    # Combine and limit to batch size
+                    all_items = pending_items + retry_items
+                    items_to_process = all_items[:self._batch_size]
+                    logger.info(f"📋 Total items to process: {len(items_to_process)}")
+
+                    if items_to_process:
+                        logger.info(
+                            f"🚀 Processing batch #{iteration} | pending={len(pending_items)} | "
+                            f"retries={len(retry_items)} | total={len(items_to_process)}"
+                        )
+
+                        # Log item IDs for debugging
+                        item_ids = [item.get('item_id', 'unknown') for item in items_to_process]
+                        logger.info(f"   Item IDs: {item_ids}")
+
+                        # Process items concurrently
+                        await self._process_batch(items_to_process)
+
+                        logger.info(f"✅ Batch #{iteration} processing completed")
+
+                    else:
+                        logger.info(f"💤 No items in queue (iteration #{iteration}), sleeping for {self._poll_interval}s...")
+
+                    # Dynamic polling: use faster interval if high-priority items are pending
+                    has_high_priority = any(
+                        item.get("priority", 0) >= 200
+                        for item in pending_items
+                    )
+
+                    sleep_interval = (
+                        self._high_priority_poll_interval
+                        if has_high_priority
+                        else self._poll_interval
+                    )
+
+                    if has_high_priority:
+                        logger.info(
+                            f"🔥 High-priority items detected, using fast polling ({sleep_interval}s)"
+                        )
+
+                    logger.info(f"😴 Sleeping for {sleep_interval}s before next iteration...")
+                    await asyncio.sleep(sleep_interval)
+
+                except asyncio.CancelledError:
+                    logger.info("🛑 Worker loop cancelled (CancelledError)")
+                    break
+                except Exception as e:
+                    logger.error(f"❌ Worker loop error (iteration #{iteration}) | error={str(e)}", exc_info=True)
+                    logger.info(f"   Continuing after error, sleeping for {self._poll_interval}s...")
+                    # Continue processing after error
                     await asyncio.sleep(self._poll_interval)
-                    continue
 
-                # Fetch next batch of pending items
-                pending_items = await self.queue_manager.get_next_batch(limit=self._batch_size)
+        except Exception as outer_e:
+            logger.error(f"❌ CRITICAL: Outer worker loop exception | error={str(outer_e)}", exc_info=True)
 
-                # Also check for items ready for retry
-                retry_items = await self.queue_manager.get_retry_candidates(limit=self._batch_size)
-
-                # Combine and limit to batch size
-                all_items = pending_items + retry_items
-                items_to_process = all_items[:self._batch_size]
-
-                if items_to_process:
-                    safe_logfire_info(
-                        f"📋 Processing batch | pending={len(pending_items)} | "
-                        f"retries={len(retry_items)} | total={len(items_to_process)}"
-                    )
-
-                    # Process items concurrently
-                    await self._process_batch(items_to_process)
-
-                else:
-                    safe_logfire_info(f"No items in queue, sleeping for {self._poll_interval}s...")
-
-                # Dynamic polling: use faster interval if high-priority items are pending
-                has_high_priority = any(
-                    item.get("priority", 0) >= 200
-                    for item in pending_items
-                )
-
-                sleep_interval = (
-                    self._high_priority_poll_interval
-                    if has_high_priority
-                    else self._poll_interval
-                )
-
-                if has_high_priority:
-                    safe_logfire_info(
-                        f"🚀 High-priority items detected, using fast polling ({sleep_interval}s)"
-                    )
-
-                await asyncio.sleep(sleep_interval)
-
-            except asyncio.CancelledError:
-                safe_logfire_info("Worker loop cancelled")
-                break
-            except Exception as e:
-                safe_logfire_error(f"Worker loop error | error={str(e)}")
-                # Continue processing after error
-                await asyncio.sleep(self._poll_interval)
-
-        safe_logfire_info("Worker loop exited")
+        logger.info(f"🔴 Worker loop EXITING after {iteration} iterations")
+        logger.info(f"   Final state: is_running={self.is_running}, shutdown_event={self._shutdown_event.is_set()}")
 
     async def _process_batch(self, items: List[Dict[str, Any]]):
         """

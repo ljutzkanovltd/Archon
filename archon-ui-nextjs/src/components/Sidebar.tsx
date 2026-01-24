@@ -260,6 +260,7 @@ export function DesktopSidebar() {
   }, []);
 
   // Fetch projects on mount - load ALL projects including archived for accurate counts
+  // Store handles deduplication automatically (prevents race conditions)
   useEffect(() => {
     if (projects.length === 0) {
       fetchProjects({ per_page: 1000, include_archived: true });
@@ -268,6 +269,7 @@ export function DesktopSidebar() {
   }, []);
 
   // Fetch tasks on mount
+  // Store handles deduplication automatically (prevents race conditions)
   useEffect(() => {
     if (tasks.length === 0) {
       fetchTasks({ include_closed: false, per_page: 1000 });
@@ -444,6 +446,7 @@ export function MobileSidebar() {
   const { data: workOrders = [] } = useWorkOrders();
 
   // Fetch projects on mount - load ALL projects including archived for accurate counts
+  // Store handles deduplication automatically (prevents race conditions)
   useEffect(() => {
     if (projects.length === 0) {
       fetchProjects({ per_page: 1000, include_archived: true });
@@ -452,6 +455,7 @@ export function MobileSidebar() {
   }, []);
 
   // Fetch tasks on mount
+  // Store handles deduplication automatically (prevents race conditions)
   useEffect(() => {
     if (tasks.length === 0) {
       fetchTasks({ include_closed: false, per_page: 1000 });

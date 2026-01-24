@@ -147,23 +147,62 @@ class QueueManager:
         """
         try:
             now = datetime.utcnow().isoformat()
+            # Fetch failed items with next_retry_at <= now
+            # Note: Supabase client doesn't support column-to-column comparison,
+            # so we fetch all failed items and filter retry_count in Python
             result = (
                 self.supabase.table("archon_crawl_queue")
                 .select("*")
                 .eq("status", "failed")
-                .lt("retry_count", "max_retries")
                 .lte("next_retry_at", now)
                 .order("priority", desc=True)
-                .limit(limit)
+                .limit(limit * 2)  # Fetch extra to account for filtering
+                .execute()
+            )
+
+            # Filter items where retry_count < max_retries (column comparison)
+            all_items = result.data if result.data else []
+            items = [
+                item for item in all_items
+                if item.get("retry_count", 0) < item.get("max_retries", 3)
+            ][:limit]  # Apply limit after filtering
+
+            logger.info(f"Found {len(items)} retry candidates")
+            return items
+
+        except Exception as e:
+            logger.error(f"Failed to fetch retry candidates: {str(e)}", exc_info=True)
+            return []
+
+    async def get_stale_running_items(self, cutoff_time: datetime) -> List[Dict[str, Any]]:
+        """
+        Fetch items stuck in 'running' status for longer than cutoff time.
+
+        This is used for cleanup on worker restart to reset items that were
+        orphaned by a crash or restart.
+
+        Args:
+            cutoff_time: Items with started_at before this time are considered stale
+
+        Returns:
+            List of stale queue items stuck in 'running' status
+        """
+        try:
+            cutoff_iso = cutoff_time.isoformat()
+            result = (
+                self.supabase.table("archon_crawl_queue")
+                .select("*")
+                .eq("status", "running")
+                .lte("started_at", cutoff_iso)
                 .execute()
             )
 
             items = result.data if result.data else []
-            safe_logfire_info(f"Found {len(items)} retry candidates")
+            logger.info(f"Found {len(items)} stale running items (older than {cutoff_iso})")
             return items
 
         except Exception as e:
-            safe_logfire_error(f"Failed to fetch retry candidates: {str(e)}")
+            logger.error(f"Failed to fetch stale running items: {str(e)}")
             return []
 
     async def update_status(
@@ -172,7 +211,8 @@ class QueueManager:
         status: str,
         error_message: Optional[str] = None,
         error_type: Optional[str] = None,
-        error_details: Optional[Dict[str, Any]] = None
+        error_details: Optional[Dict[str, Any]] = None,
+        next_retry_at: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Update queue item status.
@@ -183,6 +223,7 @@ class QueueManager:
             error_message: Optional error message if status is 'failed'
             error_type: Optional error type ('network', 'rate_limit', 'parse_error', 'timeout', 'other')
             error_details: Optional additional error details
+            next_retry_at: Optional timestamp for next retry attempt (for 'failed' status)
 
         Returns:
             Dict with success status and updated item
@@ -202,6 +243,9 @@ class QueueManager:
                     update_data["error_type"] = error_type
                 if error_details:
                     update_data["error_details"] = error_details
+                if next_retry_at:
+                    update_data["next_retry_at"] = next_retry_at.isoformat()
+                    update_data["last_retry_at"] = datetime.utcnow().isoformat()
 
             result = (
                 self.supabase.table("archon_crawl_queue")
@@ -210,7 +254,7 @@ class QueueManager:
                 .execute()
             )
 
-            safe_logfire_info(f"Updated queue item {item_id} to status '{status}'")
+            logger.info(f"Updated queue item {item_id} to status '{status}'")
 
             return {
                 "success": True,
@@ -218,7 +262,7 @@ class QueueManager:
             }
 
         except Exception as e:
-            safe_logfire_error(f"Failed to update queue item {item_id}: {str(e)}")
+            logger.error(f"Failed to update queue item {item_id}: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e)

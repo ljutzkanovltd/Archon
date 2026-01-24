@@ -448,12 +448,24 @@ async def create_embeddings_batch(
                             while retry_count < max_retries:
                                 try:
                                     # Create embeddings for this batch
+                                    import time
+                                    batch_start_time = time.time()
+
                                     embedding_model = await get_embedding_model(provider=embedding_provider)
                                     embeddings = await adapter.create_embeddings(
                                         batch,
                                         embedding_model,
                                         dimensions=dimensions_to_use,
                                     )
+
+                                    # Record embedding generation timing
+                                    batch_latency_ms = (time.time() - batch_start_time) * 1000
+                                    try:
+                                        from ..performance_metrics import get_metrics_service
+                                        metrics = get_metrics_service()
+                                        metrics.record_embedding_generation(len(batch), batch_latency_ms)
+                                    except Exception:
+                                        pass  # Don't fail embeddings due to metrics errors
 
                                     for text, vector in zip(batch, embeddings, strict=False):
                                         result.add_success(vector, text)

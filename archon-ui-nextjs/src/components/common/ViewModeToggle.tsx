@@ -1,7 +1,7 @@
 "use client";
 
 import { FC } from "react";
-import { HiViewList, HiViewGrid, HiMenuAlt2, HiCalendar, HiUsers, HiLightningBolt } from "react-icons/hi";
+import { HiViewList, HiViewGrid, HiMenuAlt2, HiCalendar, HiUsers, HiLightningBolt, HiDocumentText } from "react-icons/hi";
 import { HiViewColumns } from "react-icons/hi2";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * ViewModeToggle - Reusable view mode toggle component
  *
  * Provides a consistent UI for switching between different view modes
- * across the application (table, grid, kanban, list, timeline, members).
+ * across the application (table, grid, kanban, list, timeline, members, documents).
  *
  * Features:
  * - Configurable modes via props
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  */
 
 // Supported view modes
-export type ViewMode = "table" | "grid" | "kanban" | "list" | "sprints" | "timeline" | "members";
+export type ViewMode = "table" | "grid" | "kanban" | "list" | "sprints" | "timeline" | "members" | "documents";
 
 // Icon mapping for each view mode
 const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; label: string }> = {
@@ -31,6 +31,7 @@ const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; lab
   sprints: { icon: HiLightningBolt, label: "Sprints" },
   timeline: { icon: HiCalendar, label: "Timeline" },
   members: { icon: HiUsers, label: "Members" },
+  documents: { icon: HiDocumentText, label: "Documents" },
 };
 
 interface ViewModeToggleProps {

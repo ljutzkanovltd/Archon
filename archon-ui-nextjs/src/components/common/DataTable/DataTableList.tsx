@@ -1,6 +1,5 @@
 "use client";
 
-import { Checkbox } from "flowbite-react";
 import {
   useDataTableContext,
   useSorting,
@@ -149,11 +148,12 @@ export function DataTableList({
             {/* Selection Column */}
             {hasSelection && (
               <th scope="col" className="w-12 px-6 py-3">
-                <Checkbox
+                <input
+                  type="checkbox"
                   checked={isAllSelected}
                   onChange={toggleSelectAll}
                   aria-label="Select all rows"
-                  className="focus:ring-2 focus:ring-brand-500 text-brand-600 border-gray-300 rounded"
+                  className="peer cursor-pointer"
                 />
               </th>
             )}
@@ -294,15 +294,16 @@ export function DataTableList({
                 {/* Selection Cell */}
                 {hasSelection && (
                   <td className="px-6 py-4">
-                    <Checkbox
+                    <input
+                      type="checkbox"
                       checked={isSelected(itemKey)}
                       onChange={(e) => {
-                        const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
+                        const shiftKey = e.shiftKey;
                         toggleSelection(itemKey, shiftKey);
                       }}
                       aria-label={`Select row ${itemKey}`}
                       title="Click to select, Shift+Click to select range"
-                      className="focus:ring-2 focus:ring-brand-500 text-brand-600 border-gray-300 rounded"
+                      className="peer cursor-pointer"
                     />
                   </td>
                 )}

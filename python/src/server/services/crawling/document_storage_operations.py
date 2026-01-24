@@ -7,7 +7,7 @@ Extracted from crawl_orchestration_service.py for better modularity.
 
 import asyncio
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Dict
 
 from ...config.logfire_config import get_logger, safe_logfire_error, safe_logfire_info
 from ..source_management_service import extract_source_summary, update_source_info
@@ -275,6 +275,35 @@ class DocumentStorageOperations:
             cancellation_check=cancellation_check,  # Pass cancellation check
             url_to_page_id=url_to_page_id,  # Link chunks to pages
         )
+
+        # Update chunk counts in page metadata
+        if url_to_page_id:
+            try:
+                from .page_storage_operations import PageStorageOperations
+                page_storage = PageStorageOperations(self.supabase_client)
+
+                # Group chunks by page_id and count them
+                page_chunk_counts: Dict[str, int] = {}
+                for url, page_id in url_to_page_id.items():
+                    if page_id:
+                        # Count chunks for this URL
+                        chunk_count_for_url = sum(1 for u in all_urls if u == url)
+                        if chunk_count_for_url > 0:
+                            # Accumulate counts if same page_id appears multiple times
+                            page_chunk_counts[page_id] = page_chunk_counts.get(page_id, 0) + chunk_count_for_url
+
+                # Update chunk_count for each page
+                if page_chunk_counts:
+                    logger.info(f"📊 Updating chunk_count for {len(page_chunk_counts)} pages")
+                    for page_id, count in page_chunk_counts.items():
+                        try:
+                            await page_storage.update_page_chunk_count(page_id, count)
+                        except Exception as e:
+                            logger.warning(f"Failed to update chunk_count for page {page_id}: {e}")
+
+            except Exception as e:
+                logger.error(f"Failed to update page chunk counts: {e}", exc_info=True)
+                # Don't raise - this is a metadata sync issue, not critical
 
         # Calculate chunk counts
         chunk_count = len(all_contents)

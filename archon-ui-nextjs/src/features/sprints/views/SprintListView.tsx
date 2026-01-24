@@ -9,6 +9,7 @@ import { CreateSprintModal } from "../components/CreateSprintModal";
 import { SprintActionConfirmDialog } from "../components/SprintActionConfirmDialog";
 import { Sprint } from "@/lib/types";
 import { toast } from "react-hot-toast";
+import { SkeletonCard } from "@/components/LoadingStates";
 
 interface SprintListViewProps {
   projectId: string;
@@ -81,8 +82,15 @@ export function SprintListView({ projectId }: SprintListViewProps) {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner size="xl" />
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <SkeletonCard
+            key={index}
+            showHeader={true}
+            bodyLines={3}
+            showFooter={true}
+          />
+        ))}
       </div>
     );
   }

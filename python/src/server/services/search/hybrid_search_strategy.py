@@ -61,11 +61,12 @@ class HybridSearchStrategy:
                     f"source_filter={source_filter}"
                 )
 
-                # Call the hybrid search PostgreSQL function
+                # Call the hybrid search PostgreSQL function with RRF scoring
                 response = self.supabase_client.rpc(
-                    "hybrid_search_archon_crawled_pages",
+                    "hybrid_search_archon_crawled_pages_multi",
                     {
                         "query_embedding": query_embedding,
+                        "embedding_dimension": len(query_embedding),
                         "query_text": query,
                         "match_count": match_count,
                         "filter": filter_json,
@@ -152,11 +153,12 @@ class HybridSearchStrategy:
                 if not final_source_filter and "source" in filter_json:
                     final_source_filter = filter_json.pop("source")
 
-                # Call the hybrid search PostgreSQL function
+                # Call the hybrid search PostgreSQL function with RRF scoring
                 response = self.supabase_client.rpc(
-                    "hybrid_search_archon_code_examples",
+                    "hybrid_search_archon_code_examples_multi",
                     {
                         "query_embedding": query_embedding,
+                        "embedding_dimension": len(query_embedding),
                         "query_text": query,
                         "match_count": match_count,
                         "filter": filter_json,

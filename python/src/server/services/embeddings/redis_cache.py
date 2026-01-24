@@ -4,6 +4,7 @@ Redis cache service for embeddings.
 import hashlib
 import json
 import os
+import time
 from typing import Optional
 
 import redis.asyncio as redis
@@ -69,15 +70,32 @@ class EmbeddingCache:
         if not self._enabled or not self._client:
             return None
 
+        start_time = time.time()
         try:
             key = self._generate_cache_key(text, model, dimensions)
             cached = await self._client.get(key)
 
+            latency_ms = (time.time() - start_time) * 1000
+
             if cached:
-                logger.debug(f"✅ Cache HIT for key: {key[:50]}...")
+                logger.debug(f"✅ Cache HIT for key: {key[:50]}... ({latency_ms:.1f}ms)")
+                # Record cache hit timing
+                try:
+                    from ..performance_metrics import get_metrics_service
+                    metrics = get_metrics_service()
+                    metrics.record_cache_hit(latency_ms)
+                except Exception:
+                    pass  # Don't fail cache operations due to metrics errors
                 return json.loads(cached)
 
-            logger.debug(f"❌ Cache MISS for key: {key[:50]}...")
+            logger.debug(f"❌ Cache MISS for key: {key[:50]}... ({latency_ms:.1f}ms)")
+            # Record cache miss timing
+            try:
+                from ..performance_metrics import get_metrics_service
+                metrics = get_metrics_service()
+                metrics.record_cache_miss(latency_ms)
+            except Exception:
+                pass
             return None
         except Exception as e:
             logger.warning(f"Redis get error: {e}")

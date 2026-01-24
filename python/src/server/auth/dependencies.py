@@ -505,3 +505,26 @@ async def require_reports_read(
     """
     checker = require_permission("reports", "read")
     return await checker(project_id, current_user)
+
+
+async def require_document_manage(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Dependency to require document:manage permission.
+
+    Use this for uploading, deleting, and promoting project documents.
+
+    Args:
+        project_id: Project UUID
+        current_user: Authenticated user
+
+    Returns:
+        User data dictionary
+
+    Raises:
+        HTTPException 403: User cannot manage documents in this project
+    """
+    checker = require_permission("document", "manage")
+    return await checker(project_id, current_user)

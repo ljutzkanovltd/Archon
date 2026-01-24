@@ -1,356 +1,310 @@
 """
-Document Service Module for Archon
+Project Document Service Module for Archon
 
-This module provides core business logic for document operations within projects
-that can be shared between MCP tools and FastAPI endpoints.
+This module provides business logic for project-scoped document operations.
+Supports project-private documents with optional promotion to global knowledge base,
+drag-and-drop upload integration, and RAG processing pipeline.
 """
 
-import uuid
-
-# Removed direct logging import - using unified config
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
+import os
 
 from src.server.utils import get_supabase_client
-
 from ...config.logfire_config import get_logger
 
 logger = get_logger(__name__)
 
 
-class DocumentService:
-    """Service class for document operations within projects"""
+class ProjectDocumentService:
+    """
+    Service class for project document operations
+
+    Handles:
+    - Document upload with project scoping
+    - Privacy model (project-private vs global KB)
+    - Document promotion workflow
+    - RAG processing integration
+    """
 
     def __init__(self, supabase_client=None):
         """Initialize with optional supabase client"""
         self.supabase_client = supabase_client or get_supabase_client()
 
-    def add_document(
+    async def upload_document(
         self,
         project_id: str,
-        document_type: str,
-        title: str,
-        content: dict[str, Any] = None,
-        tags: list[str] = None,
-        author: str = None,
+        url: str,
+        title: Optional[str] = None,
+        is_project_private: bool = True,
+        source_display_name: Optional[str] = None,
+        metadata: Optional[dict] = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
-        Add a new document to a project's docs JSONB field.
-
-        Returns:
-            Tuple of (success, result_dict)
-        """
-        try:
-            # Get current project
-            project_response = (
-                self.supabase_client.table("archon_projects")
-                .select("docs")
-                .eq("id", project_id)
-                .execute()
-            )
-            if not project_response.data:
-                return False, {"error": f"Project with ID {project_id} not found"}
-
-            current_docs = project_response.data[0].get("docs", [])
-
-            # Create new document entry
-            new_doc = {
-                "id": str(uuid.uuid4()),
-                "document_type": document_type,
-                "title": title,
-                "content": content or {},
-                "tags": tags or [],
-                "status": "draft",
-                "version": "1.0",
-            }
-
-            if author:
-                new_doc["author"] = author
-
-            # Add to docs array
-            updated_docs = current_docs + [new_doc]
-
-            # Update project
-            response = (
-                self.supabase_client.table("archon_projects")
-                .update({"docs": updated_docs})
-                .eq("id", project_id)
-                .execute()
-            )
-
-            if response.data:
-                return True, {
-                    "document": {
-                        "id": new_doc["id"],
-                        "project_id": project_id,
-                        "document_type": new_doc["document_type"],
-                        "title": new_doc["title"],
-                        "status": new_doc["status"],
-                        "version": new_doc["version"],
-                    }
-                }
-            else:
-                return False, {"error": "Failed to add document to project"}
-
-        except Exception as e:
-            logger.error(f"Error adding document: {e}")
-            return False, {"error": f"Error adding document: {str(e)}"}
-
-    def list_documents(self, project_id: str, include_content: bool = False) -> tuple[bool, dict[str, Any]]:
-        """
-        List all documents in a project's docs JSONB field.
+        Upload a document to a project with privacy controls.
 
         Args:
-            project_id: The project ID
-            include_content: If True, includes full document content.
-                           If False (default), returns metadata only.
+            project_id: UUID of the project
+            url: Document URL or file path
+            title: Document title (defaults to filename from URL)
+            is_project_private: Privacy flag (default: True for project-private)
+            source_display_name: Display name for the source
+            metadata: Optional metadata dictionary
 
         Returns:
             Tuple of (success, result_dict)
+            result_dict contains document data or error message
         """
         try:
-            response = (
+            # Validate project exists
+            project_response = (
                 self.supabase_client.table("archon_projects")
-                .select("docs")
+                .select("id")
                 .eq("id", project_id)
                 .execute()
             )
 
-            if not response.data:
-                return False, {"error": f"Project with ID {project_id} not found"}
+            if not project_response.data:
+                return False, {"error": f"Project {project_id} not found"}
 
-            docs = response.data[0].get("docs", [])
+            # Generate source_id from URL (use URL as unique identifier)
+            source_id = url
 
-            # Format documents for response
-            documents = []
-            for doc in docs:
-                if include_content:
-                    # Return full document
-                    documents.append(doc)
-                else:
-                    # Return metadata only
-                    documents.append({
-                        "id": doc.get("id"),
-                        "document_type": doc.get("document_type"),
-                        "title": doc.get("title"),
-                        "status": doc.get("status"),
-                        "version": doc.get("version"),
-                        "tags": doc.get("tags", []),
-                        "author": doc.get("author"),
-                        "created_at": doc.get("created_at"),
-                        "updated_at": doc.get("updated_at"),
-                        "stats": {
-                            "content_size": len(str(doc.get("content", {})))
-                        }
-                    })
+            # Extract title from URL if not provided
+            if not title:
+                title = os.path.basename(url)
+
+            # Prepare document data
+            document_data = {
+                "source_id": source_id,
+                "source_url": url,
+                "title": title,
+                "source_display_name": source_display_name or title,
+                "project_id": project_id,
+                "is_project_private": is_project_private,
+                "metadata": metadata or {},
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+
+            # Insert document
+            document_response = (
+                self.supabase_client.table("archon_sources")
+                .insert(document_data)
+                .execute()
+            )
+
+            if not document_response.data:
+                return False, {"error": "Failed to create document"}
+
+            document = document_response.data[0]
+            logger.info(
+                f"Uploaded document '{title}' to project {project_id} "
+                f"(private: {is_project_private})"
+            )
+
+            return True, {"document": document}
+
+        except Exception as e:
+            logger.error(f"Error uploading document: {str(e)}")
+            return False, {"error": str(e)}
+
+    async def list_project_documents(
+        self,
+        project_id: str,
+        include_private: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        List documents for a project with privacy filtering.
+
+        Args:
+            project_id: UUID of the project
+            include_private: Include private documents (default: True)
+            limit: Maximum number of results (default: 100)
+            offset: Pagination offset (default: 0)
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains documents array and count
+        """
+        try:
+            # Build query
+            query = (
+                self.supabase_client.table("archon_sources")
+                .select("*")
+                .eq("project_id", project_id)
+            )
+
+            # Apply privacy filter
+            if not include_private:
+                query = query.eq("is_project_private", False)
+
+            # Execute query with pagination
+            documents_response = (
+                query.order("created_at", desc=True)
+                .range(offset, offset + limit - 1)
+                .execute()
+            )
+
+            documents = documents_response.data or []
+            logger.info(
+                f"Retrieved {len(documents)} documents for project {project_id} "
+                f"(include_private: {include_private})"
+            )
 
             return True, {
-                "project_id": project_id,
                 "documents": documents,
-                "total_count": len(documents),
+                "count": len(documents),
+                "project_id": project_id,
             }
 
         except Exception as e:
-            logger.error(f"Error listing documents: {e}")
-            return False, {"error": f"Error listing documents: {str(e)}"}
+            logger.error(f"Error listing project documents: {str(e)}")
+            return False, {"error": str(e)}
 
-    def get_document(self, project_id: str, doc_id: str) -> tuple[bool, dict[str, Any]]:
-        """
-        Get a specific document from a project's docs JSONB field.
-
-        Returns:
-            Tuple of (success, result_dict)
-        """
-        try:
-            response = (
-                self.supabase_client.table("archon_projects")
-                .select("docs")
-                .eq("id", project_id)
-                .execute()
-            )
-
-            if not response.data:
-                return False, {"error": f"Project with ID {project_id} not found"}
-
-            docs = response.data[0].get("docs", [])
-
-            # Find the specific document
-            document = None
-            for doc in docs:
-                if doc.get("id") == doc_id:
-                    document = doc
-                    break
-
-            if document:
-                return True, {"document": document}
-            else:
-                return False, {
-                    "error": f"Document with ID {doc_id} not found in project {project_id}"
-                }
-
-        except Exception as e:
-            logger.error(f"Error getting document: {e}")
-            return False, {"error": f"Error getting document: {str(e)}"}
-
-    def update_document(
+    async def promote_to_knowledge_base(
         self,
-        project_id: str,
-        doc_id: str,
-        update_fields: dict[str, Any],
-        create_version: bool = True,
+        source_id: str,
+        promoted_by: str,
     ) -> tuple[bool, dict[str, Any]]:
         """
-        Update a document in a project's docs JSONB field.
+        Promote a project-private document to global knowledge base.
+
+        This action:
+        1. Sets is_project_private = False
+        2. Records promoted_to_kb_at timestamp
+        3. Records promoted_by user identifier
+
+        Args:
+            source_id: Document source ID
+            promoted_by: User identifier performing the promotion
 
         Returns:
             Tuple of (success, result_dict)
+            result_dict contains updated document or error message
         """
         try:
-            # Get current project docs
-            project_response = (
-                self.supabase_client.table("archon_projects")
-                .select("docs")
-                .eq("id", project_id)
-                .execute()
-            )
-            if not project_response.data:
-                return False, {"error": f"Project with ID {project_id} not found"}
-
-            current_docs = project_response.data[0].get("docs", [])
-
-            # Create version snapshot if requested
-            if create_version and current_docs:
-                try:
-                    from .versioning_service import VersioningService
-
-                    versioning = VersioningService(self.supabase_client)
-
-                    change_summary = self._build_change_summary(doc_id, update_fields)
-                    versioning.create_version(
-                        project_id=project_id,
-                        field_name="docs",
-                        content=current_docs,
-                        change_summary=change_summary,
-                        change_type="update",
-                        document_id=doc_id,
-                        created_by=update_fields.get("author", "system"),
-                    )
-                except Exception as version_error:
-                    logger.warning(
-                        f"Version creation failed for document {doc_id}: {version_error}"
-                    )
-
-            # Make a copy to modify
-            docs = current_docs.copy()
-
-            # Find and update the document
-            updated = False
-            for i, doc in enumerate(docs):
-                if doc.get("id") == doc_id:
-                    # Update allowed fields
-                    if "title" in update_fields:
-                        docs[i]["title"] = update_fields["title"]
-                    if "content" in update_fields:
-                        docs[i]["content"] = update_fields["content"]
-                    if "status" in update_fields:
-                        docs[i]["status"] = update_fields["status"]
-                    if "tags" in update_fields:
-                        docs[i]["tags"] = update_fields["tags"]
-                    if "author" in update_fields:
-                        docs[i]["author"] = update_fields["author"]
-                    if "version" in update_fields:
-                        docs[i]["version"] = update_fields["version"]
-
-                    docs[i]["updated_at"] = datetime.now().isoformat()
-                    updated = True
-                    break
-
-            if not updated:
-                return False, {
-                    "error": f"Document with ID {doc_id} not found in project {project_id}"
-                }
-
-            # Update the project
-            response = (
-                self.supabase_client.table("archon_projects")
-                .update({"docs": docs, "updated_at": datetime.now().isoformat()})
-                .eq("id", project_id)
+            # Fetch current document
+            document_response = (
+                self.supabase_client.table("archon_sources")
+                .select("*")
+                .eq("source_id", source_id)
                 .execute()
             )
 
-            if response.data:
-                # Find the updated document to return
-                updated_doc = None
-                for doc in docs:
-                    if doc.get("id") == doc_id:
-                        updated_doc = doc
-                        break
+            if not document_response.data:
+                return False, {"error": f"Document {source_id} not found"}
 
-                return True, {"document": updated_doc}
-            else:
-                return False, {"error": "Failed to update document"}
+            document = document_response.data[0]
+
+            # Validate can promote
+            if not document.get("is_project_private"):
+                return False, {"error": "Document is already in global knowledge base"}
+
+            # Update document with promotion metadata
+            update_data = {
+                "is_project_private": False,
+                "promoted_to_kb_at": datetime.utcnow().isoformat(),
+                "promoted_by": promoted_by,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+
+            update_response = (
+                self.supabase_client.table("archon_sources")
+                .update(update_data)
+                .eq("source_id", source_id)
+                .execute()
+            )
+
+            if not update_response.data:
+                return False, {"error": "Failed to promote document"}
+
+            updated_document = update_response.data[0]
+            logger.info(
+                f"Promoted document '{document.get('title')}' to global KB "
+                f"(promoted_by: {promoted_by})"
+            )
+
+            return True, {"document": updated_document}
 
         except Exception as e:
-            logger.error(f"Error updating document: {e}")
-            return False, {"error": f"Error updating document: {str(e)}"}
+            logger.error(f"Error promoting document: {str(e)}")
+            return False, {"error": str(e)}
 
-    def delete_document(self, project_id: str, doc_id: str) -> tuple[bool, dict[str, Any]]:
+    async def delete_document(
+        self,
+        source_id: str,
+        project_id: Optional[str] = None,
+    ) -> tuple[bool, dict[str, Any]]:
         """
-        Delete a document from a project's docs JSONB field.
+        Delete a document.
+
+        Args:
+            source_id: Document source ID
+            project_id: Optional project ID for validation
 
         Returns:
             Tuple of (success, result_dict)
+            result_dict contains success message or error
         """
         try:
-            # Get current project docs
-            project_response = (
-                self.supabase_client.table("archon_projects")
-                .select("docs")
-                .eq("id", project_id)
-                .execute()
+            # Build delete query
+            query = self.supabase_client.table("archon_sources").delete().eq(
+                "source_id", source_id
             )
-            if not project_response.data:
-                return False, {"error": f"Project with ID {project_id} not found"}
 
-            docs = project_response.data[0].get("docs", [])
+            # Add project_id filter for security
+            if project_id:
+                query = query.eq("project_id", project_id)
 
-            # Remove the document
-            original_length = len(docs)
-            docs = [doc for doc in docs if doc.get("id") != doc_id]
+            delete_response = query.execute()
 
-            if len(docs) == original_length:
+            if not delete_response.data:
                 return False, {
-                    "error": f"Document with ID {doc_id} not found in project {project_id}"
+                    "error": f"Document {source_id} not found or permission denied"
                 }
 
-            # Update the project
-            response = (
-                self.supabase_client.table("archon_projects")
-                .update({"docs": docs, "updated_at": datetime.now().isoformat()})
-                .eq("id", project_id)
-                .execute()
-            )
-
-            if response.data:
-                return True, {"project_id": project_id, "doc_id": doc_id}
-            else:
-                return False, {"error": "Failed to delete document"}
+            logger.info(f"Deleted document {source_id}")
+            return True, {"message": "Document deleted successfully"}
 
         except Exception as e:
-            logger.error(f"Error deleting document: {e}")
-            return False, {"error": f"Error deleting document: {str(e)}"}
+            logger.error(f"Error deleting document: {str(e)}")
+            return False, {"error": str(e)}
 
-    def _build_change_summary(self, doc_id: str, update_fields: dict[str, Any]) -> str:
-        """Build a human-readable change summary"""
-        changes = []
-        if "title" in update_fields:
-            changes.append(f"title to '{update_fields['title']}'")
-        if "content" in update_fields:
-            changes.append("content")
-        if "status" in update_fields:
-            changes.append(f"status to '{update_fields['status']}'")
+    async def get_document(
+        self, source_id: str, project_id: Optional[str] = None
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Get document details.
 
-        if changes:
-            return f"Updated document '{doc_id}': {', '.join(changes)}"
-        else:
-            return f"Updated document '{doc_id}'"
+        Args:
+            source_id: Document source ID
+            project_id: Optional project ID for filtering
+
+        Returns:
+            Tuple of (success, result_dict)
+            result_dict contains document data or error message
+        """
+        try:
+            query = (
+                self.supabase_client.table("archon_sources")
+                .select("*")
+                .eq("source_id", source_id)
+            )
+
+            if project_id:
+                query = query.eq("project_id", project_id)
+
+            document_response = query.execute()
+
+            if not document_response.data:
+                return False, {"error": f"Document {source_id} not found"}
+
+            document = document_response.data[0]
+            return True, {"document": document}
+
+        except Exception as e:
+            logger.error(f"Error getting document: {str(e)}")
+            return False, {"error": str(e)}

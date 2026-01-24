@@ -91,6 +91,33 @@ source "$LIB_DIR/postgres-utils.sh"
 
 log_success "Shared libraries loaded"
 
+# ==============================================================================
+# Config Caching for Fast Startup (Lines 93-110)
+# ==============================================================================
+
+CONFIG_FILE="$HOME/.archon-startup-config"
+
+load_cached_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+        log_info "Loaded cached config from $CONFIG_FILE"
+        return 0
+    fi
+    return 1
+}
+
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+# Archon Startup Configuration Cache
+# Generated: $(date)
+MODE=$MODE
+LAST_CONFLICT_CHOICE=${LAST_CONFLICT_CHOICE:-2}
+TIMESTAMP=$(date +%s)
+EOF
+    log_info "Saved config to $CONFIG_FILE"
+}
+
 # Load environment variables
 # Note: Use PROJECT_ROOT instead of SCRIPT_DIR because library files may overwrite SCRIPT_DIR
 ENV_FILE="$PROJECT_ROOT/.env"
@@ -120,7 +147,11 @@ LLM_MODE="${LLM_MODE:-}"
 # Conflict resolution mode
 CONFLICT_MODE="${CONFLICT_MODE:-interactive}"
 
-# Backup configuration
+# Fast startup flags
+YES_MODE=false
+FAST_MODE=false
+
+# Backup configuration (ALWAYS enabled - critical for data safety)
 BACKUP_ON_START="${BACKUP_ON_START:-true}"
 SKIP_BACKUP=false
 
@@ -181,11 +212,19 @@ Usage: $SCRIPT_NAME [OPTIONS]
 
 Start Archon coding agent infrastructure as a standalone project.
 
-OPTIONS:
+FAST STARTUP OPTIONS:
+  --yes                       Use cached config, skip all prompts (requires prior run)
+  --fast                      Fast mode: --yes + force-restart + timeout=30 (backup still runs)
+  --no-backup                 Skip database backup (NOT recommended, use only for testing)
+  --timeout N                 Health check timeout in seconds (default: 60)
+
+CONFIGURATION OPTIONS:
   --mode MODE                 Deployment mode: local or remote
   --llm-mode MODE             LLM mode (for remote): local or remote
   --conflict-mode MODE        Handle running containers: interactive (default), skip-if-running, force-restart
-  --skip-backup               Skip database backup before start
+
+OPTIONAL SERVICES:
+  --skip-backup               Skip database backup before start (alias for --no-backup)
   --skip-dependency-check     Skip AI dependency validation
   --skip-health-checks        Skip post-startup health checks
   --skip-optional             Skip optional services (archon-agents)
@@ -207,12 +246,22 @@ LLM MODES (for remote deployment):
   remote             - Use remote LLMs (OpenAI/Anthropic API keys required)
 
 EXAMPLES:
-  $SCRIPT_NAME                                    # Interactive startup (local mode)
-  $SCRIPT_NAME --mode remote                      # Remote Supabase (prompts for LLM choice)
+  # Fast startup (after first run with cached config)
+  $SCRIPT_NAME --fast                             # Fast with backup (safe, recommended)
+  $SCRIPT_NAME --fast --skip-nextjs               # Fast + local Next.js dev
+
+  # Interactive startup
+  $SCRIPT_NAME                                    # Interactive (prompts for database)
+  $SCRIPT_NAME --no-backup                        # Skip backup (testing only, NOT recommended)
+
+  # Remote deployment
+  $SCRIPT_NAME --mode remote                      # Remote Supabase (prompts for LLM)
   $SCRIPT_NAME --mode remote --llm-mode local     # Remote Supabase + local Ollama
-  $SCRIPT_NAME --mode remote --llm-mode remote    # Remote Supabase + OpenAI/Anthropic
-  $SCRIPT_NAME --conflict-mode force-restart      # Force restart if running
-  $SCRIPT_NAME --skip-backup                      # Skip backup step
+  $SCRIPT_NAME --mode remote --llm-mode remote    # Remote + OpenAI/Anthropic
+
+  # Advanced
+  $SCRIPT_NAME --conflict-mode force-restart      # Auto restart if running
+  $SCRIPT_NAME --timeout 30                       # Faster health checks
 
 PREREQUISITES:
   For local mode:
@@ -230,6 +279,25 @@ EOF
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --yes)
+            YES_MODE=true
+            shift
+            ;;
+        --fast)
+            FAST_MODE=true
+            YES_MODE=true
+            CONFLICT_MODE="force-restart"
+            HEALTH_CHECK_TIMEOUT=30
+            shift
+            ;;
+        --no-backup)
+            SKIP_BACKUP=true
+            shift
+            ;;
+        --timeout)
+            HEALTH_CHECK_TIMEOUT="$2"
+            shift 2
+            ;;
         --mode)
             MODE="$2"
             shift 2
@@ -278,6 +346,21 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Log fast mode configuration
+if [ "$FAST_MODE" = true ]; then
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "  FAST MODE ENABLED"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Optimizations applied:"
+    log_info "  ✓ Using cached config (--yes)"
+    log_info "  ✓ Force restart mode (skip prompts)"
+    log_info "  ✓ Backup enabled (ALWAYS runs for data safety)"
+    log_info "  ✓ Health check timeout: 30s (default: 60s)"
+    log_info "  ✓ Optional service checks: 2s timeout (LLM, Qdrant)"
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+fi
+
 # Build container patterns based on flags
 # Start with core containers
 ARCHON_CONTAINER_PATTERNS=("${CORE_CONTAINER_PATTERNS[@]}")
@@ -313,35 +396,46 @@ else
     ARCHON_CONTAINER_PATTERNS+=("${OPTIONAL_CONTAINER_PATTERNS[@]}")
 fi
 
-# Interactive database selection
+# Interactive database selection (skip if --yes flag is set)
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log_info "  Database Configuration"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log_info "Current MODE from .env: $MODE"
-echo ""
-echo "Choose database to use:"
-echo "  1) local  - Local Supabase (from local-ai-packaged)"
-echo "  2) remote - Remote Supabase Cloud (eu-west-2)"
-echo ""
-read -p "Enter choice [1-2] (press Enter to keep current): " db_choice
 
-case "$db_choice" in
-    1)
-        MODE="local"
-        log_success "Selected: LOCAL database"
-        ;;
-    2)
-        MODE="remote"
-        log_success "Selected: REMOTE database"
-        ;;
-    "")
-        log_info "Keeping current MODE: $MODE"
-        ;;
-    *)
-        log_error "Invalid choice: $db_choice"
-        exit 1
-        ;;
-esac
+if [ "$YES_MODE" = true ]; then
+    # Load cached config and use it
+    if load_cached_config; then
+        log_success "Using cached MODE: $MODE (--yes flag)"
+    else
+        log_warn "No cached config found, using .env MODE: $MODE"
+    fi
+else
+    # Interactive prompt
+    log_info "Current MODE from .env: $MODE"
+    echo ""
+    echo "Choose database to use:"
+    echo "  1) local  - Local Supabase (from local-ai-packaged)"
+    echo "  2) remote - Remote Supabase Cloud (eu-west-2)"
+    echo ""
+    read -p "Enter choice [1-2] (press Enter to keep current): " db_choice
+
+    case "$db_choice" in
+        1)
+            MODE="local"
+            log_success "Selected: LOCAL database"
+            ;;
+        2)
+            MODE="remote"
+            log_success "Selected: REMOTE database"
+            ;;
+        "")
+            log_info "Keeping current MODE: $MODE"
+            ;;
+        *)
+            log_error "Invalid choice: $db_choice"
+            exit 1
+            ;;
+    esac
+fi
 echo ""
 
 # Validate deployment mode (simplified: local or remote)
@@ -623,20 +717,20 @@ check_ai_dependencies() {
     # Note: Database initialization moved to separate function (initialize_archon_database)
     # This function only validates that prerequisites are available
 
-    # Check 6: LLM API (optional)
+    # Check 6: LLM API (optional) - fast timeout for optional service
     log_info "Checking LLM API availability (optional)..."
-    if curl -sf http://localhost:11434/v1/models >/dev/null 2>&1; then
+    if curl -sf --max-time 2 http://localhost:11434/v1/models >/dev/null 2>&1; then
         local model_count
-        model_count=$(curl -s http://localhost:11434/v1/models 2>/dev/null | grep -o '"id"' | wc -l)
+        model_count=$(curl -s --max-time 2 http://localhost:11434/v1/models 2>/dev/null | grep -o '"id"' | wc -l)
         log_success "LLM API available (port 11434, $model_count models)"
     else
         log_warn "LLM API not available on port 11434 (optional)"
         log_warn "Archon will use fallback configuration if LLM needed"
     fi
 
-    # Check 7: Qdrant vector DB (optional)
+    # Check 7: Qdrant vector DB (optional) - fast timeout for optional service
     log_info "Checking Qdrant vector database (optional)..."
-    if curl -sf http://localhost:6333/health >/dev/null 2>&1; then
+    if curl -sf --max-time 2 http://localhost:6333/health >/dev/null 2>&1; then
         log_success "Qdrant vector DB available (port 6333)"
     else
         log_warn "Qdrant not available on port 6333 (optional)"
@@ -1065,6 +1159,12 @@ else
     fi
 fi
 
+# Save config for next --yes startup
+if [ "$YES_MODE" != true ]; then
+    save_config
+    log_info "Config saved for next fast startup (use --fast or --yes)"
+fi
+
 # Final success message
 echo ""
 echo "========================================"
@@ -1085,6 +1185,10 @@ log_info "Useful commands:"
 log_info "  - View logs:    docker compose logs -f"
 log_info "  - Check status: docker ps | grep archon"
 log_info "  - Stop all:     ./stop-archon.sh"
+if [ -f "$CONFIG_FILE" ]; then
+    echo ""
+    log_info "Fast startup available: ./start-archon.sh --fast"
+fi
 echo ""
 
 exit 0

@@ -21,11 +21,13 @@ import type {
 
 /**
  * Get the base URL for agent work orders API
- * Backend microservice runs on port 8053
+ * Backend microservice runs on port 8053 (separate from main API on 8181)
+ * Uses direct communication for stability isolation
  */
 const getBaseUrl = (): string => {
   if (typeof window !== 'undefined') {
-    // Browser context: use NEXT_PUBLIC_ env var
+    // Browser context: Direct connection to microservice
+    // CORS is configured on the service (allow_origins=["*"])
     return process.env.NEXT_PUBLIC_AGENT_WORK_ORDERS_URL || "http://localhost:8053";
   } else {
     // Server context (SSR): use Docker service name or fallback
