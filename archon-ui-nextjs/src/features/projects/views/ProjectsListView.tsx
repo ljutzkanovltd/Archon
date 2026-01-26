@@ -138,6 +138,25 @@ export function ProjectsListView() {
       ),
     },
     {
+      key: "linked_knowledge_count",
+      label: "KB Items",
+      sortable: true,
+      width: "100px",
+      render: (value, project) => (
+        <span
+          className={`text-sm font-medium ${
+            value && value > 0
+              ? "text-purple-600 dark:text-purple-400 cursor-pointer hover:text-purple-700 dark:hover:text-purple-300"
+              : "text-gray-400 dark:text-gray-600"
+          }`}
+          onClick={() => value && value > 0 && router.push(`/projects/${project.id}?tab=documents`)}
+          title={value && value > 0 ? "Click to view linked knowledge items" : "No linked knowledge items"}
+        >
+          {value || 0}
+        </span>
+      ),
+    },
+    {
       key: "created_at",
       label: "Created",
       sortable: true,

@@ -803,6 +803,9 @@ START → Complex (>2hr)? → YES → planner
 - `@.claude/docs/BACKUP_PROCEDURES.md` - Backup automation, disaster recovery
 - `@docs/MCP_SESSION_ARCHITECTURE.md` - Session management architecture, lazy creation
 
+**Frontend & UI**:
+- `@.claude/docs/UI_DESIGN_SYSTEM.md` - UI/UX standards, Flowbite patterns, component guidelines
+
 ### External Resources
 
 - **MCP Protocol:** https://modelcontextprotocol.io/

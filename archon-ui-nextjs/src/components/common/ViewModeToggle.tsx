@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 export type ViewMode = "table" | "grid" | "kanban" | "list" | "sprints" | "timeline" | "members" | "documents";
 
 // Icon mapping for each view mode
-const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; label: string }> = {
+const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; label: string; tooltip?: string }> = {
   table: { icon: HiViewList, label: "Table" },
   grid: { icon: HiViewGrid, label: "Grid" },
   kanban: { icon: HiViewColumns, label: "Kanban" },
@@ -31,7 +31,7 @@ const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; lab
   sprints: { icon: HiLightningBolt, label: "Sprints" },
   timeline: { icon: HiCalendar, label: "Timeline" },
   members: { icon: HiUsers, label: "Members" },
-  documents: { icon: HiDocumentText, label: "Documents" },
+  documents: { icon: HiDocumentText, label: "Knowledge & Docs", tooltip: "Manage project documents and link global knowledge" },
 };
 
 interface ViewModeToggleProps {
@@ -83,7 +83,7 @@ export function ViewModeToggle({
       aria-label="View mode"
     >
       {modes.map((mode, index) => {
-        const { icon: Icon, label } = VIEW_MODE_CONFIG[mode];
+        const { icon: Icon, label, tooltip } = VIEW_MODE_CONFIG[mode];
         const isActive = currentMode === mode;
         const isFirst = index === 0;
         const isLast = index === modes.length - 1;
@@ -107,7 +107,7 @@ export function ViewModeToggle({
                 : "bg-white text-gray-700 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             )}
             aria-pressed={isActive}
-            title={label}
+            title={tooltip || label}
           >
             <Icon className={iconSize} aria-hidden="true" />
             {showLabels && <span className="hidden sm:inline">{label}</span>}

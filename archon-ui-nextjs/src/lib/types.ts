@@ -144,6 +144,7 @@ export interface Project {
   updated_at: string;
   task_count?: number;
   document_count?: number;
+  linked_knowledge_count?: number;
   pinned?: boolean;
   archived?: boolean;
   // Phase 3: Hierarchy metadata

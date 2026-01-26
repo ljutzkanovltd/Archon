@@ -21,6 +21,24 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  // Webpack configuration to handle react-pdf and canvas
+  webpack: (config, { isServer }) => {
+    // Fix for react-pdf canvas issue
+    config.resolve.alias.canvas = false;
+
+    // Ignore node-specific modules when bundling for browser
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        canvas: false,
+        fs: false,
+        path: false,
+      };
+    }
+
+    return config;
+  },
+
   // Proxy API requests to backend server to avoid CORS issues
   // DUAL URL STRATEGY:
   // - Browser requests: Use NEXT_PUBLIC_API_URL (localhost from host machine)
@@ -45,10 +63,17 @@ const nextConfig: NextConfig = {
     });
 
     return [
-      // Proxy all API requests to backend server (including credentials)
+      // IMPORTANT: Order matters! More specific rules first.
+      // Feature flags are served by Next.js API routes, NOT proxied to backend
+      // This allows frontend-specific configuration without backend dependency
+
+      // Proxy all API requests to backend EXCEPT /api/credentials/*
+      // The :path+ pattern matches one or more path segments
       {
-        source: "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
+        source: "/api/:path+",
+        destination: `${backendUrl}/api/:path+`,
+        // This will match /api/auth/login, /api/projects, etc.
+        // but NOT /api/credentials/* because Next.js API routes take precedence
       },
       {
         source: "/health",

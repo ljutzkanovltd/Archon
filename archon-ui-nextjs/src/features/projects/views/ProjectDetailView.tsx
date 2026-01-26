@@ -515,9 +515,9 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
             </button>
           </div>
 
-          {/* Seven-mode view toggle: Kanban / Table / Grid / Sprints / Timeline / Members / Documents - uses reusable ViewModeToggle */}
+          {/* Seven-mode view toggle: Kanban / Table / Grid / Documents / Sprints / Timeline / Members - uses reusable ViewModeToggle */}
           <ViewModeToggle
-            modes={["kanban", "table", "grid", "sprints", "timeline", "members", "documents"]}
+            modes={["kanban", "table", "grid", "documents", "sprints", "timeline", "members"]}
             currentMode={viewMode}
             onChange={setViewMode}
             size="md"

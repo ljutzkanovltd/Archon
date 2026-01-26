@@ -1,0 +1,254 @@
+================================================================================
+ARCHON PROJECT DOCUMENTS SCHEMA - VISUAL REFERENCE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      archon_project_documents                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PRIMARY KEY                                                                 │
+│  • id (UUID)                                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ FOREIGN KEYS                                                                │
+│  • project_id → archon_projects(id) ON DELETE CASCADE                       │
+│  • uploaded_by → archon_users(id) ON DELETE SET NULL                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ FILE METADATA (7 columns)                                                   │
+│  • filename (VARCHAR 500)                                                   │
+│  • file_path (TEXT)                                                         │
+│  • file_type (VARCHAR 50) - pdf/markdown/text/image/code                    │
+│  • file_size_bytes (INTEGER)                                                │
+│  • mime_type (VARCHAR 100)                                                  │
+│  • chunk_number (INTEGER) - 0-based                                         │
+│  • content_hash (VARCHAR 64) - SHA256                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ CONTENT (2 columns)                                                         │
+│  • content (TEXT)                                                           │
+│  • metadata (JSONB) - extensible                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ EMBEDDINGS (5 vector columns)                                               │
+│  • embedding_384 (VECTOR 384)   ← nomic-embed, all-MiniLM                  │
+│  • embedding_768 (VECTOR 768)   ← ada-002 (legacy), BERT-base              │
+│  • embedding_1024 (VECTOR 1024) ← text-embedding-3-small                    │
+│  • embedding_1536 (VECTOR 1536) ← ada-002, text-embedding-3-small (default)│
+│  • embedding_3072 (VECTOR 3072) ← text-embedding-3-large                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ EMBEDDING PROVENANCE (3 columns)                                            │
+│  • llm_chat_model (TEXT)        - LLM used for processing                  │
+│  • embedding_model (TEXT)       - Embedding model name                     │
+│  • embedding_dimension (INTEGER) - Actual dimension (384/768/1024/1536/3072)│
+├─────────────────────────────────────────────────────────────────────────────┤
+│ FULL-TEXT SEARCH (1 generated column)                                       │
+│  • content_search_vector (TSVECTOR) - auto-generated from content          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ TIMESTAMPS (3 columns)                                                      │
+│  • uploaded_at (TIMESTAMPTZ)                                                │
+│  • created_at (TIMESTAMPTZ)                                                 │
+│  • updated_at (TIMESTAMPTZ) - auto-updated via trigger                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+INDEXES (15 TOTAL)
+================================================================================
+
+PRIMARY KEY
+├─ archon_project_documents_pkey (id)
+
+RELATIONAL (4)
+├─ idx_project_docs_project_id (project_id)         ← MOST COMMON QUERY
+├─ idx_project_docs_file_type (file_type)
+├─ idx_project_docs_uploaded_by (uploaded_by)
+└─ idx_project_docs_content_hash (content_hash)     ← DEDUPLICATION
+
+VECTOR SIMILARITY (5) - IVFFlat with lists=100
+├─ idx_project_docs_embedding_384 (embedding_384)
+├─ idx_project_docs_embedding_768 (embedding_768)
+├─ idx_project_docs_embedding_1024 (embedding_1024)
+├─ idx_project_docs_embedding_1536 (embedding_1536)
+└─ idx_project_docs_embedding_3072 (embedding_3072)
+
+FULL-TEXT SEARCH (2) - GIN indexes
+├─ idx_project_docs_content_search (content_search_vector)
+└─ idx_project_docs_content_trgm (content gin_trgm_ops)
+
+METADATA & TRACKING (3)
+├─ idx_project_docs_embedding_model (embedding_model)
+├─ idx_project_docs_embedding_dimension (embedding_dimension)
+└─ idx_project_docs_metadata (metadata)
+
+================================================================================
+CONSTRAINTS
+================================================================================
+
+UNIQUE
+└─ (project_id, filename, chunk_number)
+
+CHECK CONSTRAINTS
+├─ chunk_number >= 0
+├─ file_size_bytes > 0
+└─ file_type IN ('pdf', 'markdown', 'text', 'image', 'code')
+
+================================================================================
+HELPER FUNCTIONS (3)
+================================================================================
+
+1. search_project_documents(project_id, query_embedding, dimension, count, type)
+   └─ Returns: id, filename, chunk_number, content, metadata, similarity
+
+2. get_project_document_stats(project_id)
+   └─ Returns: total_documents, total_chunks, total_size_bytes,
+              file_type_counts (JSONB), embedding_model_counts (JSONB)
+
+3. deduplicate_project_documents(project_id, dry_run)
+   └─ Returns: content_hash, duplicate_count, kept_id, deleted_ids[]
+
+================================================================================
+TRIGGERS
+================================================================================
+
+trigger_project_docs_updated_at
+└─ BEFORE UPDATE → update_updated_at_column()
+
+================================================================================
+ROW LEVEL SECURITY (5 POLICIES)
+================================================================================
+
+SELECT
+├─ project_docs_select_own_projects   (authenticated users can view)
+└─ project_docs_service_role_all      (service role bypass)
+
+INSERT
+├─ project_docs_insert_own_projects   (authenticated users, own uploads)
+└─ project_docs_service_role_all      (service role bypass)
+
+UPDATE
+├─ project_docs_update_own            (own documents only)
+└─ project_docs_service_role_all      (service role bypass)
+
+DELETE
+├─ project_docs_delete_own            (own documents only)
+└─ project_docs_service_role_all      (service role bypass)
+
+================================================================================
+RELATIONSHIPS
+================================================================================
+
+archon_project_documents
+    ├─→ archon_projects (project_id)     [ON DELETE CASCADE]
+    └─→ archon_users (uploaded_by)       [ON DELETE SET NULL]
+
+================================================================================
+QUERY PATTERNS
+================================================================================
+
+VECTOR SIMILARITY SEARCH (Primary Use Case)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SELECT * FROM search_project_documents(                                    │
+│     'project-uuid',                 -- project_id                           │
+│     '[0.1, 0.2, ...]'::vector(1536), -- query embedding                    │
+│     1536,                           -- dimension                            │
+│     10,                             -- match_count                          │
+│     'pdf'                           -- file_type (optional)                 │
+│ );                                                                          │
+│                                                                             │
+│ Uses: idx_project_docs_embedding_1536 (IVFFlat)                            │
+│ Expected: <50ms for 10 results                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+FULL-TEXT SEARCH
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SELECT filename, chunk_number, content,                                    │
+│        ts_rank(content_search_vector, query) AS rank                       │
+│ FROM archon_project_documents,                                             │
+│      to_tsquery('english', 'architecture & microservices') query           │
+│ WHERE project_id = 'project-uuid'                                          │
+│   AND content_search_vector @@ query                                       │
+│ ORDER BY rank DESC                                                         │
+│ LIMIT 10;                                                                  │
+│                                                                             │
+│ Uses: idx_project_docs_content_search (GIN)                                │
+│ Expected: <20ms                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+HYBRID SEARCH (Vector + Full-Text)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WITH vector_results AS (                                                   │
+│     SELECT id, 1 - (embedding_1536 <=> $1) AS vec_score                   │
+│     FROM archon_project_documents                                          │
+│     WHERE project_id = $2                                                  │
+│     ORDER BY embedding_1536 <=> $1                                         │
+│     LIMIT 20                                                               │
+│ ),                                                                         │
+│ text_results AS (                                                          │
+│     SELECT id, ts_rank(content_search_vector, $3) AS text_score           │
+│     FROM archon_project_documents                                          │
+│     WHERE project_id = $2 AND content_search_vector @@ $3                 │
+│     LIMIT 20                                                               │
+│ )                                                                          │
+│ SELECT d.*, COALESCE(v.vec_score, 0) + COALESCE(t.text_score, 0) AS score│
+│ FROM archon_project_documents d                                            │
+│ LEFT JOIN vector_results v ON d.id = v.id                                 │
+│ LEFT JOIN text_results t ON d.id = t.id                                   │
+│ WHERE d.project_id = $2 AND (v.id IS NOT NULL OR t.id IS NOT NULL)       │
+│ ORDER BY score DESC                                                        │
+│ LIMIT 10;                                                                  │
+│                                                                             │
+│ Uses: Both vector and GIN indexes                                          │
+│ Expected: <100ms                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+DEDUPLICATION
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SELECT * FROM deduplicate_project_documents('project-uuid', TRUE);        │
+│                                                                             │
+│ Uses: idx_project_docs_content_hash                                        │
+│ Expected: <500ms per project                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STATISTICS
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SELECT * FROM get_project_document_stats('project-uuid');                 │
+│                                                                             │
+│ Returns:                                                                    │
+│  • total_documents: 142                                                    │
+│  • total_chunks: 687                                                       │
+│  • total_size_bytes: 45678901                                              │
+│  • file_type_counts: {"pdf": 89, "markdown": 42, "code": 11}              │
+│  • embedding_model_counts: {"text-embedding-3-small": 687}                 │
+│                                                                             │
+│ Expected: <100ms                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+STORAGE ESTIMATES
+================================================================================
+
+Per Document (avg 1024 chars, 5 chunks):
+├─ Base data (no embeddings): ~5 KB
+├─ + embedding_1536 only:     ~35 KB  (5 chunks × 6KB each + 5KB base)
+└─ + all embeddings:          ~155 KB (5 chunks × 30KB each + 5KB base)
+
+Per 1000 Documents (avg 5 chunks each = 5000 rows):
+├─ Base data only:            ~25 MB
+├─ + single embedding:        ~175 MB
+└─ + all embeddings:          ~775 MB
+
+Recommended: Use single embedding dimension per project (typically 1536)
+
+================================================================================
+PERFORMANCE TUNING
+================================================================================
+
+IVFFlat Parameters:
+└─ lists=100 (current) - Good for <1M vectors
+   Adjust if dataset grows:
+   • <100k vectors → lists=50-100
+   • 100k-1M vectors → lists=100-500
+   • >1M vectors → lists=1000+ or switch to HNSW
+
+Vacuum & Analyze:
+└─ Run after bulk inserts: VACUUM ANALYZE archon_project_documents;
+
+Index Maintenance:
+└─ Recreate vector indexes after 100k+ inserts for optimal performance
+
+================================================================================

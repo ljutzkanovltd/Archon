@@ -12,7 +12,7 @@ import {
   HiCheckCircle,
   HiXCircle,
 } from "react-icons/hi";
-import { apiClient } from "@/lib/apiClient";
+import apiClient from "@/lib/apiClient";
 import { ExportButton } from "@/components/ExportButton";
 
 interface ProjectHealthDashboardProps {

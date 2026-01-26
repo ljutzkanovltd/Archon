@@ -1,0 +1,551 @@
+/**
+ * Archon Gantt Timeline Theme - SVAR React Gantt customization
+ * Integrates with Archon's design system (Tailwind + Flowbite)
+ */
+
+/* ========================================
+   Container & Grid
+   ======================================== */
+
+.wx-gantt {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: white;
+  border-radius: 0.5rem;
+  --wx-background: #ffffff;
+  --wx-border: #e5e7eb; /* gray-200 */
+  --wx-color-primary: #3b82f6; /* primary-500 */
+  --wx-color-primary-hover: #2563eb; /* primary-600 */
+}
+
+.dark .wx-gantt {
+  background-color: #1f2937; /* gray-800 */
+  --wx-background: #1f2937;
+  --wx-border: #374151; /* gray-700 */
+  --wx-color-primary: #60a5fa; /* primary-400 */
+  --wx-color-primary-hover: #93c5fd; /* primary-300 */
+}
+
+/* ========================================
+   Toolbar & Headers
+   ======================================== */
+
+.wx-toolbar {
+  background-color: #f9fafb; /* gray-50 */
+  border-bottom: 2px solid #e5e7eb; /* gray-200 */
+  padding: 0.75rem 1rem;
+}
+
+.dark .wx-toolbar {
+  background-color: #111827; /* gray-900 */
+  border-bottom-color: #374151; /* gray-700 */
+}
+
+.wx-header {
+  background-color: #f9fafb; /* gray-50 */
+  border-bottom: 2px solid #e5e7eb; /* gray-200 */
+  color: #6b7280; /* gray-500 */
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  padding: 0.75rem 0.5rem;
+}
+
+.dark .wx-header {
+  background-color: #111827; /* gray-900 */
+  border-bottom-color: #374151; /* gray-700 */
+  color: #9ca3af; /* gray-400 */
+}
+
+/* ========================================
+   Grid Lines & Cells
+   ======================================== */
+
+.wx-grid-line {
+  stroke: #e5e7eb; /* gray-200 */
+}
+
+.dark .wx-grid-line {
+  stroke: #374151; /* gray-700 */
+}
+
+.wx-grid-cell {
+  border-right: 1px solid #f3f4f6; /* gray-100 */
+}
+
+.dark .wx-grid-cell {
+  border-right-color: #1f2937; /* gray-800 */
+}
+
+/* Weekend cells */
+.wx-grid-cell.wx-weekend {
+  background-color: #f9fafb; /* gray-50 */
+}
+
+.dark .wx-grid-cell.wx-weekend {
+  background-color: #111827; /* gray-900 */
+}
+
+/* Today marker */
+.wx-today-marker {
+  stroke: #ef4444; /* red-500 */
+  stroke-width: 2px;
+}
+
+/* ========================================
+   Task Bars - Base Styling
+   ======================================== */
+
+.wx-bar {
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.wx-bar:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.wx-bar-text {
+  fill: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ========================================
+   Task Bars - Status Colors (Archon Theme)
+   ======================================== */
+
+/* Backlog / Todo */
+.wx-bar[data-status="backlog"],
+.wx-bar[data-status="todo"] {
+  fill: #9ca3af; /* gray-400 */
+}
+
+.wx-bar[data-status="backlog"] .wx-bar-text,
+.wx-bar[data-status="todo"] .wx-bar-text {
+  fill: #ffffff;
+}
+
+/* In Progress / Doing */
+.wx-bar[data-status="in progress"],
+.wx-bar[data-status="doing"] {
+  fill: #3b82f6; /* primary-500 */
+}
+
+.wx-bar[data-status="in progress"] .wx-bar-text,
+.wx-bar[data-status="doing"] .wx-bar-text {
+  fill: #ffffff;
+}
+
+/* Review */
+.wx-bar[data-status="review"] {
+  fill: #f59e0b; /* warning-500 */
+}
+
+.wx-bar[data-status="review"] .wx-bar-text {
+  fill: #ffffff;
+}
+
+/* Done */
+.wx-bar[data-status="done"],
+.wx-bar[data-status="completed"] {
+  fill: #10b981; /* success-500 */
+}
+
+.wx-bar[data-status="done"] .wx-bar-text,
+.wx-bar[data-status="completed"] .wx-bar-text {
+  fill: #ffffff;
+}
+
+/* Blocked */
+.wx-bar[data-status="blocked"] {
+  fill: #ef4444; /* red-500 */
+}
+
+.wx-bar[data-status="blocked"] .wx-bar-text {
+  fill: #ffffff;
+}
+
+/* ========================================
+   Task Bars - Priority Colors
+   ======================================== */
+
+.wx-bar[data-priority="urgent"] {
+  stroke: #dc2626; /* red-600 */
+  stroke-width: 3px;
+}
+
+.wx-bar[data-priority="high"] {
+  stroke: #ea580c; /* orange-600 */
+  stroke-width: 2px;
+}
+
+.wx-bar[data-priority="medium"] {
+  stroke: #3b82f6; /* primary-500 */
+  stroke-width: 1px;
+}
+
+.wx-bar[data-priority="low"] {
+  stroke: #9ca3af; /* gray-400 */
+  stroke-width: 1px;
+}
+
+/* ========================================
+   Progress Indicators
+   ======================================== */
+
+.wx-bar-progress {
+  fill: rgba(255, 255, 255, 0.3);
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 1px;
+}
+
+/* ========================================
+   Summary Bars (Sprints)
+   ======================================== */
+
+.wx-bar[data-type="summary"] {
+  fill: #6366f1; /* indigo-500 */
+  stroke: #4f46e5; /* indigo-600 */
+  stroke-width: 2px;
+  height: 24px;
+}
+
+.wx-bar[data-type="summary"] .wx-bar-text {
+  fill: #ffffff;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.dark .wx-bar[data-type="summary"] {
+  fill: #818cf8; /* indigo-400 */
+  stroke: #6366f1; /* indigo-500 */
+}
+
+/* ========================================
+   Milestones
+   ======================================== */
+
+.wx-milestone {
+  fill: #8b5cf6; /* purple-500 */
+  stroke: #7c3aed; /* purple-600 */
+  stroke-width: 2px;
+}
+
+.wx-milestone:hover {
+  fill: #a78bfa; /* purple-400 */
+  transform: scale(1.1);
+}
+
+.dark .wx-milestone {
+  fill: #a78bfa; /* purple-400 */
+  stroke: #8b5cf6; /* purple-500 */
+}
+
+/* Milestone label */
+.wx-milestone-text {
+  fill: #1f2937; /* gray-800 */
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dark .wx-milestone-text {
+  fill: #f3f4f6; /* gray-100 */
+}
+
+/* ========================================
+   Dependencies (Links)
+   ======================================== */
+
+.wx-link {
+  stroke: #6b7280; /* gray-500 */
+  stroke-width: 2px;
+  fill: none;
+  marker-end: url(#arrow);
+}
+
+.wx-link:hover {
+  stroke: #3b82f6; /* primary-500 */
+  stroke-width: 3px;
+}
+
+.dark .wx-link {
+  stroke: #9ca3af; /* gray-400 */
+}
+
+.dark .wx-link:hover {
+  stroke: #60a5fa; /* primary-400 */
+}
+
+/* Link arrows */
+marker#arrow path {
+  fill: #6b7280; /* gray-500 */
+}
+
+.wx-link:hover marker#arrow path {
+  fill: #3b82f6; /* primary-500 */
+}
+
+/* ========================================
+   Tooltips
+   ======================================== */
+
+.wx-tooltip {
+  background-color: #1f2937; /* gray-800 */
+  color: #f9fafb; /* gray-50 */
+  border: 1px solid #374151; /* gray-700 */
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3),
+    0 4px 6px -2px rgba(0, 0, 0, 0.2);
+  font-size: 0.875rem;
+  max-width: 300px;
+  z-index: 1000;
+}
+
+.dark .wx-tooltip {
+  background-color: #374151; /* gray-700 */
+  border-color: #4b5563; /* gray-600 */
+  color: #f9fafb; /* gray-50 */
+}
+
+.wx-tooltip-title {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  margin-bottom: 0.5rem;
+  color: #ffffff;
+}
+
+.wx-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.wx-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.wx-tooltip-label {
+  color: #9ca3af; /* gray-400 */
+  font-size: 0.8125rem;
+}
+
+.wx-tooltip-value {
+  color: #f3f4f6; /* gray-100 */
+  font-weight: 500;
+  font-size: 0.8125rem;
+}
+
+/* ========================================
+   Selection & Drag
+   ======================================== */
+
+.wx-bar.wx-selected {
+  stroke: #3b82f6; /* primary-500 */
+  stroke-width: 3px;
+  filter: brightness(1.1);
+}
+
+.dark .wx-bar.wx-selected {
+  stroke: #60a5fa; /* primary-400 */
+}
+
+.wx-bar.wx-dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+/* ========================================
+   Tree Grid (Task Hierarchy)
+   ======================================== */
+
+.wx-tree-cell {
+  padding: 0.5rem;
+  color: #374151; /* gray-700 */
+  font-size: 0.875rem;
+}
+
+.dark .wx-tree-cell {
+  color: #d1d5db; /* gray-300 */
+}
+
+.wx-tree-cell:hover {
+  background-color: #f3f4f6; /* gray-100 */
+}
+
+.dark .wx-tree-cell:hover {
+  background-color: #374151; /* gray-700 */
+}
+
+/* Tree expand/collapse icons */
+.wx-tree-icon {
+  color: #6b7280; /* gray-500 */
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.wx-tree-icon:hover {
+  color: #3b82f6; /* primary-500 */
+}
+
+.dark .wx-tree-icon {
+  color: #9ca3af; /* gray-400 */
+}
+
+.dark .wx-tree-icon:hover {
+  color: #60a5fa; /* primary-400 */
+}
+
+/* ========================================
+   Scrollbars
+   ======================================== */
+
+.wx-gantt ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.wx-gantt ::-webkit-scrollbar-track {
+  background: #f3f4f6; /* gray-100 */
+  border-radius: 5px;
+}
+
+.dark .wx-gantt ::-webkit-scrollbar-track {
+  background: #1f2937; /* gray-800 */
+}
+
+.wx-gantt ::-webkit-scrollbar-thumb {
+  background: #9ca3af; /* gray-400 */
+  border-radius: 5px;
+}
+
+.wx-gantt ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* gray-500 */
+}
+
+.dark .wx-gantt ::-webkit-scrollbar-thumb {
+  background: #4b5563; /* gray-600 */
+}
+
+.dark .wx-gantt ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* gray-500 */
+}
+
+/* ========================================
+   Context Menu
+   ======================================== */
+
+.wx-context-menu {
+  background-color: white;
+  border: 1px solid #e5e7eb; /* gray-200 */
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 0.25rem;
+  z-index: 1000;
+}
+
+.dark .wx-context-menu {
+  background-color: #374151; /* gray-700 */
+  border-color: #4b5563; /* gray-600 */
+}
+
+.wx-menu-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #374151; /* gray-700 */
+  cursor: pointer;
+  border-radius: 0.375rem;
+  transition: all 0.15s;
+}
+
+.wx-menu-item:hover {
+  background-color: #f3f4f6; /* gray-100 */
+  color: #1f2937; /* gray-800 */
+}
+
+.dark .wx-menu-item {
+  color: #d1d5db; /* gray-300 */
+}
+
+.dark .wx-menu-item:hover {
+  background-color: #4b5563; /* gray-600 */
+  color: #f9fafb; /* gray-50 */
+}
+
+/* ========================================
+   Responsive Adjustments
+   ======================================== */
+
+@media (max-width: 768px) {
+  .wx-gantt {
+    font-size: 0.75rem;
+  }
+
+  .wx-bar-text {
+    font-size: 0.75rem;
+  }
+
+  .wx-header {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .wx-tooltip {
+    max-width: 250px;
+    font-size: 0.75rem;
+  }
+}
+
+/* ========================================
+   Accessibility
+   ======================================== */
+
+.wx-bar:focus-visible,
+.wx-milestone:focus-visible {
+  outline: 2px solid #3b82f6; /* primary-500 */
+  outline-offset: 2px;
+}
+
+.wx-tree-icon:focus-visible {
+  outline: 2px solid #3b82f6; /* primary-500 */
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ========================================
+   Loading State
+   ======================================== */
+
+.wx-gantt-loading {
+  display: flex;
+  align-items: center;
+  justify-center;
+  height: 600px;
+  color: #6b7280; /* gray-500 */
+}
+
+.dark .wx-gantt-loading {
+  color: #9ca3af; /* gray-400 */
+}

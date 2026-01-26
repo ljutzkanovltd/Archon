@@ -25,7 +25,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { apiClient } from "@/lib/apiClient";
+import apiClient from "@/lib/apiClient";
 import { ExportButton } from "@/components/ExportButton";
 
 interface TaskMetricsViewProps {

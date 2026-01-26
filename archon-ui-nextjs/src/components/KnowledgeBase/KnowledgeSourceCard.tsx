@@ -3,10 +3,11 @@
 import { KnowledgeSource } from "@/lib/types";
 import {
   Eye, Edit, Trash2, RefreshCw, Tag, FileText, Code,
-  Clock, ExternalLink, Plus, X, MoreHorizontal, Globe, Terminal
+  Clock, ExternalLink, Plus, X, MoreHorizontal, Globe, Terminal, Link2
 } from "lucide-react";
 import { Tooltip } from "flowbite-react";
 import { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 interface KnowledgeSourceCardProps {
   source: KnowledgeSource;
@@ -63,6 +64,34 @@ export function KnowledgeSourceCard({
   const [localTags, setLocalTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
   const tagInputRef = useRef<HTMLInputElement>(null);
+  const [showLinkedProjects, setShowLinkedProjects] = useState(false);
+
+  // Fetch linked projects
+  const { data: linkedProjects } = useQuery({
+    queryKey: ["source-linked-projects", source.source_id],
+    queryFn: async () => {
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("archon_token")
+          : null;
+
+      const response = await fetch(
+        `http://localhost:8181/api/knowledge/sources/${source.source_id}/projects`,
+        {
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return { linked_projects: [], total_links: 0 };
+      }
+
+      return await response.json();
+    },
+    enabled: !!source.source_id,
+  });
 
   useEffect(() => {
     const tags = source.tags?.length > 0 ? source.tags : (source.metadata?.tags || []);
@@ -130,6 +159,18 @@ export function KnowledgeSourceCard({
               <span className={`rounded-full px-2 py-1 text-xs font-medium ${getLevelColor(level)}`}>
                 {level}
               </span>
+            )}
+            {/* Linked Projects Badge */}
+            {linkedProjects && linkedProjects.total_links > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowLinkedProjects(!showLinkedProjects)}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-800/40 transition-colors"
+                title="Click to view linked projects"
+              >
+                <Link2 className="h-3 w-3" />
+                <span>{linkedProjects.total_links} {linkedProjects.total_links === 1 ? 'project' : 'projects'}</span>
+              </button>
             )}
           </div>
 
@@ -341,6 +382,45 @@ export function KnowledgeSourceCard({
           </div>
         </div>
       </div>
+
+      {/* Linked Projects Dropdown */}
+      {showLinkedProjects && linkedProjects && linkedProjects.linked_projects && linkedProjects.linked_projects.length > 0 && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-lg border-2 border-purple-200 bg-white dark:bg-gray-800 dark:border-purple-700 shadow-lg max-h-60 overflow-y-auto">
+          <div className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h5 className="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1">
+                <Link2 className="h-3 w-3" />
+                Linked Projects
+              </h5>
+              <button
+                type="button"
+                onClick={() => setShowLinkedProjects(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                aria-label="Close"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {linkedProjects.linked_projects.map((link: any) => (
+                <a
+                  key={link.project_id}
+                  href={`/projects/${link.project_id}`}
+                  className="block p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  onClick={() => setShowLinkedProjects(false)}
+                >
+                  <div className="text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline">
+                    {link.project_title}
+                  </div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                    Linked {formatDate(link.linked_at)}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

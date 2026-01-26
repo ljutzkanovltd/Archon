@@ -70,6 +70,56 @@ When implementing fixes or new features:
 
 ## Recent Fixes and Patterns
 
+### Flowbite Button Purple Color Fix (Jan 26, 2026) - CORRECTED
+
+**Problem**: "Link from Global KB" button crashes with "Element type is invalid: expected a string... but got: undefined"
+
+**Root Cause**:
+1. TypeScript errors in LinkFromGlobalKBModal (toast.warning, Set<string> type inference)
+2. **CRITICAL ERROR**: Mixing `color="info"` with custom purple `className` causes Flowbite Button to fail
+3. **DISCOVERY**: `color="purple"` IS SUPPORTED in Flowbite React v0.12.13+!
+
+**Fix Journey** (3 iterations):
+1. ❌ First attempt: Used `color="info"` + custom className → Still crashed
+2. ❌ Second attempt: Removed `color` prop entirely → Crashed worse (no theme initialization)
+3. ✅ **Final solution**: Used `color="purple"` (built-in, fully supported)
+
+**Corrected Files**:
+- `LinkFromGlobalKBModal.tsx:362-366` - Changed to `color="purple"` (2 buttons)
+- `LinkFromGlobalKBModal.tsx:384-387` - Changed to `color="purple"` (modal footer)
+- `ProjectDocumentsTab.tsx:261-265` - Changed to `color="purple"` (trigger button)
+- Fixed TypeScript errors: toast.warning → toast.error, explicit Set<string>
+
+**Documentation**:
+- `.claude/docs/UI_DESIGN_SYSTEM.md` - Updated with CORRECT purple pattern
+- Research doc: `docs/research/flowbite-button-purple-research.md`
+- Linked to CLAUDE.md and MEMORY.md
+
+**CRITICAL LEARNING**:
+```tsx
+// ✅ CORRECT - Purple is built-in!
+<Button color="purple" onClick={handleClick}>
+  Purple Button
+</Button>
+
+// ❌ WRONG - Causes "Element type is invalid" error
+<Button className="bg-purple-600 hover:bg-purple-700">
+  Broken Button
+</Button>
+
+// ❌ WRONG - Mixing color with custom className breaks component
+<Button color="info" className="bg-purple-600">
+  Broken Button
+</Button>
+```
+
+**Why Broken Patterns Fail**:
+- Flowbite Button REQUIRES `color` prop to initialize internal theme
+- Without `color`, theme resolver accesses `theme.button.color[undefined]` → returns `undefined`
+- React receives `undefined` component type → "Element type is invalid" error
+
+**Available Colors**: blue, purple, pink, gray, green, red, cyan, yellow, dark, light, indigo, lime, teal, alternative
+
 ### Azure OpenAI Settings Persistence (Dec 15, 2025)
 
 **Problem**: Configuration fields not persisting across page reloads
@@ -128,6 +178,55 @@ When adding new LLM providers, update:
 ---
 
 ## Code Patterns to Remember
+
+### Frontend: Flowbite UI Component Pattern
+
+**Location**: All frontend components
+**Documentation**: `.claude/docs/UI_DESIGN_SYSTEM.md`
+
+**Key Rules**:
+1. **Use Flowbite React components** (Button, Badge, Modal, etc.) - NEVER use native HTML elements for UI components
+2. **Supported colors ONLY**: blue, gray, success, failure, info, warning, dark, light, alternative
+3. **For custom colors** (purple, pink, etc.): Use base color + className override
+
+**Purple Button Pattern**:
+```tsx
+import { Button } from "flowbite-react";
+
+// ✅ CORRECT - Use built-in purple color
+<Button
+  color="purple"  // Built-in support in Flowbite React v0.12.13+
+  onClick={handleClick}
+  size="sm"
+>
+  <HiIcon className="mr-2 h-4 w-4" />
+  Button Text
+</Button>
+
+// ❌ WRONG - Never omit color prop
+<Button className="bg-purple-600" onClick={handleClick}>
+  Broken Button (causes "Element type is invalid" error)
+</Button>
+```
+
+**Toast Notification Pattern**:
+```tsx
+import toast from "react-hot-toast";
+
+// ✅ CORRECT
+toast.success("Success message");
+toast.error("Error message");
+toast.error("Warning message", { icon: '⚠️', duration: 5000 });
+
+// ❌ WRONG - toast.warning doesn't exist
+toast.warning("Warning message");
+```
+
+**Dark Mode Support**:
+```tsx
+// ALWAYS include dark mode variants
+<div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+```
 
 ### Frontend: Settings Persistence Pattern
 

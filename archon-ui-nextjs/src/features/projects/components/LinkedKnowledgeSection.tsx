@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Badge, Spinner, Button, Modal } from "flowbite-react";
+import { Badge, Spinner, Button, Modal, ModalHeader, ModalBody, ModalFooter } from "flowbite-react";
 import {
   HiGlobeAlt,
   HiCheckCircle,
   HiExternalLink,
   HiClock,
   HiX,
+  HiDocumentText,
 } from "react-icons/hi";
 import { formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
@@ -19,15 +20,24 @@ interface LinkedKnowledgeSectionProps {
 }
 
 interface LinkedKBItem {
-  link_id: string;
-  source_id: string;
-  title: string;
-  url?: string;
-  content_preview?: string;
+  id: string;  // Link ID from archon_knowledge_links table
+  source_id: string;  // Project ID (not used for delete)
   knowledge_type: string;
+  knowledge_id: string;  // Page UUID
   relevance_score: number;
-  linked_at: string;
-  linked_by: string;
+  created_at: string;
+  created_by: string;
+  knowledge_item: {  // Nested knowledge item details
+    source_id: string;  // THIS is the knowledge source ID we need for delete
+    title: string;
+    url?: string;
+    content?: string;
+    content_preview?: string;
+    page_count?: number;  // Number of pages aggregated (for RAG sources)
+    avg_relevance?: number;  // Average relevance across all pages
+    max_relevance?: number;  // Maximum relevance score
+    [key: string]: any;
+  };
 }
 
 /**
@@ -130,7 +140,7 @@ export function LinkedKnowledgeSection({
         /* Linked Items Grid */
         <div className="grid gap-4 md:grid-cols-2">
           {links.map((item) => (
-            <LinkedKBCard key={item.link_id} item={item} projectId={projectId} />
+            <LinkedKBCard key={item.id} item={item} projectId={projectId} />
           ))}
         </div>
       )}
@@ -160,7 +170,7 @@ function LinkedKBCard({ item, projectId }: { item: LinkedKBItem; projectId: stri
           : null;
 
       const response = await fetch(
-        `http://localhost:8181/api/projects/${projectId}/knowledge/sources/${item.source_id}/link`,
+        `http://localhost:8181/api/projects/${projectId}/knowledge/sources/${item.knowledge_item.source_id}/link`,
         {
           method: "DELETE",
           headers: {
@@ -189,109 +199,132 @@ function LinkedKBCard({ item, projectId }: { item: LinkedKBItem; projectId: stri
   return (
     <>
       <div className="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
-        {/* Header */}
+        {/* Header Row: Icon + Title + Badges + Actions */}
         <div className="flex items-start justify-between gap-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <HiCheckCircle className="h-5 w-5 flex-shrink-0 text-green-500" />
-              <h4 className="font-medium text-gray-900 dark:text-white">
-                {item.title}
-              </h4>
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            {/* Icon */}
+            <div className="flex-shrink-0 mt-0.5">
+              <HiDocumentText className="h-5 w-5 text-cyan-500" />
             </div>
 
-          {/* URL */}
-          {item.url && (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
+            {/* Title + URL */}
+            <div className="flex-1 min-w-0">
+              <h4 className="font-medium text-gray-900 dark:text-white truncate">
+                {item.knowledge_item.title}
+              </h4>
+
+              {/* URL */}
+              {item.knowledge_item.url && (
+                <a
+                  href={item.knowledge_item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="truncate">{item.knowledge_item.url}</span>
+                  <HiExternalLink className="h-3 w-3 flex-shrink-0" />
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Right Side: Badges + Unlink Button */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Relevance Score Badge */}
+            <Badge color={getRelevanceColor(score)} size="sm">
+              {score}%
+            </Badge>
+
+            {/* Status Badges */}
+            <KnowledgeStatusBadgeGroup types={["global", "linked"]} size="sm" />
+
+            {/* Unlink Button */}
+            <Button
+              size="xs"
+              color="failure"
+              onClick={() => setShowUnlinkModal(true)}
+              disabled={unlinkMutation.isPending}
+              title="Unlink from project"
             >
-              {item.url}
-              <HiExternalLink className="h-3 w-3" />
-            </a>
-          )}
+              <HiX className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
 
-          {/* Preview */}
-          {item.content_preview && (
-            <p className="mt-2 line-clamp-2 text-sm text-gray-600 dark:text-gray-400">
-              {item.content_preview}
+        {/* Content Preview / Page Count */}
+        <div className="mt-3">
+          {item.knowledge_item.page_count ? (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-semibold text-purple-600 dark:text-purple-400">
+                {item.knowledge_item.page_count} pages
+              </span>
+              <span className="text-gray-600 dark:text-gray-400">
+                linked from this source
+              </span>
+            </div>
+          ) : item.knowledge_item.content_preview ? (
+            <p className="line-clamp-2 text-sm text-gray-600 dark:text-gray-400">
+              {item.knowledge_item.content_preview}
             </p>
-          )}
+          ) : null}
         </div>
 
-        {/* Badges & Unlink Button */}
-        <div className="flex flex-col items-end gap-2">
+        {/* Metadata Footer */}
+        <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="font-medium">Type:</span> {item.knowledge_type.replace("_", " ")}
+            </span>
+            {item.created_by && (
+              <span className="flex items-center gap-1">
+                <span className="font-medium">Linked by:</span> {item.created_by}
+              </span>
+            )}
+          </div>
+
+          <span className="flex items-center gap-1">
+            <HiClock className="h-3 w-3" />
+            {formatDistanceToNow(new Date(item.created_at), {
+              addSuffix: true,
+            })}
+          </span>
+        </div>
+      </div>
+
+      {/* Unlink Confirmation Modal */}
+      <Modal show={showUnlinkModal} onClose={() => setShowUnlinkModal(false)} size="md">
+        <ModalHeader>Unlink Knowledge Item?</ModalHeader>
+        <ModalBody>
+          <div className="space-y-4">
+            <p className="text-base text-gray-900 dark:text-white">
+              Are you sure you want to unlink <strong>"{item.knowledge_item.title}"</strong> from this project?
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              This won't delete the knowledge item from the global knowledge base, it will just remove the link to this project.
+            </p>
+          </div>
+        </ModalBody>
+        <ModalFooter>
           <Button
-            size="xs"
             color="failure"
-            onClick={() => setShowUnlinkModal(true)}
+            onClick={() => unlinkMutation.mutate()}
             disabled={unlinkMutation.isPending}
-            title="Unlink from project"
           >
-            <HiX className="h-3 w-3" />
+            {unlinkMutation.isPending ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Unlinking...
+              </>
+            ) : (
+              "Unlink"
+            )}
           </Button>
-
-          <Badge color={getRelevanceColor(score)} size="sm">
-            {score}%
-          </Badge>
-
-          <KnowledgeStatusBadgeGroup types={["global", "linked"]} size="sm" />
-        </div>
-      </div>
-
-      {/* Metadata */}
-      <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-        <span>Type: {item.knowledge_type.replace("_", " ")}</span>
-        <span className="flex items-center gap-1">
-          <HiClock className="h-3 w-3" />
-          Linked{" "}
-          {formatDistanceToNow(new Date(item.linked_at), {
-            addSuffix: true,
-          })}
-        </span>
-      </div>
-
-      {item.linked_by && (
-        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          by {item.linked_by}
-        </div>
-      )}
-    </div>
-
-    {/* Unlink Confirmation Modal */}
-    <Modal show={showUnlinkModal} onClose={() => setShowUnlinkModal(false)} size="md">
-      <Modal.Header>Unlink Knowledge Item?</Modal.Header>
-      <Modal.Body>
-        <div className="space-y-4">
-          <p className="text-base text-gray-900 dark:text-white">
-            Are you sure you want to unlink <strong>"{item.title}"</strong> from this project?
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            This won't delete the knowledge item from the global knowledge base, it will just remove the link to this project.
-          </p>
-        </div>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button
-          color="failure"
-          onClick={() => unlinkMutation.mutate()}
-          disabled={unlinkMutation.isPending}
-        >
-          {unlinkMutation.isPending ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              Unlinking...
-            </>
-          ) : (
-            "Unlink"
-          )}
-        </Button>
-        <Button color="gray" onClick={() => setShowUnlinkModal(false)}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
-  </>
+          <Button color="gray" onClick={() => setShowUnlinkModal(false)}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </>
   );
 }

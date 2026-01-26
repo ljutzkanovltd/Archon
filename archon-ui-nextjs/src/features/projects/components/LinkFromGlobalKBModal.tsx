@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   TextInput,
   Button,
   Spinner,
@@ -71,20 +74,60 @@ export function LinkFromGlobalKBModal({
           ? localStorage.getItem("archon_token")
           : null;
 
-      const response = await fetch(
-        `http://localhost:8181/api/knowledge/search?q=${encodeURIComponent(searchQuery)}&limit=20&project_id=${projectId}`,
-        {
-          headers: {
-            ...(token && { Authorization: `Bearer ${token}` }),
-          },
-        }
-      );
+      // Fetch both search results and linked knowledge in parallel
+      const [searchResponse, linkedResponse] = await Promise.all([
+        fetch(
+          `http://localhost:8181/api/knowledge-items?search=${encodeURIComponent(searchQuery)}&per_page=20`,
+          {
+            headers: {
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          }
+        ),
+        fetch(
+          `http://localhost:8181/api/projects/${projectId}/knowledge`,
+          {
+            headers: {
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          }
+        ),
+      ]);
 
-      if (!response.ok) {
+      if (!searchResponse.ok) {
         throw new Error("Failed to search knowledge base");
       }
 
-      return await response.json();
+      const searchData = await searchResponse.json();
+
+      // Get linked source IDs (handle if linkedResponse fails)
+      let linkedSourceIds = new Set<string>();
+      if (linkedResponse.ok) {
+        const linkedData = await linkedResponse.json();
+
+        // Backend returns { links: [...], count: N } where links contain page-level data
+        // Extract source_id from each link's knowledge_item
+        const sourceIds = (linkedData.links || [])
+          .map((link: any) => link.knowledge_item?.source_id)
+          .filter(Boolean);
+
+        linkedSourceIds = new Set(sourceIds);
+      }
+
+      // Map backend format to frontend format
+      const results = searchData.items.map((item: any) => {
+        const isLinked = linkedSourceIds.has(item.source_id);
+        return {
+          source_id: item.source_id,
+          title: item.title,
+          url: item.url,
+          content_preview: item.metadata?.description || "",
+          knowledge_type: item.metadata?.knowledge_type || "technical",
+          is_linked: isLinked,
+        };
+      });
+
+      return { results };
     },
     enabled: searchQuery.length >= 3,
   });
@@ -99,8 +142,8 @@ export function LinkFromGlobalKBModal({
 
       // Link all selected items with Promise.allSettled for partial success handling
       const results = await Promise.allSettled(
-        sourceIds.map((sourceId) =>
-          fetch(
+        sourceIds.map(async (sourceId) => {
+          const res = await fetch(
             `http://localhost:8181/api/projects/${projectId}/knowledge/sources/${sourceId}/link`,
             {
               method: "POST",
@@ -110,34 +153,64 @@ export function LinkFromGlobalKBModal({
               },
               body: JSON.stringify({
                 linked_by: "User",
-                relevance_score: 1.0, // Manual link = 100% relevance
               }),
             }
-          ).then((res) => {
-            if (!res.ok) {
-              throw new Error(`Failed to link item ${sourceId}`);
+          );
+
+          if (!res.ok) {
+            const errorData = await res.json();
+
+            // Handle "already linked" case with friendly message
+            if (errorData.already_linked) {
+              throw new Error(`already_linked:${errorData.source?.title || "Source"}`);
             }
-            return res.json();
-          })
-        )
+
+            throw new Error(`Failed to link item ${sourceId}`);
+          }
+
+          return res.json();
+        })
       );
 
-      // Count successes and failures
+      // Count successes, failures, and already-linked
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
-      const failed = results.filter((r) => r.status === "rejected").length;
+      const alreadyLinked = results.filter(
+        (r) => r.status === "rejected" &&
+        (r.reason as Error).message.startsWith("already_linked:")
+      );
+      const failed = results.filter(
+        (r) => r.status === "rejected" &&
+        !(r.reason as Error).message.startsWith("already_linked:")
+      ).length;
 
-      return { succeeded, failed, total: sourceIds.length };
+      return {
+        succeeded,
+        failed,
+        alreadyLinked: alreadyLinked.length,
+        alreadyLinkedNames: alreadyLinked.map(r =>
+          (r.reason as Error).message.replace("already_linked:", "")
+        ),
+        total: sourceIds.length
+      };
     },
-    onSuccess: ({ succeeded, failed, total }) => {
-      if (failed === 0) {
+    onSuccess: ({ succeeded, failed, alreadyLinked, alreadyLinkedNames, total }) => {
+      // Show appropriate message based on results
+      if (failed === 0 && alreadyLinked === 0) {
         toast.success(
           `Successfully linked ${succeeded} item${succeeded > 1 ? "s" : ""}`
         );
+      } else if (alreadyLinked > 0 && failed === 0) {
+        toast.error(
+          `${alreadyLinked} source${alreadyLinked > 1 ? "s" : ""} already linked to project: ${alreadyLinkedNames.join(", ")}`,
+          { icon: '⚠️', duration: 6000 }
+        );
       } else {
-        toast.warning(
-          `Linked ${succeeded}/${total} items (${failed} failed)`
+        toast.error(
+          `Linked ${succeeded}/${total} items (${failed} failed${alreadyLinked > 0 ? `, ${alreadyLinked} already linked` : ""})`,
+          { icon: '⚠️', duration: 5000 }
         );
       }
+
       queryClient.invalidateQueries({
         queryKey: ["knowledge-suggestions", projectId],
       });
@@ -166,7 +239,7 @@ export function LinkFromGlobalKBModal({
 
   const handleSelectAll = () => {
     const unlinkableResults = results.filter((r: KBSearchResult) => !r.is_linked);
-    const allIds = new Set(unlinkableResults.map((r: KBSearchResult) => r.source_id));
+    const allIds: Set<string> = new Set(unlinkableResults.map((r: KBSearchResult) => r.source_id));
     setSelectedItems(allIds);
   };
 
@@ -201,8 +274,8 @@ export function LinkFromGlobalKBModal({
       )}
 
       <Modal show={isOpen} onClose={onClose} size="3xl">
-        <Modal.Header>Link from Global Knowledge Base</Modal.Header>
-        <Modal.Body>
+        <ModalHeader>Link from Global Knowledge Base</ModalHeader>
+        <ModalBody>
           <div className="space-y-4">
           {/* Search Input */}
           <TextInput
@@ -361,6 +434,7 @@ export function LinkFromGlobalKBModal({
                   <Button
                     size="sm"
                     color="purple"
+                    className="bg-purple-700 hover:bg-purple-800 text-white"
                     onClick={handleLink}
                     disabled={linkMutation.isPending}
                   >
@@ -378,10 +452,11 @@ export function LinkFromGlobalKBModal({
             </div>
           )}
         </div>
-      </Modal.Body>
-      <Modal.Footer>
+      </ModalBody>
+      <ModalFooter>
         <Button
           color="purple"
+          className="bg-purple-700 hover:bg-purple-800 text-white"
           onClick={handleLink}
           disabled={selectedItems.size === 0 || linkMutation.isPending}
         >
@@ -397,7 +472,7 @@ export function LinkFromGlobalKBModal({
         <Button color="gray" onClick={onClose}>
           Cancel
         </Button>
-      </Modal.Footer>
+      </ModalFooter>
     </Modal>
     </>
   );

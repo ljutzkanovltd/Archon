@@ -167,6 +167,7 @@ class SourceLinkingService:
             "archived_by": project.get("archived_by"),
             "task_count": project.get("task_count", 0),
             "document_count": project.get("document_count", 0),
+            "linked_knowledge_count": project.get("linked_knowledge_count", 0),
         }
 
     def format_projects_with_sources(self, projects: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -17,3 +17,7 @@ export { ProjectDocumentsTab } from "./ProjectDocumentsTab";
 export { DocumentPrivacyBadge } from "./DocumentPrivacyBadge";
 export { EnhancedDocumentUpload } from "./EnhancedDocumentUpload";
 export { UploadProgress } from "./UploadProgress";
+export { DocumentViewerModal } from "./DocumentViewerModal";
+export { LinkFromGlobalKBModal } from "./LinkFromGlobalKBModal";
+export { LinkedKnowledgeSection } from "./LinkedKnowledgeSection";
+export { KnowledgeStatusBadge } from "./KnowledgeStatusBadge";

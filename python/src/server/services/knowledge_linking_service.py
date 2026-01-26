@@ -148,6 +148,10 @@ class KnowledgeLinkingService:
         """
         Get all knowledge items linked to a source entity.
 
+        IMPORTANT: Returns SOURCE-LEVEL aggregation for RAG pages.
+        Instead of 111 individual page entries, returns 1 entry per knowledge source
+        with aggregated metadata (page count, relevance scores, etc.).
+
         Args:
             source_type: Type of source entity (project, task, sprint)
             source_id: UUID of the source entity
@@ -175,9 +179,90 @@ class KnowledgeLinkingService:
 
             links = links_response.data or []
 
-            # Fetch full knowledge items for each link
-            enriched_links = []
+            # Group RAG page links by their source_id for aggregation
+            # This transforms 111 page links into 1 source-level entry
+            rag_page_groups = {}
+            non_rag_links = []
+
             for link in links:
+                if link["knowledge_type"] == "rag_page":
+                    page_id = link["knowledge_id"]
+
+                    # Get page metadata to find source_id
+                    page_response = (
+                        self.supabase_client.table("archon_crawled_pages")
+                        .select("source_id")
+                        .eq("page_id", page_id)
+                        .limit(1)
+                        .execute()
+                    )
+
+                    if page_response.data:
+                        kb_source_id = page_response.data[0]["source_id"]
+
+                        if kb_source_id not in rag_page_groups:
+                            rag_page_groups[kb_source_id] = {
+                                "source_id": kb_source_id,
+                                "link_ids": [],
+                                "page_count": 0,
+                                "max_relevance": 0.0,
+                                "avg_relevance": 0.0,
+                                "created_by": link.get("created_by", "Unknown"),
+                                "created_at": link.get("created_at"),
+                            }
+
+                        group = rag_page_groups[kb_source_id]
+                        group["link_ids"].append(link["id"])
+                        group["page_count"] += 1
+
+                        # Track relevance scores
+                        if link.get("relevance_score"):
+                            group["max_relevance"] = max(group["max_relevance"], link["relevance_score"])
+                            group["avg_relevance"] += link["relevance_score"]
+                else:
+                    # Non-RAG links (documents, code examples) stay individual
+                    non_rag_links.append(link)
+
+            # Calculate average relevance and fetch source details
+            enriched_links = []
+
+            for kb_source_id, group in rag_page_groups.items():
+                if group["page_count"] > 0:
+                    group["avg_relevance"] = group["avg_relevance"] / group["page_count"]
+
+                # Fetch source metadata
+                source_response = (
+                    self.supabase_client.table("archon_sources")
+                    .select("*")
+                    .eq("source_id", kb_source_id)
+                    .execute()
+                )
+
+                if source_response.data:
+                    source = source_response.data[0]
+
+                    # Create source-level aggregated entry
+                    enriched_links.append({
+                        "id": group["link_ids"][0],  # Use first link ID for unlink operations
+                        "source_id": source_id,  # Project/task/sprint ID
+                        "knowledge_type": "rag_page",
+                        "knowledge_id": group["link_ids"][0],  # First page ID (not used for display)
+                        "relevance_score": group["max_relevance"],  # Use max relevance for sorting
+                        "created_by": group["created_by"],
+                        "created_at": group["created_at"],
+                        "knowledge_item": {
+                            "source_id": kb_source_id,  # THIS is the knowledge source ID
+                            "title": source.get("title", "Unknown"),
+                            "url": source.get("url"),
+                            "content_preview": f"{group['page_count']} pages linked from this source",
+                            "page_count": group["page_count"],
+                            "avg_relevance": group["avg_relevance"],
+                            "max_relevance": group["max_relevance"],
+                        }
+                    })
+
+            # Process non-RAG links individually (documents, code examples)
+            for link in non_rag_links:
                 knowledge_item = await self._get_knowledge_item(
                     link["knowledge_type"],
                     link["knowledge_id"]
@@ -187,6 +272,15 @@ class KnowledgeLinkingService:
                     **link,
                     "knowledge_item": knowledge_item
                 })
+
+            # Sort by relevance score (descending)
+            enriched_links.sort(key=lambda x: x.get("relevance_score", 0.0), reverse=True)
+
+            logger.info(
+                f"Aggregated linked knowledge for {source_type} {source_id}: "
+                f"{len(rag_page_groups)} sources ({sum(g['page_count'] for g in rag_page_groups.values())} pages), "
+                f"{len(non_rag_links)} individual items"
+            )
 
             return True, {
                 "links": enriched_links,
@@ -410,6 +504,7 @@ class KnowledgeLinkingService:
             result_dict contains:
                 - links_created: Number of links created
                 - source: Source details
+                - already_linked: Boolean indicating if source was already linked
         """
         try:
             # Verify project exists
@@ -437,6 +532,8 @@ class KnowledgeLinkingService:
             source = source_response.data[0]
 
             # Get all pages for this source
+            # Note: archon_crawled_pages contains multiple chunks per page (same page_id),
+            # so we need to deduplicate to avoid creating duplicate links
             pages_response = (
                 self.supabase_client.table("archon_crawled_pages")
                 .select("page_id")
@@ -444,25 +541,67 @@ class KnowledgeLinkingService:
                 .execute()
             )
 
-            pages = pages_response.data or []
+            # Deduplicate page_ids (since one page can have multiple chunks)
+            all_pages = pages_response.data or []
+            unique_page_ids = list(set(p["page_id"] for p in all_pages if p.get("page_id")))
+            pages = [{"page_id": pid} for pid in unique_page_ids]
+
+            logger.info(f"Source {source_id}: {len(all_pages)} chunks, {len(unique_page_ids)} unique pages")
 
             if not pages:
                 return False, {"error": f"Source {source_id} has no indexed pages"}
 
-            # Check if any links already exist
-            existing_links_response = (
+            # SOURCE-LEVEL DUPLICATE DETECTION: Check if ANY page from this source is already linked
+            # This prevents re-linking the same source to the project
+            page_ids = [p["page_id"] for p in pages]
+
+            # Check first batch to see if source is already linked
+            sample_batch = page_ids[:min(100, len(page_ids))]
+            sample_check_response = (
                 self.supabase_client.table("archon_knowledge_links")
                 .select("knowledge_id")
                 .eq("source_type", "project")
                 .eq("source_id", project_id)
                 .eq("knowledge_type", "rag_page")
-                .in_("knowledge_id", [p["page_id"] for p in pages])
+                .in_("knowledge_id", sample_batch)
+                .limit(1)
                 .execute()
             )
 
-            existing_page_ids = set(
-                link["knowledge_id"] for link in (existing_links_response.data or [])
-            )
+            if sample_check_response.data:
+                # Source is already linked (at least one page exists)
+                logger.warning(f"Source {source_id} already linked to project {project_id}")
+                return False, {
+                    "error": "Source already linked",
+                    "message": f"This knowledge source is already linked to the project. Each source can only be linked once.",
+                    "source": {
+                        "source_id": source_id,
+                        "title": source.get("title", "Unknown"),
+                        "url": source.get("url"),
+                    },
+                    "already_linked": True
+                }
+
+            # Check if any links already exist
+            # Batch the query to avoid "URL component 'query' too long" error
+            page_ids = [p["page_id"] for p in pages]
+            existing_page_ids = set()
+            batch_size = 100  # Process 100 page IDs at a time
+
+            for i in range(0, len(page_ids), batch_size):
+                batch = page_ids[i:i + batch_size]
+                existing_links_response = (
+                    self.supabase_client.table("archon_knowledge_links")
+                    .select("knowledge_id")
+                    .eq("source_type", "project")
+                    .eq("source_id", project_id)
+                    .eq("knowledge_type", "rag_page")
+                    .in_("knowledge_id", batch)
+                    .execute()
+                )
+                existing_page_ids.update(
+                    link["knowledge_id"] for link in (existing_links_response.data or [])
+                )
 
             # Create links for pages that aren't already linked
             links_to_create = []
@@ -547,6 +686,8 @@ class KnowledgeLinkingService:
                 return False, {"error": f"Knowledge source {source_id} not found"}
 
             # Get all pages for this source
+            # Note: archon_crawled_pages contains multiple chunks per page (same page_id),
+            # so we need to deduplicate to avoid PostgreSQL IN clause issues
             pages_response = (
                 self.supabase_client.table("archon_crawled_pages")
                 .select("page_id")
@@ -554,10 +695,14 @@ class KnowledgeLinkingService:
                 .execute()
             )
 
-            page_ids = [p["page_id"] for p in (pages_response.data or [])]
+            # Deduplicate page_ids (since one page can have multiple chunks)
+            all_pages = pages_response.data or []
+            unique_page_ids = list(set(p["page_id"] for p in all_pages if p.get("page_id")))
 
-            if not page_ids:
+            if not unique_page_ids:
                 return False, {"error": f"Source {source_id} has no indexed pages"}
+
+            logger.info(f"Unlinking source {source_id}: {len(all_pages)} chunks, {len(unique_page_ids)} unique pages")
 
             # Delete all links
             delete_response = (
@@ -566,7 +711,7 @@ class KnowledgeLinkingService:
                 .eq("source_type", "project")
                 .eq("source_id", project_id)
                 .eq("knowledge_type", "rag_page")
-                .in_("knowledge_id", page_ids)
+                .in_("knowledge_id", unique_page_ids)
                 .execute()
             )
 

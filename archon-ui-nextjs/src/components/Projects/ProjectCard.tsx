@@ -1,9 +1,10 @@
 "use client";
 
 import { Card, Badge, Button } from "flowbite-react";
-import { HiFolder, HiClock, HiDocument, HiClipboardList, HiArchive, HiPencil, HiEye } from "react-icons/hi";
+import { HiFolder, HiClock, HiDocument, HiClipboardList, HiArchive, HiPencil, HiEye, HiLink } from "react-icons/hi";
 import { Project } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { useRouter } from "next/navigation";
 
 interface ProjectCardProps {
   project: Project;
@@ -28,9 +29,15 @@ export function ProjectCard({
   onEdit,
   onArchive,
 }: ProjectCardProps) {
+  const router = useRouter();
   const formattedDate = formatDistanceToNow(new Date(project.created_at), {
     addSuffix: true,
   });
+
+  const handleKnowledgeBadgeClick = () => {
+    // Navigate to project detail view with knowledge tab active
+    router.push(`/projects/${project.id}?tab=documents`);
+  };
 
   return (
     <Card
@@ -121,6 +128,20 @@ export function ProjectCard({
             <span>
               {project.document_count}{" "}
               {project.document_count === 1 ? "document" : "documents"}
+            </span>
+          </div>
+        )}
+
+        {/* Linked Knowledge Count - Only show if > 0 */}
+        {typeof project.linked_knowledge_count !== "undefined" && project.linked_knowledge_count > 0 && (
+          <div
+            onClick={handleKnowledgeBadgeClick}
+            className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 cursor-pointer hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+            title="Click to view linked knowledge items"
+          >
+            <HiLink className="h-4 w-4" />
+            <span className="font-medium">
+              {project.linked_knowledge_count} KB {project.linked_knowledge_count === 1 ? "item" : "items"}
             </span>
           </div>
         )}

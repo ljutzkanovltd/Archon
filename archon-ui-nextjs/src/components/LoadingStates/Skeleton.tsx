@@ -102,6 +102,13 @@ export function SkeletonText({
   gap = "0.5rem",
   randomizeLastLine = true,
 }: SkeletonTextProps) {
+  // Use deterministic widths based on line index to avoid hydration mismatch
+  // Previously used Math.random() which caused SSR/client mismatch
+  const getLastLineWidth = (lineIndex: number) => {
+    const widths = ["75%", "80%", "65%", "70%", "85%"];
+    return widths[lineIndex % widths.length];
+  };
+
   return (
     <div className="space-y-2" style={{ gap }}>
       {Array.from({ length: lines }).map((_, index) => (
@@ -110,7 +117,7 @@ export function SkeletonText({
           height={lineHeight}
           width={
             randomizeLastLine && index === lines - 1
-              ? `${60 + Math.random() * 30}%`
+              ? getLastLineWidth(index)
               : "100%"
           }
         />

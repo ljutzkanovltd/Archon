@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { HiPlus, HiEye, HiPencil, HiTrash, HiRefresh } from "react-icons/hi";
+import { HiPlus, HiEye, HiPencil, HiTrash, HiRefresh, HiLink } from "react-icons/hi";
 import { knowledgeBaseApi, tasksApi, RecrawlOptions } from "@/lib/apiClient";
 import { KnowledgeSource, CrawlRequest, UploadMetadata } from "@/lib/types";
 import { KnowledgeSourceCard } from "@/components/KnowledgeBase/KnowledgeSourceCard";
@@ -13,6 +13,7 @@ import { SourceInspector } from "@/components/KnowledgeBase/SourceInspector";
 import { CrawlQueueMonitor } from "@/components/KnowledgeBase/CrawlQueueMonitor";
 import { BulkActionsBar } from "@/components/KnowledgeBase/BulkActionsBar";
 import { KnowledgeBaseHeader } from "@/components/KnowledgeBase/KnowledgeBaseHeader";
+import { LinkToProjectModal } from "@/components/KnowledgeBase/LinkToProjectModal";
 import {
   DataTable,
   DataTableColumn,
@@ -39,6 +40,7 @@ export default function KnowledgeBasePage() {
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [sourceToEdit, setSourceToEdit] = useState<KnowledgeSource | null>(null);
   const [recrawlSource, setRecrawlSource] = useState<KnowledgeSource | null>(null);
+  const [sourceToLink, setSourceToLink] = useState<KnowledgeSource | null>(null);
 
   // Additional metrics state
   const [tasksLinked, setTasksLinked] = useState<number>(0);
@@ -478,11 +480,21 @@ export default function KnowledgeBasePage() {
     },
   ];
 
+  const handleLinkToProject = (source: KnowledgeSource) => {
+    setSourceToLink(source);
+  };
+
   const rowButtons = (source: KnowledgeSource): DataTableButton[] => [
     {
       label: "View",
       icon: HiEye,
       onClick: () => handleView(source),
+    },
+    {
+      label: "Link to Project",
+      icon: HiLink,
+      onClick: () => handleLinkToProject(source),
+      variant: "primary",
     },
     {
       label: "Edit",
@@ -744,6 +756,16 @@ export default function KnowledgeBasePage() {
         source={recrawlSource}
         onClose={() => setRecrawlSource(null)}
         onConfirm={handleRecrawlConfirm}
+      />
+
+      {/* Link to Project Modal */}
+      <LinkToProjectModal
+        source={sourceToLink}
+        isOpen={sourceToLink !== null}
+        onClose={() => setSourceToLink(null)}
+        onLinked={() => {
+          loadSources(); // Refresh sources list
+        }}
       />
     </div>
   );

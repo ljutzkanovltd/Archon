@@ -16,6 +16,7 @@ import { EnhancedDocumentUpload } from "./EnhancedDocumentUpload";
 import { DocumentPrivacyBadge } from "./DocumentPrivacyBadge";
 import { LinkFromGlobalKBModal } from "./LinkFromGlobalKBModal";
 import { LinkedKnowledgeSection } from "./LinkedKnowledgeSection";
+import { DocumentViewerModal } from "./DocumentViewerModal";
 import { formatDistanceToNow } from "date-fns";
 
 interface ProjectDocumentsTabProps {
@@ -36,6 +37,20 @@ interface Document {
 }
 
 /**
+ * Helper function to detect file type from filename and mime_type
+ */
+function detectFileType(filename: string, mimeType?: string): 'pdf' | 'markdown' | 'text' | 'image' | 'code' {
+  const ext = filename.split('.').pop()?.toLowerCase();
+
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext || '')) return 'image';
+  if (['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'cpp', 'c', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'cs', 'sh', 'bash', 'sql', 'json', 'xml', 'yaml', 'yml', 'html', 'css', 'scss'].includes(ext || '')) return 'code';
+
+  return 'text';
+}
+
+/**
  * ProjectDocumentsTab - Tab component for managing project documents
  *
  * Features:
@@ -50,6 +65,15 @@ export function ProjectDocumentsTab({ projectId }: ProjectDocumentsTabProps) {
   const queryClient = useQueryClient();
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [showLinkFromKBModal, setShowLinkFromKBModal] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<{
+    filename: string;
+    file_type: 'pdf' | 'markdown' | 'text' | 'image' | 'code';
+    mime_type?: string;
+    content: string;
+    file_path?: string;
+  } | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [isLoadingDocument, setIsLoadingDocument] = useState(false);
 
   // Fetch project documents
   const {
@@ -173,6 +197,29 @@ export function ProjectDocumentsTab({ projectId }: ProjectDocumentsTabProps) {
     }
   };
 
+  const handleDocumentClick = async (doc: Document) => {
+    setIsLoadingDocument(true);
+    try {
+      // Determine file type from filename or mime_type
+      const fileType = detectFileType(doc.title, doc.metadata?.mime_type);
+
+      // For now, use source_url as content (will be enhanced in Task #15 with actual file fetching)
+      setSelectedDocument({
+        filename: doc.title,
+        file_type: fileType,
+        mime_type: doc.metadata?.mime_type,
+        content: doc.source_url || '',
+        file_path: doc.source_url
+      });
+      setIsViewerOpen(true);
+    } catch (error) {
+      console.error('Failed to load document:', error);
+      toast.error('Failed to load document for preview');
+    } finally {
+      setIsLoadingDocument(false);
+    }
+  };
+
   const documents: Document[] = documentsData?.documents || [];
 
   // Loading state
@@ -213,6 +260,7 @@ export function ProjectDocumentsTab({ projectId }: ProjectDocumentsTabProps) {
         <div className="flex gap-2">
           <Button
             color="purple"
+            className="bg-purple-700 hover:bg-purple-800 text-white"
             onClick={() => setShowLinkFromKBModal(true)}
             size="sm"
           >

@@ -136,6 +136,9 @@ class ProjectService:
                 # Batch fetch document counts for all projects (efficient single query)
                 document_counts = self._get_document_counts_batch([p["id"] for p in response.data])
 
+                # Batch fetch linked knowledge counts for all projects (efficient single query)
+                linked_knowledge_counts = self._get_linked_knowledge_counts_batch([p["id"] for p in response.data])
+
                 projects = []
                 for project in response.data:
                     project_id = project["id"]
@@ -155,6 +158,7 @@ class ProjectService:
                         "archived_by": project.get("archived_by"),
                         "task_count": task_counts.get(project_id, 0),
                         "document_count": document_counts.get(project_id, 0),
+                        "linked_knowledge_count": linked_knowledge_counts.get(project_id, 0),
                     })
             else:
                 # Lightweight response for MCP - fetch all data but only return metadata + stats
@@ -179,6 +183,9 @@ class ProjectService:
                 # Batch fetch document counts for all projects (efficient single query)
                 document_counts = self._get_document_counts_batch([p["id"] for p in response.data])
 
+                # Batch fetch linked knowledge counts for all projects (efficient single query)
+                linked_knowledge_counts = self._get_linked_knowledge_counts_batch([p["id"] for p in response.data])
+
                 projects = []
                 for project in response.data:
                     project_id = project["id"]
@@ -201,6 +208,7 @@ class ProjectService:
                         "archived_by": project.get("archived_by"),
                         "task_count": task_counts.get(project_id, 0),
                         "document_count": document_counts.get(project_id, 0),
+                        "linked_knowledge_count": linked_knowledge_counts.get(project_id, 0),
                         "stats": {
                             "docs_count": docs_count,
                             "features_count": features_count,
@@ -295,6 +303,47 @@ class ProjectService:
 
         except Exception as e:
             logger.error(f"Error fetching document counts: {e}")
+            return {}
+
+    def _get_linked_knowledge_counts_batch(self, project_ids: list[str]) -> dict[str, int]:
+        """
+        Batch fetch linked knowledge counts for multiple projects (efficient single query).
+        Counts linked knowledge base items in archon_project_sources table.
+
+        Args:
+            project_ids: List of project UUIDs
+
+        Returns:
+            Dictionary mapping project_id -> linked_knowledge_count
+        """
+        if not project_ids:
+            logger.debug("_get_linked_knowledge_counts_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_linked_knowledge_counts_batch: Fetching linked KB counts for {len(project_ids)} projects")
+
+            # Query all linked knowledge sources for given projects
+            response = (
+                self.supabase_client.table("archon_project_sources")
+                .select("project_id")
+                .in_("project_id", project_ids)
+                .execute()
+            )
+
+            logger.debug(f"_get_linked_knowledge_counts_batch: Got {len(response.data) if response.data else 0} linked KB items")
+
+            # Count linked KB items per project
+            counts = {}
+            for link in response.data:
+                project_id = link["project_id"]
+                counts[project_id] = counts.get(project_id, 0) + 1
+
+            logger.debug(f"_get_linked_knowledge_counts_batch: Counted KB links for {len(counts)} projects")
+            return counts
+
+        except Exception as e:
+            logger.error(f"Error fetching linked knowledge counts: {e}")
             return {}
 
     def get_project(self, project_id: str) -> tuple[bool, dict[str, Any]]:

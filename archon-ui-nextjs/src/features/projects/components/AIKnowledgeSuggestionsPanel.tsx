@@ -12,6 +12,7 @@ import {
   HiRefresh,
   HiX,
   HiInformationCircle,
+  HiLink,
 } from "react-icons/hi";
 import toast from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
@@ -97,6 +98,83 @@ export function AIKnowledgeSuggestionsPanel({
     },
   });
 
+  // Link mutation for individual or bulk linking
+  const linkMutation = useMutation({
+    mutationFn: async (sourceIds: string[]) => {
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("archon_token")
+          : null;
+
+      // Link all with Promise.allSettled for partial success handling
+      const results = await Promise.allSettled(
+        sourceIds.map((sourceId) =>
+          fetch(
+            `http://localhost:8181/api/projects/${projectId}/knowledge/sources/${sourceId}/link`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(token && { Authorization: `Bearer ${token}` }),
+              },
+              body: JSON.stringify({
+                linked_by: "User",
+                relevance_score: 1.0, // Manual link = 100% relevance
+              }),
+            }
+          ).then((res) => {
+            if (!res.ok) {
+              throw new Error(`Failed to link item ${sourceId}`);
+            }
+            return res.json();
+          })
+        )
+      );
+
+      // Count successes and failures
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      return { succeeded, failed, total: sourceIds.length };
+    },
+    onSuccess: ({ succeeded, failed, total }) => {
+      if (failed === 0) {
+        toast.success(
+          `Successfully linked ${succeeded} item${succeeded > 1 ? "s" : ""}`
+        );
+      } else if (succeeded > 0) {
+        toast.success(
+          `Linked ${succeeded}/${total} items (${failed} failed)`,
+          { icon: "⚠️" }
+        );
+      } else {
+        toast.error(`Failed to link all ${total} items`);
+      }
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({
+        queryKey: ["knowledge-suggestions", projectId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["linked-knowledge", projectId],
+      });
+      // Switch to "linked" tab to show newly linked items
+      setActiveTab("linked");
+    },
+    onError: () => {
+      toast.error("Link operation failed");
+    },
+  });
+
+  const handleLinkItem = (sourceId: string, title: string) => {
+    linkMutation.mutate([sourceId]);
+  };
+
+  const handleLinkAllSuggested = () => {
+    if (suggested.length === 0) return;
+    const sourceIds = suggested.map((s) => s.knowledge_id);
+    linkMutation.mutate(sourceIds);
+  };
+
   // Separate suggestions into tabs
   const suggestions = suggestionsData?.suggestions || [];
   const linked = suggestions.filter((s) => s.is_linked);
@@ -130,8 +208,24 @@ export function AIKnowledgeSuggestionsPanel({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-      {/* Header */}
+    <>
+      {/* Loading Overlay */}
+      {linkMutation.isPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+            <Spinner size="xl" />
+            <p className="mt-4 text-center text-base font-medium text-gray-900 dark:text-white">
+              Linking knowledge items...
+            </p>
+            <p className="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
+              Please wait while we process your request
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
+        {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <HiLightBulb className="h-6 w-6 text-purple-500" />
@@ -145,17 +239,32 @@ export function AIKnowledgeSuggestionsPanel({
             </span>
           )}
         </div>
-        <Button
-          size="xs"
-          color="gray"
-          onClick={() => refreshMutation.mutate()}
-          disabled={refreshMutation.isPending}
-          title="Refresh suggestions (clear cache)"
-        >
-          <HiRefresh
-            className={`h-4 w-4 ${refreshMutation.isPending ? "animate-spin" : ""}`}
-          />
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Link All Suggested - Only show on Suggested tab with items */}
+          {activeTab === "suggested" && suggested.length > 0 && (
+            <Button
+              size="xs"
+              color="purple"
+              onClick={handleLinkAllSuggested}
+              disabled={linkMutation.isPending}
+              title={`Link all ${suggested.length} suggested items to this project`}
+            >
+              <HiLink className="mr-1 h-4 w-4" />
+              Link All Suggested ({suggested.length})
+            </Button>
+          )}
+          <Button
+            size="xs"
+            color="gray"
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending}
+            title="Refresh suggestions (clear cache)"
+          >
+            <HiRefresh
+              className={`h-4 w-4 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -202,6 +311,8 @@ export function AIKnowledgeSuggestionsPanel({
                     key={suggestion.knowledge_id}
                     suggestion={suggestion}
                     getRelevanceColor={getRelevanceColor}
+                    onLink={handleLinkItem}
+                    isLinking={linkMutation.isPending}
                   />
                 ))
               )}
@@ -254,7 +365,8 @@ export function AIKnowledgeSuggestionsPanel({
           </AnimatePresence>
         </Tabs.Item>
       </Tabs>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -263,10 +375,14 @@ function SuggestionCard({
   suggestion,
   getRelevanceColor,
   isLinked = false,
+  onLink,
+  isLinking = false,
 }: {
   suggestion: KnowledgeSuggestion;
   getRelevanceColor: (score: number) => string;
   isLinked?: boolean;
+  onLink?: (sourceId: string, title: string) => void;
+  isLinking?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const score = Math.round(suggestion.relevance_score * 100);
@@ -322,7 +438,7 @@ function SuggestionCard({
           )}
         </div>
 
-        {/* Badges */}
+        {/* Badges and Link Button */}
         <div className="flex flex-col items-end gap-2">
           <Badge color={getRelevanceColor(suggestion.relevance_score)} size="sm">
             {score}%
@@ -336,6 +452,20 @@ function SuggestionCard({
             }
             size="sm"
           />
+
+          {/* Link Button - Only show on suggested (not linked) items */}
+          {!isLinked && onLink && (
+            <Button
+              size="xs"
+              color="purple"
+              onClick={() => onLink(suggestion.knowledge_id, suggestion.title)}
+              disabled={isLinking}
+              className="mt-1"
+            >
+              <HiLink className="mr-1 h-3 w-3" />
+              Link
+            </Button>
+          )}
         </div>
       </div>
 
