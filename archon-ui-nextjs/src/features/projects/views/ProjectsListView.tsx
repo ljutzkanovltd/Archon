@@ -272,7 +272,7 @@ export function ProjectsListView() {
         <div className="mb-8">
           <div className="mb-4 flex items-center gap-2">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              📌 Pinned Projects
+              Pinned Projects
             </h2>
             <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-800 dark:bg-brand-900 dark:text-brand-200">
               {pinnedProjects.length}
@@ -293,11 +293,11 @@ export function ProjectsListView() {
         </div>
       )}
 
-      {/* All Projects Section */}
-      {projects.length > 0 && (
+      {/* All Projects Section - Only show header when there are pinned projects for context */}
+      {pinnedProjects.length > 0 && projects.length > 0 && (
         <div className="mb-4">
           <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-            📁 All Projects
+            All Projects
             <span className="ml-2 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-200">
               {projects.length}
             </span>
