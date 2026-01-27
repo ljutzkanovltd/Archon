@@ -21,3 +21,7 @@ export { DocumentViewerModal } from "./DocumentViewerModal";
 export { LinkFromGlobalKBModal } from "./LinkFromGlobalKBModal";
 export { LinkedKnowledgeSection } from "./LinkedKnowledgeSection";
 export { KnowledgeStatusBadge } from "./KnowledgeStatusBadge";
+
+// Project instructions components
+export { RichInstructionsEditor } from "./RichInstructionsEditor";
+export { ProjectInstructionsTab } from "./ProjectInstructionsTab";

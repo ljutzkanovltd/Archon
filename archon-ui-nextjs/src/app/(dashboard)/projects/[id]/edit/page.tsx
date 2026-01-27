@@ -23,6 +23,8 @@ export default function EditProjectPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
+  const [parentProjectId, setParentProjectId] = useState<string | null>(null);
+  const [availableParents, setAvailableParents] = useState<Array<{id: string, title: string}>>([]);
   const [saving, setSaving] = useState(false);
 
   usePageTitle(
@@ -35,12 +37,33 @@ export default function EditProjectPage() {
     fetchProjectById(projectId);
   }, [projectId, fetchProjectById]);
 
+  // Fetch available parent projects (exclude self and archived)
+  useEffect(() => {
+    const fetchParents = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8181"}/api/projects`);
+        if (response.ok) {
+          const data = await response.json();
+          const eligible = data.projects
+            .filter((p: any) => p.id !== projectId && !p.archived)
+            .map((p: any) => ({ id: p.id, title: p.title }))
+            .sort((a: any, b: any) => a.title.localeCompare(b.title));
+          setAvailableParents(eligible);
+        }
+      } catch (error) {
+        console.error("Failed to fetch parent projects:", error);
+      }
+    };
+    fetchParents();
+  }, [projectId]);
+
   // Populate form when project data is loaded
   useEffect(() => {
     if (selectedProject) {
       setTitle(selectedProject.title || "");
       setDescription(selectedProject.description || "");
       setGithubRepo(selectedProject.github_repo || "");
+      setParentProjectId(selectedProject.parent_project_id || null);
     }
   }, [selectedProject]);
 
@@ -53,6 +76,7 @@ export default function EditProjectPage() {
         title,
         description,
         github_repo: githubRepo || undefined,
+        parent_project_id: parentProjectId,
       });
 
       // Refresh project data
@@ -187,6 +211,41 @@ export default function EditProjectPage() {
               className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
               placeholder="https://github.com/username/repo"
             />
+          </div>
+
+          {/* Parent Project Selector */}
+          <div className="mb-6">
+            <label
+              htmlFor="parent_project"
+              className="mb-2 block text-sm font-medium text-gray-900 dark:text-white"
+            >
+              Parent Project (Optional)
+            </label>
+            <select
+              id="parent_project"
+              value={parentProjectId || ""}
+              onChange={(e) => setParentProjectId(e.target.value || null)}
+              className="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">(None - Root Project)</option>
+              {availableParents.map((parent) => (
+                <option key={parent.id} value={parent.id}>
+                  📁 {parent.title}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Select a parent project to create a hierarchy. Leave empty to make this a root project.
+            </p>
+            {parentProjectId && (
+              <button
+                type="button"
+                onClick={() => setParentProjectId(null)}
+                className="mt-2 text-sm text-brand-600 hover:underline dark:text-brand-400"
+              >
+                Clear Parent
+              </button>
+            )}
           </div>
 
           {/* Action Buttons */}

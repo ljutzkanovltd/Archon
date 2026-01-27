@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  */
 
 // Supported view modes
-export type ViewMode = "table" | "grid" | "kanban" | "list" | "sprints" | "timeline" | "members" | "documents";
+export type ViewMode = "table" | "grid" | "kanban" | "list" | "sprints" | "timeline" | "members" | "documents" | "instructions";
 
 // Icon mapping for each view mode
 const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; label: string; tooltip?: string }> = {
@@ -32,6 +32,7 @@ const VIEW_MODE_CONFIG: Record<ViewMode, { icon: FC<{ className?: string }>; lab
   timeline: { icon: HiCalendar, label: "Timeline" },
   members: { icon: HiUsers, label: "Members" },
   documents: { icon: HiDocumentText, label: "Knowledge & Docs", tooltip: "Manage project documents and link global knowledge" },
+  instructions: { icon: HiDocumentText, label: "Instructions", tooltip: "Project instructions and agent context" },
 };
 
 interface ViewModeToggleProps {

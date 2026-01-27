@@ -57,6 +57,7 @@ class UpdateProjectRequest(BaseModel):
     title: str | None = None
     description: str | None = None  # Add description field
     github_repo: str | None = None
+    parent_project_id: str | None = None  # NEW: Update parent-child relationship (UUID or null to remove)
     docs: list[Any] | None = None
     features: list[Any] | None = None
     data: list[Any] | None = None
@@ -394,13 +395,90 @@ async def get_project(project_id: str):
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+async def update_project_hierarchy(
+    supabase_client, project_id: str, new_parent_id: str | None, relationship_type: str = "subproject"
+) -> tuple[bool, str | None]:
+    """
+    Update project hierarchy relationship in archon_project_hierarchy table.
+
+    Args:
+        project_id: Child project ID
+        new_parent_id: New parent ID (or None to remove parent)
+        relationship_type: Type of relationship (default: "subproject")
+
+    Returns:
+        (success, error_message)
+    """
+    try:
+        # First, get current parent relationship
+        current_rel = supabase_client.table("archon_project_hierarchy")\
+            .select("*")\
+            .eq("child_project_id", project_id)\
+            .execute()
+
+        if new_parent_id is None:
+            # Remove parent relationship
+            if current_rel.data and len(current_rel.data) > 0:
+                supabase_client.table("archon_project_hierarchy")\
+                    .delete()\
+                    .eq("child_project_id", project_id)\
+                    .execute()
+                logfire.info(f"Removed parent relationship for project {project_id}")
+            return True, None
+
+        # Update or insert parent relationship
+        if current_rel.data and len(current_rel.data) > 0:
+            # Update existing relationship
+            supabase_client.table("archon_project_hierarchy")\
+                .update({
+                    "parent_project_id": new_parent_id,
+                    "relationship_type": relationship_type
+                })\
+                .eq("child_project_id", project_id)\
+                .execute()
+            logfire.info(f"Updated parent for project {project_id} to {new_parent_id}")
+        else:
+            # Insert new relationship
+            supabase_client.table("archon_project_hierarchy")\
+                .insert({
+                    "parent_project_id": new_parent_id,
+                    "child_project_id": project_id,
+                    "relationship_type": relationship_type
+                })\
+                .execute()
+            logfire.info(f"Created parent relationship: {project_id} -> {new_parent_id}")
+
+        return True, None
+
+    except Exception as e:
+        error_msg = str(e)
+        # Database trigger will throw error if circular reference detected
+        if "circular" in error_msg.lower() or "violates" in error_msg.lower():
+            return False, "Cannot create circular reference: the selected parent is a descendant of this project"
+        logfire.error(f"Failed to update project hierarchy: {error_msg}")
+        return False, error_msg
+
+
 @router.put("/projects/{project_id}")
 async def update_project(project_id: str, request: UpdateProjectRequest):
     """Update a project with comprehensive Logfire monitoring."""
     try:
         supabase_client = get_supabase_client()
 
-        # Build update fields from request
+        # Handle parent_project_id update separately (uses archon_project_hierarchy table)
+        parent_update_requested = hasattr(request, 'parent_project_id')
+        if parent_update_requested:
+            success, error_msg = await update_project_hierarchy(
+                supabase_client, project_id, request.parent_project_id
+            )
+            if not success:
+                logfire.warning(
+                    f"Failed to update project hierarchy | project_id={project_id} | "
+                    f"new_parent_id={request.parent_project_id} | error={error_msg}"
+                )
+                raise HTTPException(status_code=400, detail={"error": error_msg})
+
+        # Build update fields from request (excluding parent_project_id - handled above)
         update_fields = {}
         if request.title is not None:
             update_fields["title"] = request.title

@@ -165,7 +165,10 @@ class SourceLinkingService:
             "archived": project.get("archived", False),
             "archived_at": project.get("archived_at"),
             "archived_by": project.get("archived_by"),
+            "parent_project_id": project.get("parent_project_id"),
+            "has_children": project.get("has_children", False),
             "task_count": project.get("task_count", 0),
+            "accumulated_task_count": project.get("accumulated_task_count", 0),
             "document_count": project.get("document_count", 0),
             "linked_knowledge_count": project.get("linked_knowledge_count", 0),
         }

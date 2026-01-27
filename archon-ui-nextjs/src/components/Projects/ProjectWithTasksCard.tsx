@@ -139,9 +139,25 @@ export function ProjectWithTasksCard({
       </div>
 
       {/* Title */}
-      <h3 className="text-base font-semibold text-gray-900 dark:text-white leading-tight mb-2 line-clamp-2">
-        {project.title}
-      </h3>
+      <Tooltip
+        content={
+          <div className="max-w-xs">
+            <p className="font-semibold">{project.title}</p>
+            {project.description && (
+              <p className="mt-1 text-sm opacity-90">{project.description}</p>
+            )}
+          </div>
+        }
+        placement="top"
+        style="light"
+      >
+        <h3
+          className="text-base font-semibold text-gray-900 dark:text-white leading-tight mb-2 line-clamp-2"
+          aria-label={`${project.title}${project.description ? ` - ${project.description}` : ''}`}
+        >
+          {project.title}
+        </h3>
+      </Tooltip>
 
       {/* Description */}
       {project.description && (

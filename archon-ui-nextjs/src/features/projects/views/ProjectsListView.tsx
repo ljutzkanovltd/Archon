@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { HiPlus, HiEye, HiPencil, HiArchive, HiTrash } from "react-icons/hi";
 import { DataTable, DataTableColumn, DataTableButton, FilterConfig } from "@/components/common/DataTable";
@@ -11,6 +11,7 @@ import { Project } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
 import { ProjectHeader } from "../components";
+import { ProjectExpansionControls } from "@/components/Projects/ProjectExpansionControls";
 
 /**
  * ProjectsListView - List view for projects with DataTable integration
@@ -41,6 +42,13 @@ export function ProjectsListView() {
   useEffect(() => {
     fetchProjects({ per_page: 1000, include_archived: true });
   }, [fetchProjects]);
+
+  // Split projects into pinned and regular for organized display
+  const { pinnedProjects, regularProjects } = useMemo(() => {
+    const pinned = projects.filter((p) => p.pinned);
+    const regular = projects.filter((p) => !p.pinned);
+    return { pinnedProjects: pinned, regularProjects: regular };
+  }, [projects]);
 
   // ========== HANDLERS ==========
 
@@ -253,6 +261,49 @@ export function ProjectsListView() {
         title="Projects"
         description="Manage your projects and track progress"
       />
+
+      {/* Expansion Controls */}
+      <div className="mb-4 flex justify-end">
+        <ProjectExpansionControls />
+      </div>
+
+      {/* Pinned Projects Section */}
+      {pinnedProjects.length > 0 && (
+        <div className="mb-8">
+          <div className="mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              📌 Pinned Projects
+            </h2>
+            <span className="rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-800 dark:bg-brand-900 dark:text-brand-200">
+              {pinnedProjects.length}
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pinnedProjects.map((project) => (
+              <ProjectWithTasksCard
+                key={project.id}
+                project={project}
+                onView={handleView}
+                onEdit={handleEdit}
+                onArchive={handleArchive}
+                onCreateTask={handleCreateTask}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All Projects Section */}
+      {projects.length > 0 && (
+        <div className="mb-4">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+            📁 All Projects
+            <span className="ml-2 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+              {projects.length}
+            </span>
+          </h2>
+        </div>
+      )}
 
       {/* DataTable */}
       <DataTable

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Badge, Button } from "flowbite-react";
+import { Card, Badge, Button, Tooltip } from "flowbite-react";
 import { HiFolder, HiClock, HiDocument, HiClipboardList, HiArchive, HiPencil, HiEye, HiLink } from "react-icons/hi";
 import { Project } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -58,9 +58,25 @@ export function ProjectCard({
           <HiFolder className="h-6 w-6 text-brand-600 dark:text-brand-400" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-lg font-semibold text-gray-900 dark:text-white">
-            {project.title}
-          </h3>
+          <Tooltip
+            content={
+              <div className="max-w-xs">
+                <p className="font-semibold">{project.title}</p>
+                {project.description && (
+                  <p className="mt-1 text-sm opacity-90">{project.description}</p>
+                )}
+              </div>
+            }
+            placement="top"
+            style="light"
+          >
+            <h3
+              className="truncate text-lg font-semibold text-gray-900 dark:text-white"
+              aria-label={`${project.title}${project.description ? ` - ${project.description}` : ''}`}
+            >
+              {project.title}
+            </h3>
+          </Tooltip>
           <div className="mt-1 flex flex-wrap gap-1">
             {project.project_type && (
               <Badge

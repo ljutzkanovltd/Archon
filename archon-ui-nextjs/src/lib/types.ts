@@ -148,9 +148,9 @@ export interface Project {
   pinned?: boolean;
   archived?: boolean;
   // Phase 3: Hierarchy metadata
-  parent_id?: string;
+  parent_project_id?: string | null;
   children_count?: number;
-  has_parent?: boolean;
+  has_children?: boolean;
   relationship_type?: string;
 }
 

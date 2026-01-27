@@ -139,9 +139,24 @@ class ProjectService:
                 # Batch fetch linked knowledge counts for all projects (efficient single query)
                 linked_knowledge_counts = self._get_linked_knowledge_counts_batch([p["id"] for p in response.data])
 
+                # Batch fetch parent project IDs for all projects (efficient single query)
+                parent_project_ids = self._get_parent_project_ids_batch([p["id"] for p in response.data])
+
+                # Batch fetch children map for all projects (efficient single query)
+                children_map = self._get_children_map_batch([p["id"] for p in response.data])
+
+                # Calculate accumulated task counts (own + all descendants)
+                accumulated_task_counts = self._get_accumulated_task_counts_batch(
+                    [p["id"] for p in response.data],
+                    task_counts,
+                    children_map
+                )
+
                 projects = []
                 for project in response.data:
                     project_id = project["id"]
+                    has_children = project_id in children_map and len(children_map[project_id]) > 0
+
                     projects.append({
                         "id": project_id,
                         "title": project["title"],
@@ -156,7 +171,10 @@ class ProjectService:
                         "archived": project.get("archived", False),
                         "archived_at": project.get("archived_at"),
                         "archived_by": project.get("archived_by"),
+                        "parent_project_id": parent_project_ids.get(project_id),
+                        "has_children": has_children,
                         "task_count": task_counts.get(project_id, 0),
+                        "accumulated_task_count": accumulated_task_counts.get(project_id, 0),
                         "document_count": document_counts.get(project_id, 0),
                         "linked_knowledge_count": linked_knowledge_counts.get(project_id, 0),
                     })
@@ -186,9 +204,24 @@ class ProjectService:
                 # Batch fetch linked knowledge counts for all projects (efficient single query)
                 linked_knowledge_counts = self._get_linked_knowledge_counts_batch([p["id"] for p in response.data])
 
+                # Batch fetch parent project IDs for all projects (efficient single query)
+                parent_project_ids = self._get_parent_project_ids_batch([p["id"] for p in response.data])
+
+                # Batch fetch children map for all projects (efficient single query)
+                children_map = self._get_children_map_batch([p["id"] for p in response.data])
+
+                # Calculate accumulated task counts (own + all descendants)
+                accumulated_task_counts = self._get_accumulated_task_counts_batch(
+                    [p["id"] for p in response.data],
+                    task_counts,
+                    children_map
+                )
+
                 projects = []
                 for project in response.data:
                     project_id = project["id"]
+                    has_children = project_id in children_map and len(children_map[project_id]) > 0
+
                     # Calculate counts from fetched data (no additional queries)
                     docs_count = len(project.get("docs", []))
                     features_count = len(project.get("features", []))
@@ -206,7 +239,10 @@ class ProjectService:
                         "archived": project.get("archived", False),
                         "archived_at": project.get("archived_at"),
                         "archived_by": project.get("archived_by"),
+                        "parent_project_id": parent_project_ids.get(project_id),
+                        "has_children": has_children,
                         "task_count": task_counts.get(project_id, 0),
+                        "accumulated_task_count": accumulated_task_counts.get(project_id, 0),
                         "document_count": document_counts.get(project_id, 0),
                         "linked_knowledge_count": linked_knowledge_counts.get(project_id, 0),
                         "stats": {
@@ -346,6 +382,150 @@ class ProjectService:
             logger.error(f"Error fetching linked knowledge counts: {e}")
             return {}
 
+    def _get_parent_project_ids_batch(self, project_ids: list[str]) -> dict[str, str | None]:
+        """
+        Batch fetch parent project IDs for multiple projects (efficient single query).
+
+        Args:
+            project_ids: List of project UUIDs
+
+        Returns:
+            Dictionary mapping child_project_id -> parent_project_id (or None if root project)
+        """
+        if not project_ids:
+            logger.debug("_get_parent_project_ids_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_parent_project_ids_batch: Fetching parent IDs for {len(project_ids)} projects")
+
+            # Query hierarchy table for parent relationships
+            response = (
+                self.supabase_client.table("archon_project_hierarchy")
+                .select("child_project_id, parent_project_id")
+                .in_("child_project_id", project_ids)
+                .execute()
+            )
+
+            logger.debug(f"_get_parent_project_ids_batch: Got {len(response.data) if response.data else 0} parent relationships")
+
+            # Build mapping of child -> parent
+            parent_map = {}
+            for relationship in response.data:
+                child_id = relationship["child_project_id"]
+                parent_id = relationship["parent_project_id"]
+                parent_map[child_id] = parent_id
+
+            logger.debug(f"_get_parent_project_ids_batch: Mapped parents for {len(parent_map)} projects")
+            return parent_map
+
+        except Exception as e:
+            logger.error(f"Error fetching parent project IDs: {e}")
+            return {}
+
+    def _get_children_map_batch(self, project_ids: list[str]) -> dict[str, list[str]]:
+        """
+        Batch fetch child project IDs for multiple projects (efficient single query).
+
+        Args:
+            project_ids: List of project UUIDs
+
+        Returns:
+            Dictionary mapping parent_project_id -> list of child_project_ids
+        """
+        if not project_ids:
+            logger.debug("_get_children_map_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_children_map_batch: Fetching children for {len(project_ids)} projects")
+
+            # Query hierarchy table for child relationships
+            response = (
+                self.supabase_client.table("archon_project_hierarchy")
+                .select("parent_project_id, child_project_id")
+                .in_("parent_project_id", project_ids)
+                .execute()
+            )
+
+            logger.debug(f"_get_children_map_batch: Got {len(response.data) if response.data else 0} child relationships")
+
+            # Build mapping of parent -> children
+            children_map: dict[str, list[str]] = {}
+            for relationship in response.data:
+                parent_id = relationship["parent_project_id"]
+                child_id = relationship["child_project_id"]
+
+                if parent_id not in children_map:
+                    children_map[parent_id] = []
+                children_map[parent_id].append(child_id)
+
+            logger.debug(f"_get_children_map_batch: Mapped children for {len(children_map)} projects")
+            return children_map
+
+        except Exception as e:
+            logger.error(f"Error fetching child project IDs: {e}")
+            return {}
+
+    def _get_accumulated_task_counts_batch(
+        self,
+        project_ids: list[str],
+        task_counts: dict[str, int],
+        children_map: dict[str, list[str]]
+    ) -> dict[str, int]:
+        """
+        Calculate accumulated task counts for projects (own tasks + all descendant tasks).
+
+        Args:
+            project_ids: List of project UUIDs
+            task_counts: Dictionary mapping project_id -> task_count (own tasks only)
+            children_map: Dictionary mapping parent_project_id -> list of child_project_ids
+
+        Returns:
+            Dictionary mapping project_id -> accumulated_task_count
+        """
+        if not project_ids:
+            logger.debug("_get_accumulated_task_counts_batch: No project IDs provided")
+            return {}
+
+        try:
+            logger.debug(f"_get_accumulated_task_counts_batch: Calculating accumulated counts for {len(project_ids)} projects")
+
+            accumulated_counts: dict[str, int] = {}
+
+            def get_accumulated_count(project_id: str, visited: set[str] | None = None) -> int:
+                """Recursively calculate accumulated task count for a project."""
+                # Prevent infinite loops
+                if visited is None:
+                    visited = set()
+
+                if project_id in visited:
+                    return 0
+
+                visited.add(project_id)
+
+                # Start with own tasks
+                own_count = task_counts.get(project_id, 0)
+                total_count = own_count
+
+                # Add counts from all descendants recursively
+                children = children_map.get(project_id, [])
+                for child_id in children:
+                    total_count += get_accumulated_count(child_id, visited)
+
+                return total_count
+
+            # Calculate accumulated count for each project
+            for project_id in project_ids:
+                accumulated_counts[project_id] = get_accumulated_count(project_id)
+
+            logger.debug(f"_get_accumulated_task_counts_batch: Calculated accumulated counts for {len(accumulated_counts)} projects")
+            return accumulated_counts
+
+        except Exception as e:
+            logger.error(f"Error calculating accumulated task counts: {e}")
+            return {}
+
     def get_project(self, project_id: str) -> tuple[bool, dict[str, Any]]:
         """
         Get a specific project by ID.
@@ -414,6 +594,37 @@ class ProjectService:
                 # Add sources to project data
                 project["technical_sources"] = technical_sources
                 project["business_sources"] = business_sources
+
+                # Fetch hierarchy data (parent and children)
+                try:
+                    # Get parent project ID (if this project is a child)
+                    parent_response = (
+                        self.supabase_client.table("archon_project_hierarchy")
+                        .select("parent_project_id")
+                        .eq("child_project_id", project["id"])
+                        .execute()
+                    )
+                    project["parent_project_id"] = (
+                        parent_response.data[0]["parent_project_id"]
+                        if parent_response.data
+                        else None
+                    )
+
+                    # Check if this project has children
+                    children_response = (
+                        self.supabase_client.table("archon_project_hierarchy")
+                        .select("child_project_id")
+                        .eq("parent_project_id", project["id"])
+                        .execute()
+                    )
+                    project["has_children"] = len(children_response.data) > 0 if children_response.data else False
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to retrieve hierarchy data for project {project['id']}: {e}"
+                    )
+                    project["parent_project_id"] = None
+                    project["has_children"] = False
 
                 return True, {"project": project}
             else:

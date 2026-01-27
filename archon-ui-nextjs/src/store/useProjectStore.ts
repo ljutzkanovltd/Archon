@@ -33,6 +33,7 @@ interface ProjectActions {
       title: string;
       description: string;
       github_repo: string;
+      parent_project_id: string | null;
     }>
   ) => Promise<void>;
   archiveProject: (id: string, archived_by: string) => Promise<void>;
@@ -163,8 +164,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // Optimistic update - update in list
       set((state) => ({
         projects: state.projects.map((p) =>
-          p.id === id ? updatedProject : p
-        ),
+          p && p.id === id ? updatedProject : p
+        ).filter(p => p !== undefined),
         selectedProject:
           state.selectedProject?.id === id
             ? updatedProject
@@ -192,8 +193,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // Optimistic update - mark as archived
       set((state) => ({
         projects: state.projects.map((p) =>
-          p.id === id ? { ...p, archived: true } : p
-        ),
+          p && p.id === id ? { ...p, archived: true } : p
+        ).filter(p => p !== undefined),
         isLoading: false,
         error: null,
       }));
@@ -217,8 +218,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // Optimistic update - mark as not archived
       set((state) => ({
         projects: state.projects.map((p) =>
-          p.id === id ? { ...p, archived: false } : p
-        ),
+          p && p.id === id ? { ...p, archived: false } : p
+        ).filter(p => p !== undefined),
         isLoading: false,
         error: null,
       }));
@@ -241,7 +242,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
       // Optimistic update - remove from list
       set((state) => ({
-        projects: state.projects.filter((p) => p.id !== id),
+        projects: state.projects.filter((p) => p && p.id !== id),
         pagination: {
           ...state.pagination,
           total: Math.max(0, state.pagination.total - 1),

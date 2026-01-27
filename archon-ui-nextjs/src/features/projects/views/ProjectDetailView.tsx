@@ -12,7 +12,7 @@ import { BoardView } from "@/components/Projects/tasks/views/BoardView";
 import { TaskModal, TaskFormData } from "@/components/Tasks/TaskModal";
 import { Task } from "@/lib/types";
 import { BreadCrumb } from "@/components/common/BreadCrumb";
-import { ProjectHeader, ProjectMembersView, ProjectHierarchyTree, ProjectBreadcrumb, SubprojectModal, ProjectDocumentsTab } from "../components";
+import { ProjectHeader, ProjectMembersView, ProjectHierarchyTree, ProjectBreadcrumb, SubprojectModal, ProjectDocumentsTab, ProjectInstructionsTab } from "../components";
 import { DataTable, DataTableColumn, DataTableButton } from "@/components/common/DataTable";
 import { TaskCard } from "@/components/Tasks/TaskCard";
 import { formatDistanceToNow } from "date-fns";
@@ -515,9 +515,9 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
             </button>
           </div>
 
-          {/* Seven-mode view toggle: Kanban / Table / Grid / Documents / Sprints / Timeline / Members - uses reusable ViewModeToggle */}
+          {/* Eight-mode view toggle: Kanban / Table / Grid / Documents / Instructions / Sprints / Timeline / Members - uses reusable ViewModeToggle */}
           <ViewModeToggle
-            modes={["kanban", "table", "grid", "documents", "sprints", "timeline", "members"]}
+            modes={["kanban", "table", "grid", "documents", "instructions", "sprints", "timeline", "members"]}
             currentMode={viewMode}
             onChange={setViewMode}
             size="md"
@@ -526,7 +526,7 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
         </div>
 
         {/* Bottom row: Filters (only show in task views) */}
-        {viewMode !== "sprints" && viewMode !== "timeline" && viewMode !== "members" && viewMode !== "documents" && (
+        {viewMode !== "sprints" && viewMode !== "timeline" && viewMode !== "members" && viewMode !== "documents" && viewMode !== "instructions" && (
           <div className="flex items-center gap-4 px-2">
             <TeamFilter
               projectId={projectId}
@@ -605,6 +605,9 @@ export function ProjectDetailView({ projectId }: ProjectDetailViewProps) {
       ) : viewMode === "documents" ? (
         // Documents view - Project document management
         <ProjectDocumentsTab projectId={projectId} />
+      ) : viewMode === "instructions" ? (
+        // Instructions view - Project instructions with rich editor
+        <ProjectInstructionsTab projectId={projectId} />
       ) : (
         // Grid view - uses DataTable with TaskCard customRender
         <DataTable<Task>

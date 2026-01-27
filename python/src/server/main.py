@@ -40,6 +40,8 @@ from .api_routes.performance import router as performance_router
 from .api_routes.progress_api import router as progress_router
 from .api_routes.projects_api import router as projects_router
 from .api_routes.projects_documents import router as projects_documents_router
+from .api_routes.project_instructions import router as project_instructions_router
+from .api_routes.project_hierarchy import router as project_hierarchy_router
 from .api_routes.providers_api import router as providers_router
 from .api_routes.reports import router as reports_router
 from .api_routes.sprints import router as sprints_router
@@ -343,6 +345,8 @@ app.include_router(openrouter_router)
 app.include_router(performance_router)  # Performance monitoring and stats
 app.include_router(projects_router)
 app.include_router(projects_documents_router)  # Project document management
+app.include_router(project_instructions_router)  # Project instructions with rich text editor
+app.include_router(project_hierarchy_router)  # Project hierarchy management (parent-child relationships)
 app.include_router(workflows_router)  # Workflow and stage management
 app.include_router(sprints_router)  # Sprint management for agile workflows
 app.include_router(teams_router)  # Team management for collaboration

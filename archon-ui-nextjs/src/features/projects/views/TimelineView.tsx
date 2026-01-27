@@ -34,14 +34,14 @@ interface GanttTask {
   start: Date; // SVAR Gantt requires Date objects, not strings
   end: Date; // SVAR Gantt requires BOTH end and duration
   duration: number; // Required - number of days
-  data: GanttTask[]; // NESTED STRUCTURE: Children embedded in parent's data array (not parent refs)
+  data: GanttTask[]; // NESTED STRUCTURE: Children embedded in parent's data array
+  parent?: string; // CRITICAL: Parent ID for nested items (SVAR Gantt internal requirement)
   progress?: number;
   type?: "task" | "summary" | "milestone";
   open?: boolean;
   assignee?: string;
   status?: string; // For color coding
   priority?: string; // For border styling
-  // REMOVED: parent property - hierarchy defined by nesting, not references
 }
 
 interface GanttLink {
@@ -193,6 +193,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
         const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
         // Get tasks for this sprint and nest them in data array
+        const sprintId = `sprint-${sprint.id}`;
         const sprintTasks = tasks
           .filter((t: Task) => t.sprint_id === sprint.id)
           .map((task: Task) => {
@@ -209,6 +210,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
 
             return {
               id: `task-${task.id}`,
+              parent: sprintId, // ✅ CRITICAL: Link child to parent for SVAR Gantt
               text: task.title,
               start: taskStartDate,
               end: taskEndDate,
@@ -223,7 +225,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
           });
 
         data.push({
-          id: `sprint-${sprint.id}`,
+          id: sprintId,
           text: sprint.name,
           start: startDate,
           end: endDate,
@@ -262,6 +264,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
     });
 
     // Add "Backlog" lane for tasks without sprint (NESTED structure)
+    const backlogId = "backlog";
     const backlogTasks = tasks
       .filter((t: Task) => !t.sprint_id)
       .map((task: Task) => {
@@ -278,6 +281,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
 
         return {
           id: `task-${task.id}`,
+          parent: backlogId, // ✅ CRITICAL: Link child to parent for SVAR Gantt
           text: task.title,
           start: taskStartDate,
           end: taskEndDate,
@@ -295,7 +299,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
       const backlogStart = new Date();
       const backlogEnd = addDays(backlogStart, 30);
       data.push({
-        id: "backlog",
+        id: backlogId,
         text: "Backlog (No Sprint)",
         start: backlogStart,
         end: backlogEnd,
@@ -408,7 +412,7 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
     }
 
     // Validate each item has required fields for SVAR Gantt
-    const isValid = ganttData.every(item => {
+    const validateItem = (item: any, isNested = false): boolean => {
       const hasRequiredFields =
         item.id &&
         item.text &&
@@ -416,11 +420,27 @@ export function TimelineView({ projectId, projectTitle }: TimelineViewProps) {
         item.end instanceof Date &&
         typeof item.duration === 'number' &&
         Array.isArray(item.data); // Required to prevent null forEach errors
+
+      // Nested items MUST have parent field
+      if (isNested && !item.parent) {
+        console.error('[Timeline] Nested item missing parent field:', item);
+        return false;
+      }
+
       if (!hasRequiredFields) {
         console.error('[Timeline] Invalid gantt item:', item);
+        return false;
       }
-      return hasRequiredFields;
-    });
+
+      // Recursively validate nested children
+      if (item.data && item.data.length > 0) {
+        return item.data.every((child: any) => validateItem(child, true));
+      }
+
+      return true;
+    };
+
+    const isValid = ganttData.every(item => validateItem(item, false));
 
     console.log('[Timeline] Gantt data validation:', {
       dataCount: ganttData.length,

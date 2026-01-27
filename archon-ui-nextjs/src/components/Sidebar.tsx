@@ -22,7 +22,9 @@ import {
 } from "react-icons/hi";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ProjectTaskBadge } from "./Sidebar/ProjectTaskBadge";
+import { ProjectTreeItem } from "./Sidebar/ProjectTreeItem";
 import { useWorkOrders } from "@/features/agent-work-orders/hooks/useAgentWorkOrderQueries";
+import { useProjectExpansion } from "@/hooks/useProjectExpansion";
 
 interface MenuItemProps {
   href: string;
@@ -36,15 +38,17 @@ function MenuItem({
   item,
   isCollapsed,
   level = 0,
+  renderCustomChildren,
 }: {
   item: MenuItemProps;
   isCollapsed: boolean;
   level?: number;
+  renderCustomChildren?: () => React.ReactNode;
 }) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(true);
   const isActive = pathname === item.href;
-  const hasChildren = item.children && item.children.length > 0;
+  const hasChildren = (item.children && item.children.length > 0) || renderCustomChildren;
 
   const Icon = item.icon;
 
@@ -99,12 +103,16 @@ function MenuItem({
         </div>
 
         {/* Children */}
-        {isOpen && !isCollapsed && item.children && (
+        {isOpen && !isCollapsed && (item.children || renderCustomChildren) && (
           <div
             id={`submenu-${item.label.replace(/\s+/g, '-').toLowerCase()}`}
             className="ml-4 mt-1 space-y-1"
           >
-            {item.children.map((child) => {
+            {/* Render custom children if provided */}
+            {renderCustomChildren && renderCustomChildren()}
+
+            {/* Render menu item children */}
+            {item.children && item.children.map((child) => {
               const childIsActive = pathname === child.href;
               const ChildIcon = child.icon;
               return (
@@ -180,6 +188,9 @@ export function DesktopSidebar() {
 
   // Fetch work orders for badge count
   const { data: workOrders = [] } = useWorkOrders();
+
+  // Project expansion state management with localStorage persistence
+  const projectExpansion = useProjectExpansion();
 
   // Sidebar width management
   const MIN_WIDTH = 64; // Collapsed width
@@ -291,31 +302,28 @@ export function DesktopSidebar() {
   ).length;
 
   // Calculate active (non-archived) project count for badge
-  const activeProjects = (projects || []).filter((p) => !p.archived);
+  const activeProjects = (projects || []).filter((p) => p && !p.archived);
 
-  // Build menu items with projects as children
+  // Filter for ROOT projects only (projects without a parent)
+  // These will be rendered hierarchically under the Projects menu item
+  const rootProjects = activeProjects.filter((p) => {
+    // A root project has no parent_project_id or the parent doesn't exist in our project list
+    return p && !p.parent_project_id;
+  });
+
+  // Build menu items WITHOUT project children (we'll render them separately)
   const allMenuItems: MenuItemProps[] = [
     {
       href: "/",
       icon: HiChartPie,
       label: "Dashboard",
     },
+    // Projects menu item WITHOUT children - we'll render ProjectTreeItem components instead
     {
       href: "/projects",
       icon: HiFolder,
       label: "Projects",
       badge: activeProjects.length > 0 ? String(activeProjects.length) : undefined,
-      children: activeProjects
-        .filter((project) => project && project.id)
-        .map((project) => ({
-          href: `/projects/${project.id}`,
-          icon: HiFolder,
-          label: project.title,
-          badge: <ProjectTaskBadge
-              projectId={project.id}
-              isCollapsed={desktop.isCollapsed}
-            />,
-        })),
     },
     {
       href: "/tasks",
@@ -382,13 +390,46 @@ export function DesktopSidebar() {
     >
       <div className="flex h-full flex-col overflow-y-auto py-4">
         <div className={`space-y-2 ${desktop.isCollapsed ? "px-2" : "px-3"}`}>
-          {menuItems.map((item) => (
-            <MenuItem
-              key={item.href}
-              item={item}
-              isCollapsed={desktop.isCollapsed}
-            />
-          ))}
+          {menuItems.map((item) => {
+            // For Projects menu item, render hierarchical project tree as children
+            if (item.href === "/projects" && rootProjects.length > 0) {
+              return (
+                <MenuItem
+                  key={item.href}
+                  item={item}
+                  isCollapsed={desktop.isCollapsed}
+                  renderCustomChildren={() => {
+                    const validProjects = rootProjects.filter((project) => project && project.id);
+                    return (
+                      <>
+                        {validProjects.map((project, index) => (
+                          <ProjectTreeItem
+                            key={project.id}
+                            project={project}
+                            depth={0}
+                            isCollapsed={desktop.isCollapsed}
+                            isMobile={false}
+                            isExpanded={projectExpansion.isExpanded(project.id)}
+                            onToggle={() => projectExpansion.toggle(project.id)}
+                            siblingCount={validProjects.length}
+                            positionInSiblings={index + 1}
+                          />
+                        ))}
+                      </>
+                    );
+                  }}
+                />
+              );
+            }
+
+            return (
+              <MenuItem
+                key={item.href}
+                item={item}
+                isCollapsed={desktop.isCollapsed}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -445,6 +486,9 @@ export function MobileSidebar() {
   // Fetch work orders for badge count
   const { data: workOrders = [] } = useWorkOrders();
 
+  // Project expansion state management with localStorage persistence
+  const projectExpansion = useProjectExpansion();
+
   // Fetch projects on mount - load ALL projects including archived for accurate counts
   // Store handles deduplication automatically (prevents race conditions)
   useEffect(() => {
@@ -477,32 +521,28 @@ export function MobileSidebar() {
   ).length;
 
   // Calculate active (non-archived) project count for badge
-  const activeProjects = (projects || []).filter((p) => !p.archived);
+  const activeProjects = (projects || []).filter((p) => p && !p.archived);
 
-  // Build menu items with projects as children
+  // Filter for ROOT projects only (projects without a parent)
+  // These will be rendered hierarchically under the Projects menu item
+  const rootProjects = activeProjects.filter((p) => {
+    // A root project has no parent_project_id or the parent doesn't exist in our project list
+    return p && !p.parent_project_id;
+  });
+
+  // Build menu items WITHOUT project children (we'll render them separately)
   const allMenuItems: MenuItemProps[] = [
     {
       href: "/",
       icon: HiChartPie,
       label: "Dashboard",
     },
+    // Projects menu item WITHOUT children - we'll render ProjectTreeItem components instead
     {
       href: "/projects",
       icon: HiFolder,
       label: "Projects",
       badge: activeProjects.length > 0 ? String(activeProjects.length) : undefined,
-      children: activeProjects
-        .filter((project) => project && project.id)
-        .map((project) => ({
-          href: `/projects/${project.id}`,
-          icon: HiFolder,
-          label: project.title,
-          badge: <ProjectTaskBadge
-              projectId={project.id}
-              isCollapsed={false}
-              isMobile={true}
-            />,
-        })),
     },
     {
       href: "/tasks",
@@ -588,9 +628,46 @@ export function MobileSidebar() {
           {/* Menu */}
           <div className="flex-1 overflow-y-auto py-4">
             <div className="space-y-2 px-3">
-              {menuItems.map((item) => (
-                <MenuItem key={item.href} item={item} isCollapsed={false} />
-              ))}
+              {menuItems.map((item) => {
+                // For Projects menu item, render hierarchical project tree as children
+                if (item.href === "/projects" && rootProjects.length > 0) {
+                  return (
+                    <MenuItem
+                      key={item.href}
+                      item={item}
+                      isCollapsed={false}
+                      renderCustomChildren={() => {
+                        const validProjects = rootProjects.filter((project) => project && project.id);
+                        return (
+                          <>
+                            {validProjects.map((project, index) => (
+                              <ProjectTreeItem
+                                key={project.id}
+                                project={project}
+                                depth={0}
+                                isCollapsed={false}
+                                isMobile={true}
+                                isExpanded={projectExpansion.isExpanded(project.id)}
+                                onToggle={() => projectExpansion.toggle(project.id)}
+                                siblingCount={validProjects.length}
+                                positionInSiblings={index + 1}
+                              />
+                            ))}
+                          </>
+                        );
+                      }}
+                    />
+                  );
+                }
+
+                return (
+                  <MenuItem
+                    key={item.href}
+                    item={item}
+                    isCollapsed={false}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
