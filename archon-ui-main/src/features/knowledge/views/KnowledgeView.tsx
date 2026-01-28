@@ -4,12 +4,17 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/features/shared/hooks/useToast";
+import { Button } from "@/features/ui/primitives/button";
 import { CrawlingProgress } from "../../progress/components/CrawlingProgress";
 import type { ActiveOperation } from "../../progress/types";
+import { CrawlQueueDashboard } from "../../crawl-queue/components/CrawlQueueDashboard";
 import { AddKnowledgeDialog } from "../components/AddKnowledgeDialog";
 import { KnowledgeHeader } from "../components/KnowledgeHeader";
 import { KnowledgeList } from "../components/KnowledgeList";
+import { KnowledgeScopeSelector, type KnowledgeScope } from "../components/KnowledgeScopeSelector";
+import { PrivateDocumentUpload } from "../components/PrivateDocumentUpload";
 import { useKnowledgeSummaries } from "../hooks/useKnowledgeQueries";
 import { KnowledgeInspector } from "../inspector/components/KnowledgeInspector";
 import type { KnowledgeItem, KnowledgeItemsFilter } from "../types";
@@ -19,6 +24,13 @@ export const KnowledgeView = () => {
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "technical" | "business">("all");
+
+  // Scope state for three-tier knowledge base
+  const [selectedScope, setSelectedScope] = useState<KnowledgeScope>("all");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+
+  // Crawl queue state
+  const [isCrawlQueueExpanded, setIsCrawlQueueExpanded] = useState(false);
 
   // Dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -40,8 +52,20 @@ export const KnowledgeView = () => {
       f.knowledge_type = typeFilter;
     }
 
+    // Three-tier knowledge base scope filtering
+    if (selectedScope && selectedScope !== "all") {
+      f.scope = selectedScope;
+    }
+
+    // Add project_id when scope is "project"
+    if (selectedScope === "project" && selectedProjectId) {
+      f.project_id = selectedProjectId;
+    }
+
+    // Note: user_id will be added by backend from JWT token for "user" scope
+
     return f;
-  }, [searchQuery, typeFilter]);
+  }, [searchQuery, typeFilter, selectedScope, selectedProjectId]);
 
   // Fetch knowledge summaries (no automatic polling!)
   const { data, isLoading, error, refetch, setActiveCrawlIds, activeOperations } = useKnowledgeSummaries(filter);
@@ -118,6 +142,11 @@ export const KnowledgeView = () => {
     // TanStack Query will automatically refetch
   };
 
+  const handleScopeChange = (scope: KnowledgeScope, projectId?: string) => {
+    setSelectedScope(scope);
+    setSelectedProjectId(projectId);
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -132,6 +161,27 @@ export const KnowledgeView = () => {
         onViewModeChange={setViewMode}
         onAddKnowledge={handleAddKnowledge}
       />
+
+      {/* Scope Selector - Three-tier knowledge base selection */}
+      <div className="px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between gap-4">
+          <KnowledgeScopeSelector
+            selectedScope={selectedScope}
+            selectedProjectId={selectedProjectId}
+            onScopeChange={handleScopeChange}
+            className="flex-1"
+          />
+
+          {/* Private Document Upload - Only visible when "My Private" scope is selected */}
+          {selectedScope === "user" && (
+            <PrivateDocumentUpload
+              onSuccess={() => {
+                refetch();
+              }}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto px-6 pb-6">
@@ -148,6 +198,37 @@ export const KnowledgeView = () => {
             <CrawlingProgress onSwitchToBrowse={() => {}} />
           </div>
         )}
+
+        {/* Crawl Queue Section - Collapsible */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white/90">Crawl Queue Management</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCrawlQueueExpanded(!isCrawlQueueExpanded)}
+              className="gap-2"
+            >
+              {isCrawlQueueExpanded ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  Hide Queue
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  Show Queue
+                </>
+              )}
+            </Button>
+          </div>
+
+          {isCrawlQueueExpanded && (
+            <div className="animate-in slide-in-from-top-2 duration-200">
+              <CrawlQueueDashboard />
+            </div>
+          )}
+        </div>
 
         {/* Knowledge Items List */}
         <KnowledgeList

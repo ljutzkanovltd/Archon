@@ -199,10 +199,10 @@ export const CrawlingProgress: React.FC<CrawlingProgressProps> = ({ onSwitchToBr
                   </div>
                 </div>
 
-                <div className="p-4 space-y-3">
-                  {/* Progress Bar */}
+                <div className="p-4 flex flex-col lg:flex-row items-start gap-4 lg:gap-6">
+                  {/* Progress Bar - Takes remaining space on desktop */}
                   {isActive && (
-                    <div className="space-y-2">
+                    <div className="w-full lg:flex-1 space-y-2">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-400">Progress</span>
                         <span className="text-cyan-400 font-medium">{progress}%</span>
@@ -213,11 +213,35 @@ export const CrawlingProgress: React.FC<CrawlingProgressProps> = ({ onSwitchToBr
                           style={{ width: `${progress}%` }}
                         />
                       </div>
+                      {/* Contextual progress hints */}
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {operation.status === "crawling" &&
+                          operation.pages_crawled !== undefined &&
+                          operation.total_pages !== undefined &&
+                          `${operation.pages_crawled}/${operation.total_pages} pages crawled`}
+                        {operation.status === "crawling" &&
+                          operation.pages_crawled !== undefined &&
+                          !operation.total_pages &&
+                          `${operation.pages_crawled} pages crawled`}
+                        {operation.status === "code_extraction" &&
+                          "Extracting code examples (slowest stage)"}
+                        {operation.status === "processing" && "Processing crawled pages..."}
+                        {operation.status === "document_storage" && "Storing documents in database..."}
+                        {operation.status === "source_creation" && "Creating knowledge source..."}
+                        {operation.status === "finalization" && "Finalizing crawl (almost done)..."}
+                        {operation.status === "discovery" && "Discovering linked files..."}
+                        {operation.status === "analyzing" && "Analyzing content structure..."}
+                        {operation.status === "starting" && "Starting crawl operation..."}
+                        {!["crawling", "code_extraction", "processing", "document_storage", "source_creation", "finalization", "discovery", "analyzing", "starting"].includes(
+                          operation.status,
+                        ) &&
+                          operation.message}
+                      </div>
                     </div>
                   )}
 
-                  {/* Statistics */}
-                  <div className="grid grid-cols-3 gap-4 pt-2">
+                  {/* Statistics - Fixed width on right side (desktop) */}
+                  <div className="w-full lg:w-64 lg:flex-shrink-0 grid grid-cols-3 gap-4">
                     {(operation.pages_crawled !== undefined || operation.stats?.pages_crawled !== undefined) && (
                       <div className="text-center">
                         <div className="text-2xl font-bold text-cyan-400">

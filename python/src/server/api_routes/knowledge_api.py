@@ -15,9 +15,12 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from typing import Optional
+
+# Import authentication dependencies
+from ..auth.dependencies import get_current_user
 
 # Basic validation - simplified inline version
 
@@ -201,6 +204,23 @@ class RagQueryRequest(BaseModel):
     return_mode: str = "chunks"  # "chunks" or "pages"
 
 
+# Multi-tier knowledge base search models
+class MultiTierQueryRequest(BaseModel):
+    """Request model for automatic multi-tier knowledge base search."""
+    query: str
+    match_count: int = 5
+    use_hybrid_search: bool = False
+
+
+class ScopedQueryRequest(BaseModel):
+    """Request model for explicit scope-based knowledge base search."""
+    query: str
+    scope: str  # "global" | "project" | "user"
+    project_id: str | None = None  # Required if scope="project"
+    match_count: int = 5
+    use_hybrid_search: bool = False
+
+
 # Phase 2.2: Delete Warning Response Models
 class LinkedProjectInfo(BaseModel):
     """Information about a project linked to a KB source"""
@@ -325,16 +345,27 @@ async def get_knowledge_items(
 
 @router.get("/knowledge-items/summary")
 async def get_knowledge_items_summary(
-    page: int = 1, per_page: int = 20, knowledge_type: str | None = None, search: str | None = None
+    page: int = 1,
+    per_page: int = 20,
+    knowledge_type: str | None = None,
+    search: str | None = None,
+    scope: str | None = None,
+    project_id: str | None = None,
+    user_id: str | None = None,
 ):
     """
     Get lightweight summaries of knowledge items.
-    
+
     Returns minimal data optimized for frequent polling:
     - Only counts, no actual document/code content
     - Basic metadata for display
     - Efficient batch queries
-    
+
+    Supports three-tier knowledge base filtering:
+    - scope: Filter by scope (global, project, user)
+    - project_id: Filter by project (required if scope="project")
+    - user_id: Filter by user (for scope="user")
+
     Use this endpoint for card displays and frequent polling.
     """
     try:
@@ -343,13 +374,19 @@ async def get_knowledge_items_summary(
         per_page = min(100, max(1, per_page))
         service = KnowledgeSummaryService(get_supabase_client())
         result = await service.get_summaries(
-            page=page, per_page=per_page, knowledge_type=knowledge_type, search=search
+            page=page,
+            per_page=per_page,
+            knowledge_type=knowledge_type,
+            search=search,
+            scope=scope,
+            project_id=project_id,
+            user_id=user_id,
         )
         return result
 
     except Exception as e:
         safe_logfire_error(
-            f"Failed to get knowledge summaries | error={str(e)} | page={page} | per_page={per_page}"
+            f"Failed to get knowledge summaries | error={str(e)} | page={page} | per_page={per_page} | scope={scope}"
         )
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
@@ -594,12 +631,12 @@ async def get_knowledge_item_chunks(
         supabase = get_supabase_client()
 
         # Get total count with graceful fallback for timeout-prone databases
-        # Use count="planned" instead of "exact" for faster estimation
+        # Use count="exact" for accurate counts (previously "planned" caused 8% error)
         # Falls back to -1 (unknown) if count query times out
         total = -1  # Default to unknown
         try:
             count_query = supabase.from_("archon_crawled_pages").select(
-                "id", count="planned", head=True
+                "id", count="exact", head=True
             )
             count_query = count_query.eq("source_id", source_id)
 
@@ -1466,6 +1503,338 @@ async def _perform_upload_with_progress(
             safe_logfire_info(f"Cleaned up upload task from registry | progress_id={progress_id}")
 
 
+@router.post("/user/documents")
+async def upload_user_document(
+    file: UploadFile = File(...),
+    tags: str | None = Form(None),
+    knowledge_type: str = Form("technical"),
+    extract_code_examples: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Upload a private document to user's personal knowledge base.
+
+    This endpoint:
+    1. Validates file type and size (<10MB)
+    2. Extracts text content from document
+    3. Creates source with scope='user' and user_id from JWT
+    4. Generates embeddings and stores in knowledge base
+    5. Returns progress ID for tracking
+
+    Requires: JWT authentication
+
+    Args:
+        file: Document file (PDF, TXT, MD, DOCX - max 10MB)
+        tags: Optional JSON array of tags
+        knowledge_type: "technical" or "business" (default: technical)
+        extract_code_examples: Whether to extract code snippets (default: True)
+        current_user: Current authenticated user from JWT
+
+    Returns:
+        {
+            "success": true,
+            "progressId": "uuid",
+            "message": "Document upload started",
+            "filename": "example.pdf",
+            "user_id": "uuid"
+        }
+    """
+    # Validate API key before starting expensive upload operation
+    logger.info("🔍 USER UPLOAD: Validating API key...")
+    provider_config = await credential_service.get_active_provider("embedding")
+    provider = provider_config.get("provider", "openai")
+    await _validate_provider_api_key(provider)
+    logger.info("✅ API key validation completed for user upload")
+
+    try:
+        # Extract user ID from JWT token
+        user_id = current_user.get("id") or current_user.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "User ID not found in authentication token"}
+            )
+
+        # Validate file size (<10MB)
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "error": "File too large",
+                    "message": f"File size {file_size / (1024*1024):.2f}MB exceeds maximum of 10MB",
+                    "max_size_mb": 10,
+                }
+            )
+
+        # Validate file type
+        allowed_extensions = {".pdf", ".txt", ".md", ".docx", ".doc"}
+        file_extension = "." + file.filename.split(".")[-1].lower() if "." in file.filename else ""
+
+        if file_extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=415,
+                detail={
+                    "error": "Unsupported file type",
+                    "message": f"File type '{file_extension}' not supported. Allowed: {', '.join(allowed_extensions)}",
+                    "allowed_types": list(allowed_extensions),
+                }
+            )
+
+        safe_logfire_info(
+            f"📁 USER UPLOAD: Starting | user_id={user_id} | filename={file.filename} | "
+            f"size={file_size / 1024:.1f}KB | content_type={file.content_type}"
+        )
+
+        # Generate unique progress ID
+        progress_id = str(uuid.uuid4())
+
+        file_metadata = {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": file_size,
+            "user_id": user_id,
+        }
+
+        # Parse tags
+        try:
+            tag_list = json.loads(tags) if tags else []
+            if tag_list is None:
+                tag_list = []
+            if not isinstance(tag_list, list):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "tags must be a JSON array of strings"}
+                )
+            if not all(isinstance(tag, str) for tag in tag_list):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "tags must be a JSON array of strings"}
+                )
+        except json.JSONDecodeError as ex:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": f"Invalid tags JSON: {str(ex)}"}
+            )
+
+        # Initialize progress tracker
+        from ..utils.progress.progress_tracker import ProgressTracker
+        tracker = ProgressTracker(progress_id, operation_type="user_upload")
+        await tracker.start({
+            "filename": file.filename,
+            "user_id": user_id,
+            "scope": "user",
+            "status": "initializing",
+            "progress": 0,
+            "log": f"Starting private document upload for {file.filename}"
+        })
+
+        # Start background task for processing
+        upload_task = asyncio.create_task(
+            _perform_user_upload_with_progress(
+                progress_id, file_content, file_metadata, tag_list,
+                knowledge_type, extract_code_examples, user_id, tracker
+            )
+        )
+
+        # Track the task for cancellation support
+        active_crawl_tasks[progress_id] = upload_task
+
+        safe_logfire_info(
+            f"✅ User document upload started | progress_id={progress_id} | "
+            f"user_id={user_id} | filename={file.filename}"
+        )
+
+        return {
+            "success": True,
+            "progressId": progress_id,
+            "message": "Private document upload started",
+            "filename": file.filename,
+            "user_id": user_id,
+            "scope": "user",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(
+            f"❌ Failed to start user document upload | error={str(e)} | "
+            f"filename={file.filename if file else 'unknown'} | user_id={current_user.get('id', 'unknown')} | "
+            f"error_type={type(e).__name__}"
+        )
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+async def _perform_user_upload_with_progress(
+    progress_id: str,
+    file_content: bytes,
+    file_metadata: dict,
+    tag_list: list[str],
+    knowledge_type: str,
+    extract_code_examples: bool,
+    user_id: str,
+    tracker: "ProgressTracker",
+):
+    """Perform user document upload with progress tracking and scope='user'."""
+    # Create cancellation check function
+    def check_upload_cancellation():
+        """Check if upload task has been cancelled."""
+        task = active_crawl_tasks.get(progress_id)
+        if task and task.cancelled():
+            raise asyncio.CancelledError("Document upload was cancelled by user")
+
+    # Import ProgressMapper to prevent progress from going backwards
+    from ..services.crawling.progress_mapper import ProgressMapper
+    progress_mapper = ProgressMapper()
+
+    try:
+        filename = file_metadata["filename"]
+        content_type = file_metadata["content_type"]
+        user_id_safe = user_id
+
+        safe_logfire_info(
+            f"🔐 USER UPLOAD: Processing | progress_id={progress_id} | "
+            f"user_id={user_id_safe} | filename={filename} | scope=user"
+        )
+
+        # Extract text from document with progress
+        mapped_progress = progress_mapper.map_progress("processing", 50)
+        await tracker.update(
+            status="processing",
+            progress=mapped_progress,
+            log=f"Extracting text from {filename}"
+        )
+
+        try:
+            extracted_text = extract_text_from_document(file_content, filename, content_type)
+            safe_logfire_info(
+                f"📄 Text extracted | filename={filename} | length={len(extracted_text)} | user_id={user_id_safe}"
+            )
+        except ValueError as ex:
+            logger.warning(f"Document validation failed: {filename} - {str(ex)}")
+            await tracker.error(str(ex))
+            return
+        except Exception as ex:
+            logger.error(f"Failed to extract text from document: {filename}", exc_info=True)
+            await tracker.error(f"Failed to extract text from document: {str(ex)}")
+            return
+
+        # Generate source_id with user scope
+        source_id = f"user_{user_id_safe[:8]}_{filename.replace(' ', '_').replace('.', '_')}_{uuid.uuid4().hex[:8]}"
+
+        safe_logfire_info(
+            f"📦 Creating user-scoped source | source_id={source_id} | user_id={user_id_safe} | scope=user"
+        )
+
+        # Create progress callback
+        async def document_progress_callback(message: str, percentage: int, batch_info: dict = None):
+            """Progress callback for tracking document processing"""
+            mapped_percentage = progress_mapper.map_progress("storing", percentage)
+            await tracker.update(
+                status="storing",
+                progress=mapped_percentage,
+                log=message,
+                currentUrl=f"file://{filename}",
+                **(batch_info or {})
+            )
+
+        # Store document with user scope
+        # First, create the source record with scope='user' and user_id
+        supabase = get_supabase_client()
+
+        try:
+            # Extract source summary
+            from ..services.source_management_service import extract_source_summary
+            source_summary = await extract_source_summary(source_id, extracted_text[:5000])
+
+            # Calculate word count
+            total_word_count = len(extracted_text.split())
+
+            # Create source with user scope
+            source_data = {
+                "source_id": source_id,
+                "summary": source_summary,
+                "word_count": total_word_count,
+                "knowledge_type": knowledge_type,
+                "tags": tag_list,
+                "source_url": f"file://{filename}",
+                "source_display_name": filename,
+                "source_type": "file",
+                "scope": "user",  # USER SCOPE
+                "user_id": user_id,  # USER ID from JWT
+                "project_id": None,  # No project for user documents
+                "indexed_at": datetime.utcnow().isoformat(),
+                "update_frequency_days": 7,
+            }
+
+            # Insert or update source
+            supabase.table("archon_sources").upsert(source_data).execute()
+
+            safe_logfire_info(
+                f"✅ User source created | source_id={source_id} | user_id={user_id_safe} | scope=user"
+            )
+
+            await tracker.update(
+                status="storing",
+                progress=60,
+                log="Source record created with user scope"
+            )
+
+        except Exception as ex:
+            logger.error(f"Failed to create user source: {ex}", exc_info=True)
+            await tracker.error(f"Failed to create source: {str(ex)}")
+            return
+
+        # Now use DocumentStorageService to chunk and store content
+        doc_storage_service = DocumentStorageService(supabase)
+
+        success, result = await doc_storage_service.upload_document(
+            file_content=extracted_text,
+            filename=filename,
+            source_id=source_id,
+            knowledge_type=knowledge_type,
+            tags=tag_list,
+            extract_code_examples=extract_code_examples,
+            progress_callback=document_progress_callback,
+            cancellation_check=check_upload_cancellation,
+        )
+
+        if success:
+            await tracker.complete({
+                "log": f"Private document uploaded successfully!",
+                "chunks_stored": result.get("chunks_stored"),
+                "code_examples_stored": result.get("code_examples_stored", 0),
+                "sourceId": source_id,
+                "scope": "user",
+                "user_id": user_id_safe,
+            })
+            safe_logfire_info(
+                f"🎉 USER UPLOAD COMPLETE | progress_id={progress_id} | source_id={source_id} | "
+                f"user_id={user_id_safe} | chunks={result.get('chunks_stored')} | "
+                f"code_examples={result.get('code_examples_stored', 0)}"
+            )
+        else:
+            error_msg = result.get("error", "Unknown error")
+            await tracker.error(error_msg)
+
+    except Exception as e:
+        error_msg = f"Upload failed: {str(e)}"
+        await tracker.error(error_msg)
+        logger.error(f"User document upload failed: {e}", exc_info=True)
+        safe_logfire_error(
+            f"❌ USER UPLOAD FAILED | progress_id={progress_id} | "
+            f"filename={file_metadata.get('filename', 'unknown')} | error={str(e)}"
+        )
+    finally:
+        # Clean up task from registry
+        if progress_id in active_crawl_tasks:
+            del active_crawl_tasks[progress_id]
+            safe_logfire_info(f"Cleaned up user upload task | progress_id={progress_id}")
+
+
 @router.post("/knowledge-items/search")
 async def search_knowledge_items(request: RagQueryRequest):
     """Search knowledge items - alias for RAG query."""
@@ -1487,6 +1856,9 @@ async def perform_rag_query(request: RagQueryRequest):
 
     # Start performance timing
     start_time = time.time()
+    embedding_time = 0
+    db_query_time = 0
+    reranking_time = 0
 
     # Validate query
     if not request.query:
@@ -1518,8 +1890,11 @@ async def perform_rag_query(request: RagQueryRequest):
             safe_logfire_info(f"✅ Result cache HIT | RAG query | query={request.query[:50]}...")
             return cached_results
 
-        # Cache miss - perform actual search
+        # Cache miss - perform actual search with timing
         safe_logfire_info(f"❌ Result cache MISS | RAG query | query={request.query[:50]}...")
+
+        # Time embedding generation
+        embedding_start = time.time()
         search_service = RAGService(get_supabase_client())
         success, result = await search_service.perform_rag_query(
             query=request.query,
@@ -1527,6 +1902,9 @@ async def perform_rag_query(request: RagQueryRequest):
             match_count=match_count,
             return_mode=request.return_mode
         )
+        # Note: RAGService internally times embedding, DB query, and reranking
+        # We capture total time here; internal metrics are logged separately
+        total_query_time = time.time() - embedding_start
 
         if success:
             # Add success flag to match expected API response format
@@ -1542,6 +1920,20 @@ async def perform_rag_query(request: RagQueryRequest):
                 filter_metadata=filter_metadata
             )
 
+            # Log performance details
+            total_time = time.time() - start_time
+            if total_time > 2.0:
+                logger.warning(
+                    f"⚠️  Slow RAG query | total={total_time:.3f}s | "
+                    f"query_time={total_query_time:.3f}s | "
+                    f"query={request.query[:50]} | match_count={match_count}"
+                )
+            else:
+                logger.info(
+                    f"✅ RAG query completed | total={total_time:.3f}s | "
+                    f"query={request.query[:50]} | results={len(result.get('results', []))}"
+                )
+
             return result
         else:
             raise HTTPException(
@@ -1555,12 +1947,13 @@ async def perform_rag_query(request: RagQueryRequest):
         )
         raise HTTPException(status_code=500, detail={"error": f"RAG query failed: {str(e)}"})
     finally:
-        # Record request performance metrics
+        # Record request performance metrics with breakdown
         latency_ms = (time.time() - start_time) * 1000
         try:
             from ..services.performance_metrics import get_metrics_service
 
             metrics_service = get_metrics_service()
+            # Note: RAGService provides internal timing; we record total here
             metrics_service.record_request("/api/rag/query", latency_ms)
         except Exception:
             # Silently fail - don't break requests due to metrics
@@ -2340,7 +2733,7 @@ async def search_knowledge_content(request: ContentSearchRequest):
             for r in paginated_results
         ]
 
-        return ContentSearchResponse(
+        response = ContentSearchResponse(
             results=formatted_results,
             total=total,
             page=request.page,
@@ -2348,6 +2741,25 @@ async def search_knowledge_content(request: ContentSearchRequest):
             pages=(total + request.per_page - 1) // request.per_page if request.per_page > 0 else 0,
             query=request.query
         )
+
+        # Record detailed performance metrics
+        try:
+            from ..services.performance_metrics import get_metrics_service
+            metrics_service = get_metrics_service()
+            metrics_service.record_request(
+                "/api/knowledge/search",
+                search_time * 1000,  # Convert to ms
+                breakdown={
+                    "embedding_ms": embedding_time * 1000,
+                    "db_query_ms": db_search_time * 1000,
+                    "other_ms": (search_time - embedding_time - db_search_time) * 1000
+                }
+            )
+        except Exception:
+            # Silently fail - don't break requests due to metrics
+            pass
+
+        return response
 
     except HTTPException:
         raise
@@ -2493,20 +2905,26 @@ async def list_queue_items(
     limit: int = Query(50, ge=1, le=200, description="Maximum items to return")
 ):
     """
-    List queue items with optional filtering.
+    List queue items with optional filtering and complete statistics.
 
     Query parameters:
     - status: Filter by status (pending, running, completed, failed, cancelled)
     - requires_review: Filter items needing human review (true/false)
     - limit: Maximum number of items to return (default: 50, max: 200)
 
-    Returns list of queue items matching the filters.
+    Returns list of queue items with:
+    - All queue fields (status, retry_count, error info, timestamps)
+    - Source details (url, title, scope)
+    - Statistics (pages_crawled, code_examples_count, chunks_created, embeddings_generated)
+    - Progress percentage (0-100)
     """
     try:
         supabase = get_supabase_client()
 
-        # Build query
-        query = supabase.table("archon_crawl_queue").select("*")
+        # Build query - join with archon_sources to get source details
+        query = supabase.table("archon_crawl_queue").select(
+            "*, archon_sources(source_url, title, scope, updated_at)"
+        )
 
         if status:
             query = query.eq("status", status)
@@ -2521,15 +2939,77 @@ async def list_queue_items(
 
         items = result.data if result.data else []
 
+        # Enrich each item with statistics and computed fields
+        enriched_items = []
+        for item in items:
+            # Extract source details from join
+            source_details = item.get("archon_sources") or {}
+
+            # Get statistics from related tables
+            source_id = item.get("source_id")
+            statistics = {
+                "pages_crawled": 0,
+                "chunks_created": 0,
+                "code_examples_count": 0,
+                "embeddings_generated": 0
+            }
+
+            if source_id:
+                # Count pages crawled
+                pages_result = supabase.table("archon_crawled_pages").select(
+                    "page_id", count="exact"
+                ).eq("source_id", source_id).execute()
+                statistics["pages_crawled"] = pages_result.count or 0
+
+                # Pages and chunks are the same in our system (each page is a chunk)
+                statistics["chunks_created"] = statistics["pages_crawled"]
+                statistics["embeddings_generated"] = statistics["pages_crawled"]
+
+                # Count code examples
+                code_result = supabase.table("archon_code_examples").select(
+                    "id", count="exact"
+                ).eq("source_id", source_id).execute()
+                statistics["code_examples_count"] = code_result.count or 0
+
+            # Calculate progress percentage
+            item_status = item.get("status", "")
+            progress = 0
+            if item_status == "completed":
+                progress = 100
+            elif item_status == "running":
+                # For running items, estimate progress based on pages crawled
+                # This is a rough estimate, could be refined with more detailed tracking
+                progress = min(75, statistics["pages_crawled"] * 10)  # Cap at 75% until completed
+            elif item_status == "failed" or item_status == "cancelled":
+                # Show partial progress if any work was done
+                progress = min(50, statistics["pages_crawled"] * 10) if statistics["pages_crawled"] > 0 else 0
+            # pending remains 0
+
+            # Build enriched item
+            enriched_item = {
+                **item,  # Include all original queue fields
+                "source_url": source_details.get("source_url"),
+                "source_title": source_details.get("title"),
+                "scope": source_details.get("scope"),
+                "last_crawled_at": source_details.get("updated_at"),
+                "progress": progress,
+                "statistics": statistics
+            }
+
+            # Remove the nested archon_sources object (data is now flattened)
+            enriched_item.pop("archon_sources", None)
+
+            enriched_items.append(enriched_item)
+
         safe_logfire_info(
-            f"Listed queue items | status={status} | "
-            f"requires_review={requires_review} | count={len(items)}"
+            f"Listed queue items with statistics | status={status} | "
+            f"requires_review={requires_review} | count={len(enriched_items)}"
         )
 
         return {
             "success": True,
-            "items": items,
-            "count": len(items)
+            "items": enriched_items,
+            "count": len(enriched_items)
         }
 
     except Exception as e:
@@ -3461,3 +3941,345 @@ async def resolve_review_item(item_id: str):
     except Exception as e:
         safe_logfire_error(f"Failed to resolve review item | item_id={item_id} | error={str(e)}")
         raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# ============================================================================
+# Multi-Tier Knowledge Base Search Endpoints
+# ============================================================================
+
+
+@router.post("/rag/query-auto")
+async def perform_multi_tier_rag_query(
+    request: MultiTierQueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Automatic multi-tier RAG query with JWT authentication.
+
+    Searches across all accessible knowledge base tiers for the authenticated user:
+    - Global sources (accessible to everyone)
+    - Project sources (where user is a member)
+    - User-private sources (owned by the user)
+
+    Results are automatically merged, deduplicated, and ranked by relevance.
+
+    Args:
+        request: Query request with query text and options
+        current_user: Authenticated user from JWT token
+
+    Returns:
+        Merged and ranked search results from all accessible tiers
+    """
+    import time
+
+    # Start performance timing
+    start_time = time.time()
+
+    # Validate query
+    if not request.query:
+        raise HTTPException(status_code=422, detail="Query is required")
+
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="Query cannot be empty")
+
+    # Extract user ID from authenticated user
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in authentication token")
+
+    try:
+        # Get result cache instance
+        result_cache = await get_result_cache()
+
+        # Prepare cache parameters (include user_id for user-specific caching)
+        match_count = request.match_count or 5
+        filter_metadata = {
+            "user_id": str(user_id),
+            "use_hybrid_search": request.use_hybrid_search
+        }
+
+        # Check cache first
+        cached_results = await result_cache.get(
+            query=request.query,
+            search_type="multi_tier_query",
+            match_count=match_count,
+            filter_metadata=filter_metadata
+        )
+
+        if cached_results:
+            safe_logfire_info(
+                f"✅ Result cache HIT | Multi-tier query | "
+                f"user={user_id} | query={request.query[:50]}..."
+            )
+            return cached_results
+
+        # Cache miss - perform actual multi-tier search
+        safe_logfire_info(
+            f"❌ Result cache MISS | Multi-tier query | "
+            f"user={user_id} | query={request.query[:50]}..."
+        )
+
+        # Perform multi-tier search
+        search_service = RAGService(get_supabase_client())
+        results = await search_service.search_all_accessible_tiers(
+            user_id=str(user_id),
+            query=request.query,
+            match_count=match_count,
+            use_hybrid_search=request.use_hybrid_search
+        )
+
+        # Format response
+        response = {
+            "success": True,
+            "query": request.query,
+            "user_id": str(user_id),
+            "results": results,
+            "count": len(results),
+            "match_count": match_count
+        }
+
+        # Store in cache for future requests
+        await result_cache.set(
+            query=request.query,
+            search_type="multi_tier_query",
+            match_count=match_count,
+            results=response,
+            filter_metadata=filter_metadata
+        )
+
+        # Log performance details
+        total_time = time.time() - start_time
+        if total_time > 2.0:
+            logger.warning(
+                f"⚠️  Slow multi-tier query | total={total_time:.3f}s | "
+                f"user={user_id} | query={request.query[:50]} | results={len(results)}"
+            )
+        else:
+            logger.info(
+                f"✅ Multi-tier query completed | total={total_time:.3f}s | "
+                f"user={user_id} | query={request.query[:50]} | results={len(results)}"
+            )
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(
+            f"Multi-tier query failed | error={str(e)} | "
+            f"user={user_id} | query={request.query[:50]}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": f"Multi-tier query failed: {str(e)}"}
+        )
+    finally:
+        # Record request performance metrics
+        latency_ms = (time.time() - start_time) * 1000
+        try:
+            from ..services.performance_metrics import get_metrics_service
+
+            metrics_service = get_metrics_service()
+            metrics_service.record_request("/api/rag/query-auto", latency_ms)
+        except Exception:
+            # Silently fail - don't break requests due to metrics
+            pass
+
+
+@router.post("/rag/query-scoped")
+async def perform_scoped_rag_query(
+    request: ScopedQueryRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Explicit scope-based RAG query with access validation.
+
+    Allows explicit selection of knowledge base scope:
+    - "global": Search only global sources
+    - "project": Search specific project sources (requires project_id)
+    - "user": Search only user's private sources
+
+    Validates user has access to the specified scope before searching.
+
+    Args:
+        request: Scoped query request with scope and optional project_id
+        current_user: Authenticated user from JWT token
+
+    Returns:
+        Search results from the specified scope
+
+    Raises:
+        HTTPException(400): Invalid scope or missing project_id
+        HTTPException(403): User doesn't have access to specified scope
+    """
+    import time
+
+    # Start performance timing
+    start_time = time.time()
+
+    # Validate query
+    if not request.query:
+        raise HTTPException(status_code=422, detail="Query is required")
+
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="Query cannot be empty")
+
+    # Validate scope
+    valid_scopes = ["global", "project", "user"]
+    if request.scope not in valid_scopes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scope. Must be one of: {', '.join(valid_scopes)}"
+        )
+
+    # Validate project_id is provided if scope is "project"
+    if request.scope == "project" and not request.project_id:
+        raise HTTPException(
+            status_code=400,
+            detail="project_id is required when scope is 'project'"
+        )
+
+    # Extract user ID from authenticated user
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in authentication token")
+
+    try:
+        # Validate user has access to the specified scope
+        search_service = RAGService(get_supabase_client())
+
+        # Build filter metadata based on scope
+        filter_metadata = {"scope": request.scope}
+
+        if request.scope == "global":
+            # Everyone has access to global sources
+            pass
+
+        elif request.scope == "project":
+            # Check if user has access to the specified project
+            from uuid import UUID
+            try:
+                project_uuid = UUID(request.project_id)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid project_id format")
+
+            # Query database to check project membership
+            supabase_client = get_supabase_client()
+            membership_check = (
+                supabase_client.table("archon_user_project_access")
+                .select("project_id")
+                .eq("user_id", str(user_id))
+                .eq("project_id", str(project_uuid))
+                .is_("removed_at", "null")
+                .execute()
+            )
+
+            if not membership_check.data:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"User does not have access to project {request.project_id}"
+                )
+
+            filter_metadata["project_id"] = str(project_uuid)
+
+        elif request.scope == "user":
+            # User can only access their own private sources
+            filter_metadata["user_id"] = str(user_id)
+
+        # Get result cache instance
+        result_cache = await get_result_cache()
+
+        # Prepare cache parameters
+        match_count = request.match_count or 5
+        cache_filter = {
+            **filter_metadata,
+            "use_hybrid_search": request.use_hybrid_search
+        }
+
+        # Check cache first
+        cached_results = await result_cache.get(
+            query=request.query,
+            search_type="scoped_query",
+            match_count=match_count,
+            filter_metadata=cache_filter
+        )
+
+        if cached_results:
+            safe_logfire_info(
+                f"✅ Result cache HIT | Scoped query | "
+                f"user={user_id} | scope={request.scope} | query={request.query[:50]}..."
+            )
+            return cached_results
+
+        # Cache miss - perform actual scoped search
+        safe_logfire_info(
+            f"❌ Result cache MISS | Scoped query | "
+            f"user={user_id} | scope={request.scope} | query={request.query[:50]}..."
+        )
+
+        # Perform scoped search
+        results = await search_service.search_documents(
+            query=request.query,
+            match_count=match_count,
+            filter_metadata=filter_metadata,
+            use_hybrid_search=request.use_hybrid_search
+        )
+
+        # Format response
+        response = {
+            "success": True,
+            "query": request.query,
+            "scope": request.scope,
+            "user_id": str(user_id),
+            "project_id": request.project_id if request.scope == "project" else None,
+            "results": results,
+            "count": len(results),
+            "match_count": match_count
+        }
+
+        # Store in cache for future requests
+        await result_cache.set(
+            query=request.query,
+            search_type="scoped_query",
+            match_count=match_count,
+            results=response,
+            filter_metadata=cache_filter
+        )
+
+        # Log performance details
+        total_time = time.time() - start_time
+        if total_time > 2.0:
+            logger.warning(
+                f"⚠️  Slow scoped query | total={total_time:.3f}s | "
+                f"user={user_id} | scope={request.scope} | query={request.query[:50]} | results={len(results)}"
+            )
+        else:
+            logger.info(
+                f"✅ Scoped query completed | total={total_time:.3f}s | "
+                f"user={user_id} | scope={request.scope} | query={request.query[:50]} | results={len(results)}"
+            )
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(
+            f"Scoped query failed | error={str(e)} | "
+            f"user={user_id} | scope={request.scope} | query={request.query[:50]}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": f"Scoped query failed: {str(e)}"}
+        )
+    finally:
+        # Record request performance metrics
+        latency_ms = (time.time() - start_time) * 1000
+        try:
+            from ..services.performance_metrics import get_metrics_service
+
+            metrics_service = get_metrics_service()
+            metrics_service.record_request("/api/rag/query-scoped", latency_ms)
+        except Exception:
+            # Silently fail - don't break requests due to metrics
+            pass
